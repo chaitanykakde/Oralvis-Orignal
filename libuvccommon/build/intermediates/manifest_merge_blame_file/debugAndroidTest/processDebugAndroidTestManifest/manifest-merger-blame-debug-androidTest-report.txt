@@ -1,0 +1,82 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.jiangdg.common.test" >
+4
+5    <uses-sdk
+5-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:5:5-74
+6        android:minSdkVersion="24"
+6-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:5:15-41
+7        android:targetSdkVersion="34" />
+7-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:5:42-71
+8
+9    <instrumentation
+9-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:11:5-15:73
+10        android:name="android.test.InstrumentationTestRunner"
+10-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:11:22-75
+11        android:functionalTest="false"
+11-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:14:22-52
+12        android:handleProfiling="false"
+12-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:13:22-53
+13        android:label="Tests for com.jiangdg.common.test"
+13-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:15:22-71
+14        android:targetPackage="com.jiangdg.common.test" />
+14-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:12:22-69
+15
+16    <permission
+16-->[androidx.core:core:1.9.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/298ecd20f8dbddd329b10d240bea8315/transformed/core-1.9.0/AndroidManifest.xml:22:5-24:47
+17        android:name="com.jiangdg.common.test.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+17-->[androidx.core:core:1.9.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/298ecd20f8dbddd329b10d240bea8315/transformed/core-1.9.0/AndroidManifest.xml:23:9-81
+18        android:protectionLevel="signature" />
+18-->[androidx.core:core:1.9.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/298ecd20f8dbddd329b10d240bea8315/transformed/core-1.9.0/AndroidManifest.xml:24:9-44
+19
+20    <uses-permission android:name="com.jiangdg.common.test.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+20-->[androidx.core:core:1.9.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/298ecd20f8dbddd329b10d240bea8315/transformed/core-1.9.0/AndroidManifest.xml:26:5-97
+20-->[androidx.core:core:1.9.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/298ecd20f8dbddd329b10d240bea8315/transformed/core-1.9.0/AndroidManifest.xml:26:22-94
+21
+22    <application
+22-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:7:5-9:19
+23        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+23-->[androidx.core:core:1.9.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/298ecd20f8dbddd329b10d240bea8315/transformed/core-1.9.0/AndroidManifest.xml:28:18-86
+24        android:debuggable="true"
+25        android:extractNativeLibs="false" >
+26        <uses-library android:name="android.test.runner" />
+26-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:8:9-60
+26-->/Users/chaitanyskakde/AndroidStudioProjects/Demo/OralVisCamera/libuvccommon/build/intermediates/tmp/manifest/androidTest/debug/tempFile1ProcessTestManifest14253527781846256589.xml:8:23-57
+27
+28        <provider
+28-->[androidx.emoji2:emoji2:1.2.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/5776d9fe057ab234471d65a97c9e21d9/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:24:9-32:20
+29            android:name="androidx.startup.InitializationProvider"
+29-->[androidx.emoji2:emoji2:1.2.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/5776d9fe057ab234471d65a97c9e21d9/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:25:13-67
+30            android:authorities="com.jiangdg.common.test.androidx-startup"
+30-->[androidx.emoji2:emoji2:1.2.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/5776d9fe057ab234471d65a97c9e21d9/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:26:13-68
+31            android:exported="false" >
+31-->[androidx.emoji2:emoji2:1.2.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/5776d9fe057ab234471d65a97c9e21d9/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:27:13-37
+32            <meta-data
+32-->[androidx.emoji2:emoji2:1.2.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/5776d9fe057ab234471d65a97c9e21d9/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:29:13-31:52
+33                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+33-->[androidx.emoji2:emoji2:1.2.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/5776d9fe057ab234471d65a97c9e21d9/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:30:17-75
+34                android:value="androidx.startup" />
+34-->[androidx.emoji2:emoji2:1.2.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/5776d9fe057ab234471d65a97c9e21d9/transformed/jetified-emoji2-1.2.0/AndroidManifest.xml:31:17-49
+35            <meta-data
+35-->[androidx.lifecycle:lifecycle-process:2.4.1] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/53e1aa2e94a07614b5db70271e54e7ac/transformed/jetified-lifecycle-process-2.4.1/AndroidManifest.xml:31:13-33:52
+36                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+36-->[androidx.lifecycle:lifecycle-process:2.4.1] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/53e1aa2e94a07614b5db70271e54e7ac/transformed/jetified-lifecycle-process-2.4.1/AndroidManifest.xml:32:17-78
+37                android:value="androidx.startup" />
+37-->[androidx.lifecycle:lifecycle-process:2.4.1] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/53e1aa2e94a07614b5db70271e54e7ac/transformed/jetified-lifecycle-process-2.4.1/AndroidManifest.xml:33:17-49
+38        </provider>
+39
+40        <uses-library
+40-->[androidx.window:window:1.0.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/d3612027cd8e7f2ceea595d1875f1904/transformed/jetified-window-1.0.0/AndroidManifest.xml:25:9-27:40
+41            android:name="androidx.window.extensions"
+41-->[androidx.window:window:1.0.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/d3612027cd8e7f2ceea595d1875f1904/transformed/jetified-window-1.0.0/AndroidManifest.xml:26:13-54
+42            android:required="false" />
+42-->[androidx.window:window:1.0.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/d3612027cd8e7f2ceea595d1875f1904/transformed/jetified-window-1.0.0/AndroidManifest.xml:27:13-37
+43        <uses-library
+43-->[androidx.window:window:1.0.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/d3612027cd8e7f2ceea595d1875f1904/transformed/jetified-window-1.0.0/AndroidManifest.xml:28:9-30:40
+44            android:name="androidx.window.sidecar"
+44-->[androidx.window:window:1.0.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/d3612027cd8e7f2ceea595d1875f1904/transformed/jetified-window-1.0.0/AndroidManifest.xml:29:13-51
+45            android:required="false" />
+45-->[androidx.window:window:1.0.0] /Users/chaitanyskakde/.gradle/caches/8.13/transforms/d3612027cd8e7f2ceea595d1875f1904/transformed/jetified-window-1.0.0/AndroidManifest.xml:30:13-37
+46    </application>
+47
+48</manifest>

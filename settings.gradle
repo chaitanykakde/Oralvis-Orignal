@@ -1,0 +1,7 @@
+include ':app'
+include ':libausbc'
+include ':libuvc'
+include ':libuvccommon'
+
+rootProject.name = "OralVis Camera"
+ 
