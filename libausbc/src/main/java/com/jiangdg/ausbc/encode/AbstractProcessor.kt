@@ -25,6 +25,7 @@ import com.jiangdg.ausbc.callback.IEncodeDataCallBack
 import com.jiangdg.ausbc.encode.bean.RawData
 import com.jiangdg.ausbc.encode.muxer.Mp4Muxer
 import com.jiangdg.ausbc.utils.Logger
+import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.Exception
@@ -196,13 +197,81 @@ abstract class AbstractProcessor() {
                                         codec.getOutputBuffer(outputIndex)
                                     }
                                     if (outputBuffer != null) {
-                                        outputBuffer.position(mBufferInfo.offset)
-                                        outputBuffer.limit(mBufferInfo.offset + mBufferInfo.size)
-                                        val encodeData = ByteArray(mBufferInfo.size)
-                                        outputBuffer.get(encodeData)
-                                        mMp4Muxer?.pumpStream(outputBuffer, mBufferInfo, isVideo)
-
-                                        processOutputData(mBufferInfo, encodeData).apply {
+                                        Logger.d(TAG, "Processing output buffer - size: ${mBufferInfo.size}, offset: ${mBufferInfo.offset}, flags: ${mBufferInfo.flags}")
+                                        
+                                        // Get data for processing first
+                                        val bufferData = ByteArray(mBufferInfo.size)
+                                        
+                                        // Extract data without manipulating the original buffer
+                                        try {
+                                            // Create completely independent ByteBuffer for muxer
+                                            val independentBuffer = ByteBuffer.allocateDirect(mBufferInfo.size)
+                                            
+                                            // Try to get the underlying array if it's a heap buffer
+                                            try {
+                                                val array = outputBuffer.array()
+                                                val arrayOffset = outputBuffer.arrayOffset()
+                                                Logger.d(TAG, "ByteBuffer array access successful - array length: ${array.size}, offset: $arrayOffset")
+                                                
+                                                System.arraycopy(array, arrayOffset + mBufferInfo.offset, bufferData, 0, mBufferInfo.size)
+                                                independentBuffer.put(bufferData)
+                                                
+                                            } catch (e: UnsupportedOperationException) {
+                                                // If array() is not supported, try to read from the buffer directly
+                                                Logger.w(TAG, "Cannot access ByteBuffer array, trying direct buffer access")
+                                                
+                                                // Save current buffer position and limit
+                                                val originalPosition = outputBuffer.position()
+                                                val originalLimit = outputBuffer.limit()
+                                                
+                                                try {
+                                                    // Temporarily adjust buffer for reading
+                                                    outputBuffer.position(mBufferInfo.offset)
+                                                    outputBuffer.limit(mBufferInfo.offset + mBufferInfo.size)
+                                                    
+                                                    // Read data directly from the buffer
+                                                    outputBuffer.get(bufferData, 0, mBufferInfo.size)
+                                                    independentBuffer.put(bufferData)
+                                                    
+                                                    Logger.d(TAG, "Direct buffer access successful")
+                                                    
+                                                } catch (e2: Exception) {
+                                                    Logger.e(TAG, "Direct buffer access also failed: ${e2.message}")
+                                                    // Fill with zeros as fallback for processing callbacks
+                                                    bufferData.fill(0)
+                                                    
+                                                    // Skip muxer call entirely
+                                                    return
+                                                } finally {
+                                                    // Restore original buffer position and limit
+                                                    try {
+                                                        outputBuffer.position(originalPosition)
+                                                        outputBuffer.limit(originalLimit)
+                                                    } catch (e3: Exception) {
+                                                        Logger.w(TAG, "Failed to restore buffer position: ${e3.message}")
+                                                    }
+                                                }
+                                            }
+                                            
+                                            independentBuffer.position(0)
+                                            independentBuffer.limit(mBufferInfo.size)
+                                            
+                                            Logger.d(TAG, "Created independent buffer - capacity: ${independentBuffer.capacity()}, position: ${independentBuffer.position()}, limit: ${independentBuffer.limit()}")
+                                            
+                                            // Create a copy of bufferInfo to avoid modifying the original
+                                            val bufferInfoCopy = MediaCodec.BufferInfo()
+                                            bufferInfoCopy.set(0, mBufferInfo.size, mBufferInfo.presentationTimeUs, mBufferInfo.flags)
+                                            
+                                            Logger.d(TAG, "About to call pumpStream with independent buffer")
+                                            mMp4Muxer?.pumpStream(independentBuffer, bufferInfoCopy, isVideo)
+                                            Logger.d(TAG, "pumpStream completed successfully")
+                                            
+                                        } catch (e: Exception) {
+                                            Logger.e(TAG, "Error in buffer processing: ${e.message}", e)
+                                            throw e
+                                        }
+                                        
+                                        processOutputData(mBufferInfo, bufferData).apply {
                                             mEncodeDataCb?.onEncodeData(second,second.size, first, mBufferInfo.presentationTimeUs / 1000)
                                         }
                                     }

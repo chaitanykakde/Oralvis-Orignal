@@ -513,6 +513,395 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
         mUvcCamera?.resetHue()
     }
 
+    /**
+     * Check if auto exposure is supported by the camera
+     *
+     * @return true if auto exposure is supported
+     */
+    fun isAutoExposureSupported(): Boolean {
+        return mUvcCamera?.checkSupportFlag(UVCCamera.CTRL_AE.toLong()) ?: false
+    }
+
+    /**
+     * Set auto exposure mode using reflection to access private native methods
+     *
+     * @param enable true enable auto exposure
+     */
+    fun setAutoExposure(enable: Boolean) {
+        if (!isAutoExposureSupported()) {
+            Logger.w(TAG, "setAutoExposure: Auto exposure not supported by this camera")
+            return
+        }
+        
+        if (mUvcCamera == null) {
+            Logger.w(TAG, "setAutoExposure: Camera not initialized")
+            return
+        }
+        
+        try {
+            // Use reflection to access the private nativeSetExposureMode method
+            val method = mUvcCamera!!.javaClass.getDeclaredMethod("nativeSetExposureMode", Long::class.java, Int::class.java)
+            method.isAccessible = true
+            
+            // Get the native pointer using reflection
+            val nativePtrField = mUvcCamera!!.javaClass.getDeclaredField("mNativePtr")
+            nativePtrField.isAccessible = true
+            val nativePtr = nativePtrField.getLong(mUvcCamera!!)
+            
+            if (nativePtr == 0L) {
+                Logger.w(TAG, "setAutoExposure: Native pointer is null")
+                return
+            }
+            
+            // Set exposure mode: 8 = Auto, 1 = Manual (UVC specification)
+            val exposureMode = if (enable) 8 else 1
+            val result = method.invoke(mUvcCamera!!, nativePtr, exposureMode) as Int
+            
+            Logger.d(TAG, "setAutoExposure: enable=$enable, exposureMode=$exposureMode, result=$result")
+            
+            if (result == 0) {
+                Logger.d(TAG, "Auto exposure set successfully")
+            } else {
+                Logger.w(TAG, "Failed to set auto exposure, result: $result")
+            }
+        } catch (e: NoSuchMethodException) {
+            Logger.e(TAG, "setAutoExposure: nativeSetExposureMode method not found", e)
+        } catch (e: NoSuchFieldException) {
+            Logger.e(TAG, "setAutoExposure: mNativePtr field not found", e)
+        } catch (e: IllegalAccessException) {
+            Logger.e(TAG, "setAutoExposure: Access denied to native method", e)
+        } catch (e: Exception) {
+            Logger.e(TAG, "setAutoExposure failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Get auto exposure mode using reflection
+     *
+     * @return true if auto exposure is enabled
+     */
+    fun getAutoExposure(): Boolean {
+        if (!isAutoExposureSupported()) {
+            Logger.w(TAG, "getAutoExposure: Auto exposure not supported by this camera")
+            return false
+        }
+        
+        if (mUvcCamera == null) {
+            Logger.w(TAG, "getAutoExposure: Camera not initialized")
+            return false
+        }
+        
+        try {
+            // Use reflection to access the private nativeGetExposureMode method
+            val method = mUvcCamera!!.javaClass.getDeclaredMethod("nativeGetExposureMode", Long::class.java)
+            method.isAccessible = true
+            
+            // Get the native pointer using reflection
+            val nativePtrField = mUvcCamera!!.javaClass.getDeclaredField("mNativePtr")
+            nativePtrField.isAccessible = true
+            val nativePtr = nativePtrField.getLong(mUvcCamera!!)
+            
+            if (nativePtr == 0L) {
+                Logger.w(TAG, "getAutoExposure: Native pointer is null")
+                return false
+            }
+            
+            val result = method.invoke(mUvcCamera!!, nativePtr) as Int
+            val isAuto = result == 8  // UVC specification: 8 = Auto exposure
+            
+            Logger.d(TAG, "getAutoExposure: result=$result, isAuto=$isAuto")
+            return isAuto
+        } catch (e: NoSuchMethodException) {
+            Logger.e(TAG, "getAutoExposure: nativeGetExposureMode method not found", e)
+            return false
+        } catch (e: NoSuchFieldException) {
+            Logger.e(TAG, "getAutoExposure: mNativePtr field not found", e)
+            return false
+        } catch (e: IllegalAccessException) {
+            Logger.e(TAG, "getAutoExposure: Access denied to native method", e)
+            return false
+        } catch (e: Exception) {
+            Logger.e(TAG, "getAutoExposure failed: ${e.message}", e)
+            return false
+        }
+    }
+
+    /**
+     * Check if exposure control is supported by the camera
+     *
+     * @return true if exposure control is supported
+     */
+    fun isExposureSupported(): Boolean {
+        return mUvcCamera?.checkSupportFlag(UVCCamera.CTRL_AE_ABS.toLong()) ?: false
+    }
+
+    /**
+     * Set exposure value using reflection to access private native methods
+     *
+     * @param exposure exposure value (0-100), 0 means reset
+     */
+    fun setExposure(exposure: Int) {
+        if (!isExposureSupported()) {
+            Logger.w(TAG, "setExposure: Exposure control not supported by this camera")
+            return
+        }
+        
+        if (mUvcCamera == null) {
+            Logger.w(TAG, "setExposure: Camera not initialized")
+            return
+        }
+        
+        // Validate input range
+        val clampedExposure = exposure.coerceIn(0, 100)
+        if (clampedExposure != exposure) {
+            Logger.w(TAG, "setExposure: Input $exposure clamped to $clampedExposure")
+        }
+        
+        // Performance monitoring
+        val startTime = System.currentTimeMillis()
+        
+        try {
+            // First update exposure limits to get min/max values
+            updateExposureLimits()
+            
+            // Get exposure limits using reflection
+            val minField = mUvcCamera!!.javaClass.getDeclaredField("mExposureMin")
+            val maxField = mUvcCamera!!.javaClass.getDeclaredField("mExposureMax")
+            minField.isAccessible = true
+            maxField.isAccessible = true
+            
+            val minExposure = minField.getInt(mUvcCamera!!)
+            val maxExposure = maxField.getInt(mUvcCamera!!)
+            
+            Logger.d(TAG, "setExposure: input=$clampedExposure, min=$minExposure, max=$maxExposure")
+            
+            // Validate exposure limits
+            if (minExposure >= maxExposure) {
+                Logger.w(TAG, "setExposure: Invalid exposure limits: min=$minExposure, max=$maxExposure")
+                return
+            }
+            
+            // Convert percentage to actual exposure value
+            val actualExposure = when {
+                clampedExposure <= 0 -> minExposure  // Reset to minimum
+                clampedExposure >= 100 -> maxExposure  // Maximum
+                else -> {
+                    val range = maxExposure - minExposure
+                    (minExposure + (clampedExposure / 100.0 * range)).toInt()
+                }
+            }
+            
+            // Ensure actual exposure is within valid range
+            val finalExposure = actualExposure.coerceIn(minExposure, maxExposure)
+            
+            // Use reflection to access the private nativeSetExposure method
+            val method = mUvcCamera!!.javaClass.getDeclaredMethod("nativeSetExposure", Long::class.java, Int::class.java)
+            method.isAccessible = true
+            
+            // Get the native pointer using reflection
+            val nativePtrField = mUvcCamera!!.javaClass.getDeclaredField("mNativePtr")
+            nativePtrField.isAccessible = true
+            val nativePtr = nativePtrField.getLong(mUvcCamera!!)
+            
+            if (nativePtr == 0L) {
+                Logger.w(TAG, "setExposure: Native pointer is null")
+                return
+            }
+            
+            val result = method.invoke(mUvcCamera!!, nativePtr, finalExposure) as Int
+            
+            Logger.d(TAG, "setExposure: finalExposure=$finalExposure, result=$result")
+            
+            val endTime = System.currentTimeMillis()
+            val duration = endTime - startTime
+            
+            if (result == 0) {
+                Logger.d(TAG, "Exposure set successfully in ${duration}ms")
+                if (duration > 50) {
+                    Logger.w(TAG, "setExposure: Slow operation detected (${duration}ms) - consider throttling")
+                }
+            } else {
+                Logger.w(TAG, "Failed to set exposure, result: $result (${duration}ms)")
+            }
+        } catch (e: NoSuchMethodException) {
+            Logger.e(TAG, "setExposure: nativeSetExposure method not found", e)
+        } catch (e: NoSuchFieldException) {
+            Logger.e(TAG, "setExposure: Exposure limit fields not found", e)
+        } catch (e: IllegalAccessException) {
+            Logger.e(TAG, "setExposure: Access denied to native method", e)
+        } catch (e: Exception) {
+            Logger.e(TAG, "setExposure failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Get exposure value using reflection
+     *
+     * @return exposure value (0-100) or -1 if not supported
+     */
+    fun getExposure(): Int {
+        if (!isExposureSupported()) {
+            Logger.w(TAG, "getExposure: Exposure control not supported by this camera")
+            return -1
+        }
+        
+        if (mUvcCamera == null) {
+            Logger.w(TAG, "getExposure: Camera not initialized")
+            return -1
+        }
+        
+        try {
+            // Use reflection to access the private nativeGetExposure method
+            val method = mUvcCamera!!.javaClass.getDeclaredMethod("nativeGetExposure", Long::class.java)
+            method.isAccessible = true
+            
+            // Get the native pointer using reflection
+            val nativePtrField = mUvcCamera!!.javaClass.getDeclaredField("mNativePtr")
+            nativePtrField.isAccessible = true
+            val nativePtr = nativePtrField.getLong(mUvcCamera!!)
+            
+            if (nativePtr == 0L) {
+                Logger.w(TAG, "getExposure: Native pointer is null")
+                return -1
+            }
+            
+            val actualExposure = method.invoke(mUvcCamera!!, nativePtr) as Int
+            
+            // Get exposure limits to convert back to percentage
+            val minField = mUvcCamera!!.javaClass.getDeclaredField("mExposureMin")
+            val maxField = mUvcCamera!!.javaClass.getDeclaredField("mExposureMax")
+            minField.isAccessible = true
+            maxField.isAccessible = true
+            
+            val minExposure = minField.getInt(mUvcCamera!!)
+            val maxExposure = maxField.getInt(mUvcCamera!!)
+            
+            // Validate exposure limits
+            if (minExposure >= maxExposure) {
+                Logger.w(TAG, "getExposure: Invalid exposure limits: min=$minExposure, max=$maxExposure")
+                return 50  // Return default value
+            }
+            
+            val percentage = if (maxExposure > minExposure) {
+                ((actualExposure - minExposure) * 100.0 / (maxExposure - minExposure)).toInt().coerceIn(0, 100)
+            } else {
+                50
+            }
+            
+            Logger.d(TAG, "getExposure: actualExposure=$actualExposure, percentage=$percentage")
+            return percentage
+        } catch (e: NoSuchMethodException) {
+            Logger.e(TAG, "getExposure: nativeGetExposure method not found", e)
+            return -1
+        } catch (e: NoSuchFieldException) {
+            Logger.e(TAG, "getExposure: Exposure limit fields not found", e)
+            return -1
+        } catch (e: IllegalAccessException) {
+            Logger.e(TAG, "getExposure: Access denied to native method", e)
+            return -1
+        } catch (e: Exception) {
+            Logger.e(TAG, "getExposure failed: ${e.message}", e)
+            return -1
+        }
+    }
+
+    /**
+     * Update exposure limits using reflection
+     */
+    private fun updateExposureLimits() {
+        if (mUvcCamera == null) {
+            Logger.w(TAG, "updateExposureLimits: Camera not initialized")
+            return
+        }
+        
+        try {
+            // Use reflection to access the private nativeUpdateExposureLimit method
+            val method = mUvcCamera!!.javaClass.getDeclaredMethod("nativeUpdateExposureLimit", Long::class.java)
+            method.isAccessible = true
+            
+            // Get the native pointer using reflection
+            val nativePtrField = mUvcCamera!!.javaClass.getDeclaredField("mNativePtr")
+            nativePtrField.isAccessible = true
+            val nativePtr = nativePtrField.getLong(mUvcCamera!!)
+            
+            if (nativePtr == 0L) {
+                Logger.w(TAG, "updateExposureLimits: Native pointer is null")
+                return
+            }
+            
+            val result = method.invoke(mUvcCamera!!, nativePtr) as Int
+            Logger.d(TAG, "updateExposureLimits: result=$result")
+            
+            if (result != 0) {
+                Logger.w(TAG, "updateExposureLimits: Failed to update limits, result: $result")
+            }
+        } catch (e: NoSuchMethodException) {
+            Logger.e(TAG, "updateExposureLimits: nativeUpdateExposureLimit method not found", e)
+        } catch (e: NoSuchFieldException) {
+            Logger.e(TAG, "updateExposureLimits: mNativePtr field not found", e)
+        } catch (e: IllegalAccessException) {
+            Logger.e(TAG, "updateExposureLimits: Access denied to native method", e)
+        } catch (e: Exception) {
+            Logger.e(TAG, "updateExposureLimits failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Reset exposure
+     */
+    fun resetExposure() {
+        if (!isExposureSupported()) {
+            Logger.w(TAG, "resetExposure: Exposure control not supported by this camera")
+            return
+        }
+        
+        if (mUvcCamera == null) {
+            Logger.w(TAG, "resetExposure: Camera not initialized")
+            return
+        }
+        
+        try {
+            // First update exposure limits to get default value
+            updateExposureLimits()
+            
+            // Get default exposure value using reflection
+            val defField = mUvcCamera!!.javaClass.getDeclaredField("mExposureDef")
+            defField.isAccessible = true
+            val defaultExposure = defField.getInt(mUvcCamera!!)
+            
+            // Use reflection to access the private nativeSetExposure method
+            val method = mUvcCamera!!.javaClass.getDeclaredMethod("nativeSetExposure", Long::class.java, Int::class.java)
+            method.isAccessible = true
+            
+            // Get the native pointer using reflection
+            val nativePtrField = mUvcCamera!!.javaClass.getDeclaredField("mNativePtr")
+            nativePtrField.isAccessible = true
+            val nativePtr = nativePtrField.getLong(mUvcCamera!!)
+            
+            if (nativePtr == 0L) {
+                Logger.w(TAG, "resetExposure: Native pointer is null")
+                return
+            }
+            
+            val result = method.invoke(mUvcCamera!!, nativePtr, defaultExposure) as Int
+            Logger.d(TAG, "resetExposure: defaultExposure=$defaultExposure, result=$result")
+            
+            if (result == 0) {
+                Logger.d(TAG, "Exposure reset successfully")
+            } else {
+                Logger.w(TAG, "Failed to reset exposure, result: $result")
+            }
+        } catch (e: NoSuchMethodException) {
+            Logger.e(TAG, "resetExposure: nativeSetExposure method not found", e)
+        } catch (e: NoSuchFieldException) {
+            Logger.e(TAG, "resetExposure: mExposureDef or mNativePtr field not found", e)
+        } catch (e: IllegalAccessException) {
+            Logger.e(TAG, "resetExposure: Access denied to native method", e)
+        } catch (e: Exception) {
+            Logger.e(TAG, "resetExposure failed: ${e.message}", e)
+        }
+    }
+
     companion object {
         private const val TAG = "CameraUVC"
         private const val MIN_FS = 10

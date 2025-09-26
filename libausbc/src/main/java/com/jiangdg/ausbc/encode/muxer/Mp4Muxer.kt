@@ -156,31 +156,50 @@ class Mp4Muxer(
     @Synchronized
     fun pumpStream(outputBuffer: ByteBuffer, bufferInfo: MediaCodec.BufferInfo, isVideo: Boolean) {
         try {
+            Logger.d(TAG, "pumpStream called - isVideo: $isVideo, size: ${bufferInfo.size}, offset: ${bufferInfo.offset}")
+            
             if (!isMuxerStarter()) {
+                Logger.w(TAG, "Muxer not started, skipping pumpStream")
                 return
             }
             if (bufferInfo.size <= 0) {
+                Logger.w(TAG, "Buffer size is 0 or negative, skipping pumpStream")
                 return
             }
+            
+            // Create a copy of bufferInfo to avoid modifying the original
+            val adjustedBufferInfo = MediaCodec.BufferInfo()
+            adjustedBufferInfo.set(bufferInfo.offset, bufferInfo.size, bufferInfo.presentationTimeUs, bufferInfo.flags)
+            
             val index = if (isVideo) {
                 if (mVideoPts == 0L) {
                     mVideoPts = bufferInfo.presentationTimeUs
+                    Logger.d(TAG, "Set initial video PTS: $mVideoPts")
                 }
-                bufferInfo.presentationTimeUs = bufferInfo.presentationTimeUs - mVideoPts
+                adjustedBufferInfo.presentationTimeUs = bufferInfo.presentationTimeUs - mVideoPts
+                Logger.d(TAG, "Video PTS adjusted: ${bufferInfo.presentationTimeUs} -> ${adjustedBufferInfo.presentationTimeUs}")
                 mVideoTrackerIndex
             } else {
                 if (mAudioPts == 0L) {
                     mAudioPts = bufferInfo.presentationTimeUs
+                    Logger.d(TAG, "Set initial audio PTS: $mAudioPts")
                 }
-                bufferInfo.presentationTimeUs = bufferInfo.presentationTimeUs - mAudioPts
+                adjustedBufferInfo.presentationTimeUs = bufferInfo.presentationTimeUs - mAudioPts
+                Logger.d(TAG, "Audio PTS adjusted: ${bufferInfo.presentationTimeUs} -> ${adjustedBufferInfo.presentationTimeUs}")
                 mAudioTrackerIndex
             }
-            outputBuffer.position(bufferInfo.offset)
-            outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
-            mMediaMuxer?.writeSampleData(index, outputBuffer, bufferInfo)
+            
+            Logger.d(TAG, "About to call writeSampleData - index: $index, buffer capacity: ${outputBuffer.capacity()}, position: ${outputBuffer.position()}, limit: ${outputBuffer.limit()}")
+            
+            // ByteBuffer is already positioned correctly from AbstractProcessor
+            mMediaMuxer?.writeSampleData(index, outputBuffer, adjustedBufferInfo)
+            Logger.d(TAG, "writeSampleData completed successfully")
+            
             saveNewFileIfNeed()
         } catch (e: Exception) {
             Logger.e(TAG, "pumpStream failed, err = ${e.localizedMessage}", e)
+            Logger.e(TAG, "Exception details: ${e.javaClass.simpleName} - ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -243,13 +262,73 @@ class Mp4Muxer(
     private fun insertDCIM(context: Context?, videoPath: String?, notifyOut: Boolean = false) {
         context?.let { ctx ->
             if (videoPath.isNullOrEmpty()) {
+                Logger.w(TAG, "insertDCIM: videoPath is null or empty")
                 return
             }
+            
+            val file = File(videoPath)
+            if (!file.exists()) {
+                Logger.w(TAG, "insertDCIM: video file does not exist: $videoPath")
+                return
+            }
+            
+            if (file.length() == 0L) {
+                Logger.w(TAG, "insertDCIM: video file is empty: $videoPath")
+                return
+            }
+            
+            Logger.d(TAG, "insertDCIM: Attempting to insert video file: $videoPath, size: ${file.length()}")
+            
             ctx.contentResolver.let { content ->
-                val uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                content.insert(uri, getVideoContentValues(videoPath))
-                mMainHandler.post {
-                    mCaptureCallBack?.onComplete(this.path)
+                try {
+                    val uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    val contentValues = getVideoContentValues(videoPath)
+                    Logger.d(TAG, "insertDCIM: ContentValues created successfully")
+                    
+                    // For Android Q+, we need to handle the file differently
+                    if (MediaUtils.isAboveQ()) {
+                        Logger.d(TAG, "insertDCIM: Using Android Q+ approach")
+                        // Insert the media entry first
+                        val insertedUri = content.insert(uri, contentValues)
+                        Logger.d(TAG, "insertDCIM: Video entry created with URI: $insertedUri")
+                        
+                        if (insertedUri != null) {
+                            // Copy the file to the MediaStore location
+                            try {
+                                val outputStream = content.openOutputStream(insertedUri)
+                                val inputStream = file.inputStream()
+                                outputStream?.use { out ->
+                                    inputStream.use { input ->
+                                        input.copyTo(out)
+                                    }
+                                }
+                                Logger.d(TAG, "insertDCIM: File copied to MediaStore location successfully")
+                            } catch (e: Exception) {
+                                Logger.e(TAG, "insertDCIM: Failed to copy file to MediaStore location: ${e.message}", e)
+                                // Delete the media entry if file copy failed
+                                try {
+                                    content.delete(insertedUri, null, null)
+                                } catch (deleteException: Exception) {
+                                    Logger.e(TAG, "insertDCIM: Failed to delete media entry: ${deleteException.message}")
+                                }
+                                throw e
+                            }
+                        }
+                    } else {
+                        // For Android P and below, use the traditional approach
+                        Logger.d(TAG, "insertDCIM: Using pre-Android Q approach")
+                        val insertedUri = content.insert(uri, contentValues)
+                        Logger.d(TAG, "insertDCIM: Video inserted successfully with URI: $insertedUri")
+                    }
+                    
+                    mMainHandler.post {
+                        mCaptureCallBack?.onComplete(this.path)
+                    }
+                } catch (e: Exception) {
+                    Logger.e(TAG, "insertDCIM failed: ${e.message}", e)
+                    mMainHandler.post {
+                        mCaptureCallBack?.onError("Failed to save video: ${e.message}")
+                    }
                 }
             }
         }
@@ -258,17 +337,32 @@ class Mp4Muxer(
     private fun getVideoContentValues(path: String): ContentValues {
         val file = File(path)
         val values = ContentValues()
-        values.put(MediaStore.Video.Media.DATA, path)
-        values.put(MediaStore.Video.Media.DISPLAY_NAME, file.name)
-        values.put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-        values.put(MediaStore.Video.Media.SIZE, file.length())
-        values.put(MediaStore.Video.Media.DURATION, getLocalVideoDuration(file.path))
+        
+        Logger.d(TAG, "getVideoContentValues: Creating ContentValues for path: $path")
+        Logger.d(TAG, "getVideoContentValues: File exists: ${file.exists()}, size: ${file.length()}")
+        
+        // For Android Q+ (API 29+), we should not use DATA field with direct file paths
+        // Instead, we use RELATIVE_PATH and let the system handle the file
         if (MediaUtils.isAboveQ()) {
             val relativePath =  "${Environment.DIRECTORY_DCIM}${File.separator}Camera"
             val dateExpires = (System.currentTimeMillis() + DateUtils.DAY_IN_MILLIS) / 1000
+            Logger.d(TAG, "getVideoContentValues: Android Q+ - relativePath: $relativePath, dateExpires: $dateExpires")
             values.put(MediaStore.Video.Media.RELATIVE_PATH, relativePath)
             values.put(MediaStore.Video.Media.DATE_EXPIRES, dateExpires)
+        } else {
+            // For Android P and below, we can still use DATA field
+            values.put(MediaStore.Video.Media.DATA, path)
         }
+        
+        values.put(MediaStore.Video.Media.DISPLAY_NAME, file.name)
+        values.put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+        values.put(MediaStore.Video.Media.SIZE, file.length())
+        
+        val duration = getLocalVideoDuration(file.path)
+        Logger.d(TAG, "getVideoContentValues: Video duration: $duration")
+        values.put(MediaStore.Video.Media.DURATION, duration)
+        
+        Logger.d(TAG, "getVideoContentValues: ContentValues created with ${values.size()} entries")
         return values
     }
 
@@ -277,11 +371,26 @@ class Mp4Muxer(
 
     private fun getLocalVideoDuration(filePath: String?): Long {
         return try {
+            if (filePath.isNullOrEmpty()) {
+                Logger.w(TAG, "getLocalVideoDuration: filePath is null or empty")
+                return 0L
+            }
+            
+            val file = File(filePath)
+            if (!file.exists()) {
+                Logger.w(TAG, "getLocalVideoDuration: file does not exist: $filePath")
+                return 0L
+            }
+            
+            Logger.d(TAG, "getLocalVideoDuration: Getting duration for: $filePath")
             val mmr = MediaMetadataRetriever()
             mmr.setDataSource(filePath)
-            mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?:0L
+            val duration = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
+            Logger.d(TAG, "getLocalVideoDuration: Duration extracted: $duration")
+            mmr.release()
+            duration
         } catch (e: Exception) {
-            e.printStackTrace()
+            Logger.e(TAG, "getLocalVideoDuration failed: ${e.message}", e)
             0L
         }
     }

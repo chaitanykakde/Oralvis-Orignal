@@ -38,6 +38,22 @@ class MainActivity : AppCompatActivity() {
     private var mCurrentCamera: MultiCameraClient.ICamera? = null
     private val mCameraMap = hashMapOf<Int, MultiCameraClient.ICamera>()
     private var isRecording = false
+    
+    // Exposure update throttling
+    private var lastExposureUpdate = 0L
+    private val exposureUpdateInterval = 100L // Update every 100ms max
+    private var pendingExposureValue = -1
+    private val exposureUpdateHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val exposureUpdateRunnable = Runnable {
+        if (pendingExposureValue >= 0) {
+            mCurrentCamera?.let { camera ->
+                if (camera is CameraUVC) {
+                    camera.setExposure(pendingExposureValue)
+                    pendingExposureValue = -1
+                }
+            }
+        }
+    }
     private var controlsVisible = false
     
     // Recording timer
@@ -225,16 +241,50 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         
-        // Exposure control (Note: setExposure method doesn't exist in CameraUVC)
+        // Exposure control (Now working with reflection + throttled updates!)
         binding.seekExposure.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtExposure.text = progress.toString()
-                    // Note: Exposure control not available for UVC cameras
+                    
+                    // Throttle exposure updates to prevent frame rate drops
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastExposureUpdate >= exposureUpdateInterval) {
+                        // Update immediately
+                        mCurrentCamera?.let { camera ->
+                            if (camera is CameraUVC) {
+                                camera.setExposure(progress)
+                                lastExposureUpdate = currentTime
+                            }
+                        }
+                    } else {
+                        // Schedule delayed update
+                        pendingExposureValue = progress
+                        exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
+                        exposureUpdateHandler.postDelayed(exposureUpdateRunnable, exposureUpdateInterval)
+                    }
                 }
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {
+                // Cancel any pending updates when user starts dragging
+                exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
+                pendingExposureValue = -1
+            }
+            
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                // Ensure final value is applied immediately when user stops dragging
+                val finalProgress = seekBar?.progress ?: 0
+                mCurrentCamera?.let { camera ->
+                    if (camera is CameraUVC) {
+                        camera.setExposure(finalProgress)
+                        lastExposureUpdate = System.currentTimeMillis()
+                    }
+                }
+                // Cancel any pending updates
+                exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
+                pendingExposureValue = -1
+            }
         })
         
         // Focus control (Note: setFocus method doesn't exist in CameraUVC)
@@ -409,10 +459,24 @@ class MainActivity : AppCompatActivity() {
                         binding.seekGain.progress = it
                         binding.txtGain.text = it.toString()
                     }
-                    // Note: getExposure, getFocus, getWhiteBalance methods don't exist in CameraUVC
+                    
+                    // Exposure control (Now working with reflection!)
+                    if (camera.isExposureSupported()) {
+                        val exposure = camera.getExposure()
+                        if (exposure >= 0) {
+                            binding.seekExposure.progress = exposure
+                            binding.txtExposure.text = exposure.toString()
+                        } else {
+                            binding.seekExposure.progress = 50
+                            binding.txtExposure.text = "50"
+                        }
+                    } else {
+                        binding.seekExposure.progress = 50
+                        binding.txtExposure.text = "50"
+                    }
+                    
+                    // Note: getFocus, getWhiteBalance methods don't exist in CameraUVC
                     // Set default values for these controls
-                    binding.seekExposure.progress = 50
-                    binding.txtExposure.text = "50"
                     binding.seekFocus.progress = 50
                     binding.txtFocus.text = "50"
                     binding.seekWhiteBalance.progress = 50
@@ -425,11 +489,19 @@ class MainActivity : AppCompatActivity() {
                         ContextCompat.getColor(this, if (autoFocus) android.R.color.holo_green_dark else android.R.color.darker_gray)
                     )
                     
-                    // Note: Auto Exposure methods don't exist in CameraUVC
-                    binding.btnAutoExposure.text = "Auto Exposure"
-                    binding.btnAutoExposure.setBackgroundColor(
-                        ContextCompat.getColor(this, android.R.color.darker_gray)
-                    )
+                    // Auto Exposure control (Now working with reflection!)
+                    if (camera.isAutoExposureSupported()) {
+                        val autoExposure = camera.getAutoExposure()
+                        binding.btnAutoExposure.text = if (autoExposure) "Auto Exposure ON" else "Auto Exposure OFF"
+                        binding.btnAutoExposure.setBackgroundColor(
+                            ContextCompat.getColor(this, if (autoExposure) android.R.color.holo_green_dark else android.R.color.darker_gray)
+                        )
+                    } else {
+                        binding.btnAutoExposure.text = "Auto Exposure (N/A)"
+                        binding.btnAutoExposure.setBackgroundColor(
+                            ContextCompat.getColor(this, android.R.color.darker_gray)
+                        )
+                    }
                     
                     val autoWB = camera.getAutoWhiteBalance() ?: false
                     binding.btnAutoWhiteBalance.text = if (autoWB) "Auto WB ON" else "Auto WB OFF"
@@ -572,7 +644,7 @@ class MainActivity : AppCompatActivity() {
                                 Toast.makeText(this@MainActivity, "Video saved: $path", Toast.LENGTH_SHORT).show()
                             }
                         }
-                    })
+                    }, videoFile)
                 } catch (e: Exception) {
                     Toast.makeText(this, "Recording failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
@@ -612,7 +684,8 @@ class MainActivity : AppCompatActivity() {
                     camera.resetHue()
                     camera.resetSharpness()
                     camera.resetGain()
-                    // Note: resetExposure, resetFocus, resetWhiteBalance methods don't exist in CameraUVC
+                    camera.resetExposure()
+                    // Note: resetFocus, resetWhiteBalance methods don't exist in CameraUVC
                     camera.resetAutoFocus()
                     
                     // Update UI to reflect reset values
@@ -712,8 +785,30 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun toggleAutoExposure() {
-        // Note: Auto Exposure methods don't exist in CameraUVC
-        Toast.makeText(this, "Auto Exposure control not available for this camera", Toast.LENGTH_SHORT).show()
+        mCurrentCamera?.let { camera ->
+            if (camera is CameraUVC) {
+                try {
+                    if (camera.isAutoExposureSupported()) {
+                        val currentAutoExposure = camera.getAutoExposure()
+                        camera.setAutoExposure(!currentAutoExposure)
+                        
+                        val newState = !currentAutoExposure
+                        binding.btnAutoExposure.text = if (newState) "Auto Exposure ON" else "Auto Exposure OFF"
+                        binding.btnAutoExposure.setBackgroundColor(
+                            ContextCompat.getColor(this, if (newState) android.R.color.holo_green_dark else android.R.color.darker_gray)
+                        )
+                        
+                        Toast.makeText(this, "Auto Exposure: ${if (newState) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "Auto Exposure not supported by this camera", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Auto Exposure control failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } ?: run {
+            Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
+        }
     }
     
     private fun toggleAutoWhiteBalance() {
@@ -741,6 +836,9 @@ class MainActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        
+        // Clean up exposure update handler
+        exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
         
         mCameraClient?.unRegister()
         mCameraClient?.destroy()
