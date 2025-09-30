@@ -29,7 +29,18 @@ import java.util.concurrent.TimeUnit
 import java.text.SimpleDateFormat
 import java.util.*
 import java.io.File
+import android.content.Intent
+import android.widget.TextView
 import com.oralvis.oralviscamera.databinding.ActivityMainBinding
+import com.oralvis.oralviscamera.database.MediaDatabase
+import com.oralvis.oralviscamera.database.MediaRecord
+import com.oralvis.oralviscamera.session.SessionManager
+import com.oralvis.oralviscamera.camera.CameraModePresets
+import com.oralvis.oralviscamera.camera.CameraModePreset
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     
@@ -38,6 +49,12 @@ class MainActivity : AppCompatActivity() {
     private var mCurrentCamera: MultiCameraClient.ICamera? = null
     private val mCameraMap = hashMapOf<Int, MultiCameraClient.ICamera>()
     private var isRecording = false
+    
+    // New features
+    private lateinit var sessionManager: SessionManager
+    private lateinit var mediaDatabase: MediaDatabase
+    private var currentMode = "Normal"
+    private var settingsBottomSheet: BottomSheetDialog? = null
     
     // Exposure update throttling
     private var lastExposureUpdate = 0L
@@ -84,6 +101,10 @@ class MainActivity : AppCompatActivity() {
             insets
         }
         
+        // Initialize new features
+        sessionManager = SessionManager(this)
+        mediaDatabase = MediaDatabase.getDatabase(this)
+        
         setupUI()
         checkPermissions()
     }
@@ -123,6 +144,9 @@ class MainActivity : AppCompatActivity() {
         
         // Setup camera control seekbars
         setupCameraControlSeekBars()
+        
+        // New UI elements
+        setupNewUI()
         
         // Initialize recording timer
         recordingHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -314,6 +338,165 @@ class MainActivity : AppCompatActivity() {
         })
     }
     
+    private fun setupNewUI() {
+        // Settings button only
+        binding.btnSettings.setOnClickListener {
+            showSettingsBottomSheet()
+        }
+    }
+    
+    private fun switchToMode(mode: String) {
+        currentMode = mode
+        updateModeUI()
+        applyModePreset(mode)
+    }
+    
+    private fun updateModeUI() { /* no-op: mode toggles shown in settings panel only */ }
+    
+    private fun applyModePreset(mode: String) {
+        val preset = when (mode) {
+            "Normal" -> CameraModePresets.NORMAL
+            "Fluorescence" -> CameraModePresets.FLUORESCENCE
+            else -> CameraModePresets.NORMAL
+        }
+        
+        mCurrentCamera?.let { camera ->
+            if (camera is CameraUVC) {
+                try {
+                    camera.setAutoExposure(preset.autoExposure)
+                    camera.setAutoWhiteBalance(preset.autoWhiteBalance)
+                    camera.setContrast(preset.contrast)
+                    camera.setSaturation(preset.saturation)
+                    camera.setBrightness(preset.brightness)
+                    camera.setGamma(preset.gamma)
+                    camera.setHue(preset.hue)
+                    camera.setSharpness(preset.sharpness)
+                    camera.setGain(preset.gain)
+                    camera.setExposure(preset.exposure)
+                    
+                    // Update UI controls
+                    updateCameraControlValues()
+                    
+                    Toast.makeText(this, "Switched to $mode mode", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Failed to apply $mode preset: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    
+    private fun showSettingsBottomSheet() {
+        val bottomSheetView = layoutInflater.inflate(R.layout.bottom_sheet_camera_settings, null)
+        settingsBottomSheet = BottomSheetDialog(this)
+        settingsBottomSheet?.setContentView(bottomSheetView)
+        
+        // Setup settings controls
+        setupSettingsControls(bottomSheetView)
+        
+        settingsBottomSheet?.show()
+    }
+    
+    private fun setupSettingsControls(view: View) {
+        // Close button
+        view.findViewById<View>(R.id.btnCloseSettings).setOnClickListener {
+            settingsBottomSheet?.dismiss()
+        }
+        
+        // Mode buttons in settings
+        view.findViewById<View>(R.id.btnNormalMode).setOnClickListener {
+            switchToMode("Normal")
+            settingsBottomSheet?.dismiss()
+        }
+        
+        view.findViewById<View>(R.id.btnFluorescenceMode).setOnClickListener {
+            switchToMode("Fluorescence")
+            settingsBottomSheet?.dismiss()
+        }
+        
+        // Setup all the seekbars in settings (similar to main controls)
+        setupSettingsSeekBars(view)
+    }
+    
+    private fun setupSettingsSeekBars(view: View) {
+        // Brightness
+        val seekBrightness = view.findViewById<SeekBar>(R.id.seekBrightnessSettings)
+        val txtBrightness = view.findViewById<TextView>(R.id.txtBrightnessSettings)
+        seekBrightness.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    txtBrightness.text = progress.toString()
+                    mCurrentCamera?.let { camera ->
+                        if (camera is CameraUVC) {
+                            camera.setBrightness(progress)
+                        }
+                    }
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+        
+        // Contrast
+        val seekContrast = view.findViewById<SeekBar>(R.id.seekContrastSettings)
+        val txtContrast = view.findViewById<TextView>(R.id.txtContrastSettings)
+        seekContrast.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    txtContrast.text = progress.toString()
+                    mCurrentCamera?.let { camera ->
+                        if (camera is CameraUVC) {
+                            camera.setContrast(progress)
+                        }
+                    }
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+        
+        // Saturation
+        val seekSaturation = view.findViewById<SeekBar>(R.id.seekSaturationSettings)
+        val txtSaturation = view.findViewById<TextView>(R.id.txtSaturationSettings)
+        seekSaturation.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    txtSaturation.text = progress.toString()
+                    mCurrentCamera?.let { camera ->
+                        if (camera is CameraUVC) {
+                            camera.setSaturation(progress)
+                        }
+                    }
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+        
+        // Auto controls
+        view.findViewById<View>(R.id.btnAutoFocusSettings).setOnClickListener {
+            toggleAutoFocus()
+        }
+        
+        view.findViewById<View>(R.id.btnAutoExposureSettings).setOnClickListener {
+            toggleAutoExposure()
+        }
+        
+        view.findViewById<View>(R.id.btnAutoWhiteBalanceSettings).setOnClickListener {
+            toggleAutoWhiteBalance()
+        }
+        
+        // Reset button
+        view.findViewById<View>(R.id.btnResetSettings).setOnClickListener {
+            resetCameraControls()
+            settingsBottomSheet?.dismiss()
+        }
+    }
+    
+    private fun openGallery() {
+        val intent = Intent(this, com.oralvis.oralviscamera.gallery.GalleryActivity::class.java)
+        startActivity(intent)
+    }
+    
     private fun checkPermissions() {
         val missingPermissions = REQUIRED_PERMISSIONS.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -400,10 +583,25 @@ class MainActivity : AppCompatActivity() {
                         }
                     })
                     
-                    // Create camera request with better resolution for full screen
+                    // Create camera request with resolution matching screen aspect ratio
+                    val displayMetrics = resources.displayMetrics
+                    val screenWidth = displayMetrics.widthPixels
+                    val screenHeight = displayMetrics.heightPixels
+                    val screenAspectRatio = screenWidth.toFloat() / screenHeight.toFloat()
+                    
+                    // Calculate recording resolution that matches screen aspect ratio
+                    val baseWidth = 1920 // Use higher base resolution for better quality
+                    val recordingWidth = baseWidth
+                    val recordingHeight = (baseWidth / screenAspectRatio).toInt()
+                    
+                    // Log resolution info for debugging
+                    android.util.Log.d("CameraResolution", "Screen: ${screenWidth}x${screenHeight} (${String.format("%.2f", screenAspectRatio)})")
+                    android.util.Log.d("CameraResolution", "Camera Request: ${recordingWidth}x${recordingHeight} (${String.format("%.2f", recordingWidth.toFloat() / recordingHeight.toFloat())})")
+                    android.util.Log.d("CameraResolution", "Expected Video: ${recordingWidth}x${recordingHeight} (${String.format("%.2f", recordingWidth.toFloat() / recordingHeight.toFloat())})")
+                    
                     val cameraRequest = CameraRequest.Builder()
-                        .setPreviewWidth(1280)
-                        .setPreviewHeight(720)
+                        .setPreviewWidth(recordingWidth)
+                        .setPreviewHeight(recordingHeight)
                         .setRenderMode(CameraRequest.RenderMode.OPENGL)
                         .setDefaultRotateType(RotateType.ANGLE_0)
                         .setAudioSource(CameraRequest.AudioSource.SOURCE_AUTO)
@@ -570,6 +768,7 @@ class MainActivity : AppCompatActivity() {
     private fun capturePhoto() {
         mCurrentCamera?.let { camera ->
             try {
+                val imagePath = createImageFile()
                 camera.captureImage(object : ICaptureCallBack {
                     override fun onBegin() {
                         runOnUiThread {
@@ -585,10 +784,13 @@ class MainActivity : AppCompatActivity() {
                     
                     override fun onComplete(path: String?) {
                         runOnUiThread {
-                            Toast.makeText(this@MainActivity, "Photo saved: $path", Toast.LENGTH_SHORT).show()
+                            val finalPath = path ?: imagePath
+                            Toast.makeText(this@MainActivity, "Photo saved: $finalPath", Toast.LENGTH_SHORT).show()
+                            // Log to database
+                            logMediaToDatabase(finalPath, "Image")
                         }
                     }
-                })
+                }, imagePath)
             } catch (e: Exception) {
                 Toast.makeText(this, "Capture failed: ${e.message}", Toast.LENGTH_SHORT).show()
             }
@@ -599,16 +801,56 @@ class MainActivity : AppCompatActivity() {
     
     private fun createVideoFile(): String {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val videoFileName = "OralVis_Video_$timestamp.mp4"
+        val videoFileName = "OralVis_Video_${currentMode}_$timestamp.mp4"
         
-        // Use app-specific directory (no permissions needed)
-        val videoDir = File(getExternalFilesDir(null), "Videos")
+        // Use session-based directory
+        val sessionId = sessionManager.getCurrentSessionId()
+        val sessionDir = File(getExternalFilesDir(null), "Sessions/$sessionId")
+        val videoDir = File(sessionDir, "Videos")
         if (!videoDir.exists()) {
             videoDir.mkdirs()
         }
         
         val videoFile = File(videoDir, videoFileName)
         return videoFile.absolutePath
+    }
+    
+    private fun createImageFile(): String {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val imageFileName = "OralVis_Image_${currentMode}_$timestamp.jpg"
+        
+        // Use session-based directory
+        val sessionId = sessionManager.getCurrentSessionId()
+        val sessionDir = File(getExternalFilesDir(null), "Sessions/$sessionId")
+        val imageDir = File(sessionDir, "Images")
+        if (!imageDir.exists()) {
+            imageDir.mkdirs()
+        }
+        
+        val imageFile = File(imageDir, imageFileName)
+        return imageFile.absolutePath
+    }
+    
+    private fun logMediaToDatabase(filePath: String, mediaType: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val sessionId = sessionManager.getCurrentSessionId()
+                val fileName = File(filePath).name
+                val mediaRecord = MediaRecord(
+                    sessionId = sessionId,
+                    fileName = fileName,
+                    mode = currentMode,
+                    mediaType = mediaType,
+                    captureTime = Date(),
+                    filePath = filePath
+                )
+                mediaDatabase.mediaDao().insertMedia(mediaRecord)
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Failed to log media: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
     
     private fun toggleRecording() {
@@ -644,7 +886,10 @@ class MainActivity : AppCompatActivity() {
                                 binding.btnRecord.text = "Record"
                                 binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
                                 stopRecordingTimer()
-                                Toast.makeText(this@MainActivity, "Video saved: $path", Toast.LENGTH_SHORT).show()
+                                val finalPath = path ?: videoFile
+                                Toast.makeText(this@MainActivity, "Video saved: $finalPath", Toast.LENGTH_SHORT).show()
+                                // Log to database
+                                logMediaToDatabase(finalPath, "Video")
                             }
                         }
                     }, videoFile)
