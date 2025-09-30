@@ -379,8 +379,11 @@ class MainActivity : AppCompatActivity() {
                                         binding.statusText.text = "Camera opened successfully"
                                         binding.statusText.visibility = View.GONE
                                         
-                                        // Set aspect ratio to fill screen better
-                                        binding.cameraTextureView.setAspectRatio(16, 9)
+                                        // Set preview aspect ratio to match device screen to fill fully
+                                        val displayMetrics = resources.displayMetrics
+                                        val screenWidth = displayMetrics.widthPixels
+                                        val screenHeight = displayMetrics.heightPixels
+                                        binding.cameraTextureView.setAspectRatio(screenWidth, screenHeight)
                                         
                                         updateCameraControlValues()
                                     }
