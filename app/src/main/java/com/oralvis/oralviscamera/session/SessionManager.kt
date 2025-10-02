@@ -8,7 +8,11 @@ class SessionManager(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("session_prefs", Context.MODE_PRIVATE)
     private val currentSessionKey = "current_session_id"
     
-    fun getCurrentSessionId(): String {
+    fun getCurrentSessionId(): String? {
+        return prefs.getString(currentSessionKey, null)
+    }
+    
+    fun getCurrentSessionIdOrCreate(): String {
         val sessionId = prefs.getString(currentSessionKey, null)
         return if (sessionId != null) {
             sessionId
@@ -37,5 +41,16 @@ class SessionManager(private val context: Context) {
     
     fun clearCurrentSession() {
         prefs.edit().remove(currentSessionKey).apply()
+    }
+    
+    fun createSessionIfNeeded(): String {
+        val existingSessionId = getCurrentSessionId()
+        return if (existingSessionId != null) {
+            existingSessionId
+        } else {
+            val newSessionId = generateSessionId()
+            prefs.edit().putString(currentSessionKey, newSessionId).apply()
+            newSessionId
+        }
     }
 }

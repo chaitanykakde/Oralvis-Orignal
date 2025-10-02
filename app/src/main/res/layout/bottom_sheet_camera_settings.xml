@@ -64,171 +64,48 @@
 
     </LinearLayout>
 
-    <!-- Auto Controls Row -->
+    <!-- Resolution Selection -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginBottom="16dp">
+        android:orientation="vertical"
+        android:layout_marginBottom="24dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAutoFocusSettings"
-            android:layout_width="0dp"
+        <TextView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Auto Focus"
-            android:backgroundTint="#4CAF50"
-            android:layout_marginEnd="4dp"
-            android:textSize="12sp" />
+            android:text="Video Resolution"
+            android:textColor="@color/white"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAutoExposureSettings"
-            android:layout_width="0dp"
+        <Spinner
+            android:id="@+id/spinnerResolution"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Auto Exposure"
-            android:backgroundTint="#4CAF50"
-            android:layout_marginStart="4dp"
-            android:layout_marginEnd="4dp"
-            android:textSize="12sp" />
+            android:layout_marginBottom="8dp"
+            android:background="@android:drawable/btn_dropdown"
+            android:padding="12dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnAutoWhiteBalanceSettings"
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/txtCurrentResolution"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Auto WB"
-            android:backgroundTint="#4CAF50"
-            android:layout_marginStart="4dp"
-            android:textSize="12sp" />
+            android:text="Current: Not set"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:gravity="center" />
 
     </LinearLayout>
 
-    <!-- Essential Controls Only -->
-    <ScrollView
+    <!-- Reset Button -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnResetSettings"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:maxHeight="300dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <!-- Brightness Control -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
-
-                <TextView
-                    android:layout_width="100dp"
-                    android:layout_height="wrap_content"
-                    android:text="Brightness"
-                    android:textColor="@color/white"
-                    android:textSize="14sp" />
-
-                <SeekBar
-                    android:id="@+id/seekBrightnessSettings"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:max="100"
-                    android:progress="50" />
-
-                <TextView
-                    android:id="@+id/txtBrightnessSettings"
-                    android:layout_width="40dp"
-                    android:layout_height="wrap_content"
-                    android:text="50"
-                    android:textColor="@color/white"
-                    android:textAlignment="center"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <!-- Contrast Control -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
-
-                <TextView
-                    android:layout_width="100dp"
-                    android:layout_height="wrap_content"
-                    android:text="Contrast"
-                    android:textColor="@color/white"
-                    android:textSize="14sp" />
-
-                <SeekBar
-                    android:id="@+id/seekContrastSettings"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:max="100"
-                    android:progress="50" />
-
-                <TextView
-                    android:id="@+id/txtContrastSettings"
-                    android:layout_width="40dp"
-                    android:layout_height="wrap_content"
-                    android:text="50"
-                    android:textColor="@color/white"
-                    android:textAlignment="center"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <!-- Saturation Control -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="12dp">
-
-                <TextView
-                    android:layout_width="100dp"
-                    android:layout_height="wrap_content"
-                    android:text="Saturation"
-                    android:textColor="@color/white"
-                    android:textSize="14sp" />
-
-                <SeekBar
-                    android:id="@+id/seekSaturationSettings"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:max="100"
-                    android:progress="50" />
-
-                <TextView
-                    android:id="@+id/txtSaturationSettings"
-                    android:layout_width="40dp"
-                    android:layout_height="wrap_content"
-                    android:text="50"
-                    android:textColor="@color/white"
-                    android:textAlignment="center"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <!-- Reset Button -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnResetSettings"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Reset to Default"
-                android:backgroundTint="#FF9800"
-                android:layout_marginTop="8dp" />
-
-        </LinearLayout>
-    </ScrollView>
+        android:layout_height="wrap_content"
+        android:text="Reset to Default"
+        android:backgroundTint="#FF9800"
+        android:layout_marginTop="8dp" />
 
 </LinearLayout>

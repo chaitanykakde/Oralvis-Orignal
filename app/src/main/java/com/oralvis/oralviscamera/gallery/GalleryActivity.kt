@@ -100,14 +100,22 @@ class GalleryActivity : AppCompatActivity() {
     private fun observeViewModel() {
         val sessionId = sessionManager.getCurrentSessionId()
         
-        viewModel.getNormalMedia(sessionId).observe(this) { mediaList ->
-            normalAdapter.submitList(mediaList)
-            binding.emptyStateNormal.visibility = if (mediaList.isEmpty()) View.VISIBLE else View.GONE
-        }
-        
-        viewModel.getFluorescenceMedia(sessionId).observe(this) { mediaList ->
-            fluorescenceAdapter.submitList(mediaList)
-            binding.emptyStateFluorescence.visibility = if (mediaList.isEmpty()) View.VISIBLE else View.GONE
+        if (sessionId != null) {
+            viewModel.getNormalMedia(sessionId).observe(this) { mediaList ->
+                normalAdapter.submitList(mediaList)
+                binding.emptyStateNormal.visibility = if (mediaList.isEmpty()) View.VISIBLE else View.GONE
+            }
+            
+            viewModel.getFluorescenceMedia(sessionId).observe(this) { mediaList ->
+                fluorescenceAdapter.submitList(mediaList)
+                binding.emptyStateFluorescence.visibility = if (mediaList.isEmpty()) View.VISIBLE else View.GONE
+            }
+        } else {
+            // No current session, show empty states
+            normalAdapter.submitList(emptyList())
+            fluorescenceAdapter.submitList(emptyList())
+            binding.emptyStateNormal.visibility = View.VISIBLE
+            binding.emptyStateFluorescence.visibility = View.VISIBLE
         }
     }
     

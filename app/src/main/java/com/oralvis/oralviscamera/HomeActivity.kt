@@ -71,17 +71,10 @@ class HomeActivity : AppCompatActivity() {
     }
     
     private fun startNewSession() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val newSessionId = "session_${System.currentTimeMillis()}_${UUID.randomUUID().toString().substring(0,8)}"
-            val session = Session(sessionId = newSessionId, createdAt = Date(), displayName = null)
-            sessionDao.insert(session)
-            // set as current
-            sessionManager.setCurrentSession(newSessionId)
-            // route to camera
-            runOnUiThread {
-                openCamera()
-            }
-        }
+        // Clear any existing session to start fresh
+        sessionManager.clearCurrentSession()
+        // Navigate directly to camera - session will be created when media is captured
+        openCamera()
     }
 
     private fun observeSessions() {

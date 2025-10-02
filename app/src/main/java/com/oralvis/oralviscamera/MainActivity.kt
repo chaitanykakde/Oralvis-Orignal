@@ -31,9 +31,13 @@ import java.util.*
 import java.io.File
 import android.content.Intent
 import android.widget.TextView
+import android.widget.Spinner
+import android.widget.ArrayAdapter
+import android.widget.AdapterView
 import com.oralvis.oralviscamera.databinding.ActivityMainBinding
 import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.database.MediaRecord
+import com.oralvis.oralviscamera.database.Session
 import com.oralvis.oralviscamera.session.SessionManager
 import com.oralvis.oralviscamera.camera.CameraModePresets
 import com.oralvis.oralviscamera.camera.CameraModePreset
@@ -41,6 +45,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.jiangdg.ausbc.camera.bean.PreviewSize
 
 class MainActivity : AppCompatActivity() {
     
@@ -55,6 +60,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mediaDatabase: MediaDatabase
     private var currentMode = "Normal"
     private var settingsBottomSheet: BottomSheetDialog? = null
+    
+    // Resolution management
+    private var availableResolutions = mutableListOf<PreviewSize>()
+    private var currentResolution: PreviewSize? = null
+    private var resolutionAdapter: ArrayAdapter<String>? = null
     
     // Exposure update throttling
     private var lastExposureUpdate = 0L
@@ -112,11 +122,11 @@ class MainActivity : AppCompatActivity() {
     private fun setupUI() {
         // Camera action buttons
         binding.btnCapture.setOnClickListener {
-            capturePhoto()
+            capturePhotoWithRetry()
         }
         
         binding.btnRecord.setOnClickListener {
-            toggleRecording()
+            toggleRecordingWithRetry()
         }
         
         // Toggle camera controls
@@ -393,6 +403,9 @@ class MainActivity : AppCompatActivity() {
         // Setup settings controls
         setupSettingsControls(bottomSheetView)
         
+        // Setup resolution spinner with retry logic to ensure camera is ready
+        setupResolutionSpinnerWithRetry(bottomSheetView, 0)
+        
         settingsBottomSheet?.show()
     }
     
@@ -413,88 +426,370 @@ class MainActivity : AppCompatActivity() {
             settingsBottomSheet?.dismiss()
         }
         
-        // Setup all the seekbars in settings (similar to main controls)
-        setupSettingsSeekBars(view)
-    }
-    
-    private fun setupSettingsSeekBars(view: View) {
-        // Brightness
-        val seekBrightness = view.findViewById<SeekBar>(R.id.seekBrightnessSettings)
-        val txtBrightness = view.findViewById<TextView>(R.id.txtBrightnessSettings)
-        seekBrightness.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    txtBrightness.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
-                        if (camera is CameraUVC) {
-                            camera.setBrightness(progress)
-                        }
-                    }
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        
-        // Contrast
-        val seekContrast = view.findViewById<SeekBar>(R.id.seekContrastSettings)
-        val txtContrast = view.findViewById<TextView>(R.id.txtContrastSettings)
-        seekContrast.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    txtContrast.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
-                        if (camera is CameraUVC) {
-                            camera.setContrast(progress)
-                        }
-                    }
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        
-        // Saturation
-        val seekSaturation = view.findViewById<SeekBar>(R.id.seekSaturationSettings)
-        val txtSaturation = view.findViewById<TextView>(R.id.txtSaturationSettings)
-        seekSaturation.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    txtSaturation.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
-                        if (camera is CameraUVC) {
-                            camera.setSaturation(progress)
-                        }
-                    }
-                }
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-        
-        // Auto controls
-        view.findViewById<View>(R.id.btnAutoFocusSettings).setOnClickListener {
-            toggleAutoFocus()
-        }
-        
-        view.findViewById<View>(R.id.btnAutoExposureSettings).setOnClickListener {
-            toggleAutoExposure()
-        }
-        
-        view.findViewById<View>(R.id.btnAutoWhiteBalanceSettings).setOnClickListener {
-            toggleAutoWhiteBalance()
-        }
-        
-        // Reset button
+        // Setup reset button
         view.findViewById<View>(R.id.btnResetSettings).setOnClickListener {
             resetCameraControls()
             settingsBottomSheet?.dismiss()
         }
     }
     
+    
     private fun openGallery() {
         val intent = Intent(this, com.oralvis.oralviscamera.gallery.GalleryActivity::class.java)
         startActivity(intent)
+    }
+    
+    private fun loadAvailableResolutions() {
+        // Try to get current camera, if not available, wait and retry
+        val camera = mCurrentCamera ?: run {
+            android.util.Log.w("ResolutionManager", "Camera not available, will retry when camera is ready")
+            return
+        }
+        
+        try {
+            val resolutions = camera.getAllPreviewSizes()
+            if (resolutions?.isNotEmpty() == true) {
+                availableResolutions.clear()
+                availableResolutions.addAll(resolutions)
+                
+                // Sort resolutions by total pixels (descending)
+                availableResolutions.sortByDescending { it.width * it.height }
+                
+                // Always update current resolution from camera request to ensure accuracy
+                val cameraRequest = (camera as? CameraUVC)?.getCameraRequest()
+                if (cameraRequest != null) {
+                    val actualResolution = PreviewSize(cameraRequest.previewWidth, cameraRequest.previewHeight)
+                    android.util.Log.d("ResolutionManager", "Camera actual resolution: ${actualResolution.width}x${actualResolution.height}")
+                    android.util.Log.d("ResolutionManager", "App stored resolution: ${currentResolution?.width}x${currentResolution?.height}")
+                    
+                    // Update current resolution to match camera's actual resolution
+                    currentResolution = actualResolution
+                    android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
+                } else {
+                    android.util.Log.w("ResolutionManager", "Could not get camera request to determine current resolution")
+                }
+                
+                android.util.Log.d("ResolutionManager", "Available resolutions: ${availableResolutions.size}")
+                availableResolutions.forEach { res ->
+                    android.util.Log.d("ResolutionManager", "Resolution: ${res.width}x${res.height}")
+                }
+            } else {
+                android.util.Log.w("ResolutionManager", "No resolutions available from camera")
+                // Set some common default resolutions if camera doesn't provide any
+                if (availableResolutions.isEmpty()) {
+                    availableResolutions.addAll(listOf(
+                        PreviewSize(1920, 1080),
+                        PreviewSize(1280, 720),
+                        PreviewSize(640, 480)
+                    ))
+                    currentResolution = PreviewSize(640, 480)
+                    android.util.Log.d("ResolutionManager", "Using default resolutions")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ResolutionManager", "Failed to load resolutions: ${e.message}")
+        }
+    }
+    
+    private fun setupResolutionSpinnerWithRetry(view: View, retryCount: Int) {
+        val maxRetries = 5
+        val retryDelay = 500L // 500ms between retries
+        
+        android.util.Log.d("ResolutionManager", "setupResolutionSpinnerWithRetry: attempt ${retryCount + 1}/$maxRetries")
+        android.util.Log.d("ResolutionManager", "Current camera state: mCurrentCamera = ${mCurrentCamera != null}")
+        
+        // Try to refresh camera reference if it's null
+        if (mCurrentCamera == null) {
+            refreshCameraReference()
+        }
+        
+        if (!isCameraReadyForResolutionChange()) {
+            if (retryCount < maxRetries) {
+                android.util.Log.w("ResolutionManager", "Camera not ready, retrying in ${retryDelay}ms...")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    setupResolutionSpinnerWithRetry(view, retryCount + 1)
+                }, retryDelay)
+                return
+            } else {
+                android.util.Log.e("ResolutionManager", "Camera not ready after $maxRetries attempts")
+                val txtCurrentResolution = view.findViewById<TextView>(R.id.txtCurrentResolution)
+                txtCurrentResolution?.text = "Camera not ready - please try again"
+                return
+            }
+        }
+        
+        // Camera is ready, proceed with setup
+        setupResolutionSpinner(view)
+    }
+    
+    private fun refreshCameraReference() {
+        android.util.Log.d("ResolutionManager", "Attempting to refresh camera reference")
+        try {
+            // Try to find an active camera in the camera map
+            if (mCameraMap.isNotEmpty()) {
+                val activeCamera = mCameraMap.values.firstOrNull()
+                if (activeCamera != null) {
+                    mCurrentCamera = activeCamera
+                    android.util.Log.d("ResolutionManager", "Refreshed camera reference successfully")
+                } else {
+                    android.util.Log.w("ResolutionManager", "No active camera found in camera map")
+                }
+            } else {
+                android.util.Log.w("ResolutionManager", "Camera map is empty")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ResolutionManager", "Failed to refresh camera reference: ${e.message}")
+        }
+    }
+    
+    private fun isCameraReadyForRecording(): Boolean {
+        if (mCurrentCamera == null) {
+            android.util.Log.d("RecordingManager", "Camera readiness check: mCurrentCamera is null")
+            return false
+        }
+        
+        try {
+            // Check if camera can provide a camera request (basic functionality)
+            val cameraRequest = (mCurrentCamera as? CameraUVC)?.getCameraRequest()
+            if (cameraRequest == null) {
+                android.util.Log.d("RecordingManager", "Camera readiness check: camera request is null")
+                return false
+            }
+            
+            // Check if camera is in a valid state for recording
+            val currentWidth = cameraRequest.previewWidth
+            val currentHeight = cameraRequest.previewHeight
+            val isReady = currentWidth > 0 && currentHeight > 0
+            
+            android.util.Log.d("RecordingManager", "Camera readiness check: resolution = ${currentWidth}x${currentHeight}, ready = $isReady")
+            return isReady
+        } catch (e: Exception) {
+            android.util.Log.w("RecordingManager", "Camera readiness check failed: ${e.message}")
+            return false
+        }
+    }
+    
+    private fun isCameraReadyForResolutionChange(): Boolean {
+        if (mCurrentCamera == null) {
+            android.util.Log.d("ResolutionManager", "Camera readiness check: mCurrentCamera is null")
+            return false
+        }
+        
+        try {
+            // First check if camera can provide a camera request (basic functionality)
+            val cameraRequest = (mCurrentCamera as? CameraUVC)?.getCameraRequest()
+            if (cameraRequest == null) {
+                android.util.Log.d("ResolutionManager", "Camera readiness check: camera request is null")
+                return false
+            }
+            
+            // Then try to get resolutions to verify camera is fully functional
+            val resolutions = mCurrentCamera?.getAllPreviewSizes()
+            val isReady = resolutions != null && resolutions.isNotEmpty()
+            android.util.Log.d("ResolutionManager", "Camera readiness check: resolutions available = $isReady (count: ${resolutions?.size ?: 0})")
+            
+            // Additional check: verify the camera can provide current resolution info
+            if (isReady) {
+                val currentWidth = cameraRequest.previewWidth
+                val currentHeight = cameraRequest.previewHeight
+                android.util.Log.d("ResolutionManager", "Camera readiness check: current resolution = ${currentWidth}x${currentHeight}")
+                return currentWidth > 0 && currentHeight > 0
+            }
+            
+            return false
+        } catch (e: Exception) {
+            android.util.Log.w("ResolutionManager", "Camera readiness check failed: ${e.message}")
+            return false
+        }
+    }
+    
+    private fun setupResolutionSpinner(view: View) {
+        val spinner = view.findViewById<Spinner>(R.id.spinnerResolution)
+        val txtCurrentResolution = view.findViewById<TextView>(R.id.txtCurrentResolution)
+        
+        // Ensure we have current camera and resolutions loaded
+        if (!isCameraReadyForResolutionChange()) {
+            txtCurrentResolution.text = "Camera not ready"
+            android.util.Log.w("ResolutionManager", "Camera not ready for resolution setup")
+            return
+        }
+        
+        // Reload resolutions to ensure we have the latest data
+        loadAvailableResolutions()
+        
+        if (availableResolutions.isEmpty()) {
+            txtCurrentResolution.text = "No resolutions available"
+            android.util.Log.w("ResolutionManager", "No resolutions available")
+            return
+        }
+        
+        // Create resolution strings for spinner
+        val resolutionStrings = availableResolutions.map { resolution ->
+            "${resolution.width}x${resolution.height}"
+        }
+        
+        // Setup adapter
+        resolutionAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            resolutionStrings
+        ).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        
+        spinner.adapter = resolutionAdapter
+        
+        // Update current resolution display
+        updateCurrentResolutionDisplay(txtCurrentResolution)
+        
+        // Handle selection changes
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            private var isInitialSetup = true
+            
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                android.util.Log.d("ResolutionManager", "Spinner selection changed to position: $position, isInitialSetup: $isInitialSetup")
+                
+                if (position >= 0 && position < availableResolutions.size) {
+                    val selectedResolution = availableResolutions[position]
+                    android.util.Log.d("ResolutionManager", "Selected resolution: ${selectedResolution.width}x${selectedResolution.height}")
+                    
+                    // Always allow resolution changes, but log if it's initial setup
+                    if (isInitialSetup) {
+                        android.util.Log.d("ResolutionManager", "Initial setup - setting current resolution display")
+                        isInitialSetup = false
+                        // Update display but don't change resolution if it's already the current one
+                        if (currentResolution?.width == selectedResolution.width && 
+                            currentResolution?.height == selectedResolution.height) {
+                            android.util.Log.d("ResolutionManager", "Resolution already matches current, skipping change")
+                            return
+                        }
+                    }
+                    
+                    android.util.Log.d("ResolutionManager", "User selected resolution: ${selectedResolution.width}x${selectedResolution.height}")
+                    changeResolution(selectedResolution, txtCurrentResolution)
+                }
+            }
+            
+            override fun onNothingSelected(parent: AdapterView<*>?) {
+                // Do nothing
+            }
+        }
+        
+        // Set current selection after setting up the listener
+        currentResolution?.let { current ->
+            val currentIndex = availableResolutions.indexOfFirst { 
+                it.width == current.width && it.height == current.height 
+            }
+            if (currentIndex >= 0) {
+                android.util.Log.d("ResolutionManager", "Setting spinner to current resolution index: $currentIndex")
+                spinner.setSelection(currentIndex)
+            }
+        }
+        
+        android.util.Log.d("ResolutionManager", "Resolution spinner setup completed with ${availableResolutions.size} resolutions")
+    }
+    
+    private fun changeResolution(newResolution: PreviewSize, txtCurrentResolution: TextView) {
+        android.util.Log.d("ResolutionManager", "changeResolution called with: ${newResolution.width}x${newResolution.height}")
+        android.util.Log.d("ResolutionManager", "Current resolution: ${currentResolution?.width}x${currentResolution?.height}")
+        
+        if (isRecording) {
+            Toast.makeText(this, "Cannot change resolution while recording", Toast.LENGTH_SHORT).show()
+            android.util.Log.w("ResolutionManager", "Cannot change resolution while recording")
+            return
+        }
+        
+        if (currentResolution?.width == newResolution.width && currentResolution?.height == newResolution.height) {
+            android.util.Log.d("ResolutionManager", "Same resolution selected, no change needed")
+            Toast.makeText(this, "Resolution already set to ${newResolution.width}x${newResolution.height}", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        mCurrentCamera?.let { camera ->
+            try {
+                Toast.makeText(this, "Changing resolution to ${newResolution.width}x${newResolution.height}...", Toast.LENGTH_SHORT).show()
+                
+                android.util.Log.d("ResolutionManager", "Starting resolution change from ${currentResolution?.width}x${currentResolution?.height} to: ${newResolution.width}x${newResolution.height}")
+                
+                // Store the new resolution before camera restart
+                val previousResolution = currentResolution
+                currentResolution = newResolution
+                updateCurrentResolutionDisplay(txtCurrentResolution)
+                
+                // Don't close settings dialog immediately - let user see the change
+                
+                // Update resolution using the camera's updateResolution method
+                // This will close and reopen the camera automatically
+                camera.updateResolution(newResolution.width, newResolution.height)
+                
+                android.util.Log.d("ResolutionManager", "Resolution change initiated successfully")
+                
+                // Show success message after a delay to let the camera restart
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    runOnUiThread {
+                        Toast.makeText(this, "Resolution changed to ${newResolution.width}x${newResolution.height}", Toast.LENGTH_SHORT).show()
+                        // Don't close settings dialog automatically - let user close it manually
+                        // This allows them to make multiple resolution changes if needed
+                    }
+                }, 2000)
+                
+            } catch (e: Exception) {
+                Toast.makeText(this, "Failed to change resolution: ${e.message}", Toast.LENGTH_SHORT).show()
+                android.util.Log.e("ResolutionManager", "Failed to change resolution", e)
+                
+                // Reset to previous resolution on error
+                loadAvailableResolutions()
+                updateCurrentResolutionDisplay(txtCurrentResolution)
+            }
+        } ?: run {
+            Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show()
+            android.util.Log.w("ResolutionManager", "Camera not available for resolution change")
+        }
+    }
+    
+    private fun updateCurrentResolutionDisplay(txtCurrentResolution: TextView) {
+        currentResolution?.let { resolution ->
+            txtCurrentResolution.text = "Current: ${resolution.width}x${resolution.height}"
+        } ?: run {
+            txtCurrentResolution.text = "Current: Not set"
+        }
+    }
+    
+    private fun verifyCurrentResolution() {
+        mCurrentCamera?.let { camera ->
+            try {
+                val cameraRequest = (camera as? CameraUVC)?.getCameraRequest()
+                if (cameraRequest != null) {
+                    val actualResolution = PreviewSize(cameraRequest.previewWidth, cameraRequest.previewHeight)
+                    android.util.Log.d("ResolutionManager", "Camera actual resolution: ${actualResolution.width}x${actualResolution.height}")
+                    android.util.Log.d("ResolutionManager", "App current resolution: ${currentResolution?.width}x${currentResolution?.height}")
+                    
+                    // Update current resolution to match actual camera resolution
+                    currentResolution = actualResolution
+                } else {
+                    android.util.Log.w("ResolutionManager", "Could not get camera request to verify resolution")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ResolutionManager", "Failed to verify current resolution: ${e.message}")
+            }
+        }
+    }
+    
+    private fun refreshResolutionSpinnerIfOpen() {
+        // This method refreshes the resolution spinner if the settings dialog is currently open
+        settingsBottomSheet?.let { dialog ->
+            if (dialog.isShowing) {
+                try {
+                    val bottomSheetView = dialog.findViewById<View>(android.R.id.content)
+                    bottomSheetView?.let { view ->
+                        android.util.Log.d("ResolutionManager", "Refreshing resolution spinner after camera restart")
+                        setupResolutionSpinnerWithRetry(view, 0)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("ResolutionManager", "Failed to refresh resolution spinner: ${e.message}")
+                }
+            }
+        }
     }
     
     private fun checkPermissions() {
@@ -568,11 +863,31 @@ class MainActivity : AppCompatActivity() {
                                         val screenHeight = displayMetrics.heightPixels
                                         binding.cameraTextureView.setAspectRatio(screenWidth, screenHeight)
                                         
+                        // Load available resolutions and set current resolution
+                        loadAvailableResolutions()
                                         updateCameraControlValues()
+                        
+                        // Verify and log current resolution after camera restart
+                        verifyCurrentResolution()
+                        
+                        // Refresh resolution list if settings dialog is open
+                        refreshResolutionSpinnerIfOpen()
                                     }
                                     ICameraStateCallBack.State.CLOSED -> {
                                         binding.statusText.text = "Camera closed"
                                         binding.statusText.visibility = View.VISIBLE
+                                        // Clear resolution data when camera is closed
+                                        availableResolutions.clear()
+                                        android.util.Log.d("ResolutionManager", "Camera closed - cleared resolution data")
+                                        
+                                        // Reset recording state when camera is closed
+                                        if (isRecording) {
+                                            android.util.Log.d("RecordingManager", "Camera closed during recording - resetting recording state")
+                                            isRecording = false
+                                            binding.btnRecord.text = "Record"
+                                            binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
+                                            stopRecordingTimer()
+                                        }
                                     }
                                     ICameraStateCallBack.State.ERROR -> {
                                         binding.statusText.text = "Camera error: $msg"
@@ -765,20 +1080,98 @@ class MainActivity : AppCompatActivity() {
         binding.btnAutoWhiteBalance.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
     }
     
+    private fun capturePhotoWithRetry() {
+        capturePhotoWithRetry(0)
+    }
+    
+    private fun capturePhotoWithRetry(retryCount: Int) {
+        val maxRetries = 3
+        val retryDelay = 1000L // 1 second between retries
+        
+        android.util.Log.d("PhotoManager", "capturePhotoWithRetry: attempt ${retryCount + 1}/$maxRetries")
+        
+        // Try to refresh camera reference if it's null
+        if (mCurrentCamera == null) {
+            android.util.Log.d("PhotoManager", "Camera reference is null, attempting to refresh...")
+            refreshCameraReference()
+        }
+        
+        // Check if camera is ready for photo capture
+        if (!isCameraReadyForPhotoCapture()) {
+            if (retryCount < maxRetries) {
+                android.util.Log.w("PhotoManager", "Camera not ready, retrying in ${retryDelay}ms...")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    capturePhotoWithRetry(retryCount + 1)
+                }, retryDelay)
+                return
+            } else {
+                android.util.Log.e("PhotoManager", "Camera not ready after $maxRetries attempts")
+                Toast.makeText(this, "Camera not ready for photo capture - please try again", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+        
+        // Camera is ready, proceed with photo capture
+        capturePhoto()
+    }
+    
+    private fun isCameraReadyForPhotoCapture(): Boolean {
+        if (mCurrentCamera == null) {
+            android.util.Log.d("PhotoManager", "Camera readiness check: mCurrentCamera is null")
+            return false
+        }
+        
+        try {
+            // Check if camera can provide a camera request (basic functionality)
+            val cameraRequest = (mCurrentCamera as? CameraUVC)?.getCameraRequest()
+            if (cameraRequest == null) {
+                android.util.Log.d("PhotoManager", "Camera readiness check: camera request is null")
+                return false
+            }
+            
+            // Check if camera is in a valid state for photo capture
+            val currentWidth = cameraRequest.previewWidth
+            val currentHeight = cameraRequest.previewHeight
+            val isReady = currentWidth > 0 && currentHeight > 0
+            
+            android.util.Log.d("PhotoManager", "Camera readiness check: resolution = ${currentWidth}x${currentHeight}, ready = $isReady")
+            return isReady
+        } catch (e: Exception) {
+            android.util.Log.w("PhotoManager", "Camera readiness check failed: ${e.message}")
+            return false
+        }
+    }
+    
     private fun capturePhoto() {
+        // Try to refresh camera reference if it's null (same as recording management)
+        if (mCurrentCamera == null) {
+            android.util.Log.d("PhotoManager", "Camera reference is null, attempting to refresh...")
+            refreshCameraReference()
+        }
+        
+        // Check if camera is ready for photo capture
+        if (!isCameraReadyForPhotoCapture()) {
+            android.util.Log.w("PhotoManager", "Camera not ready for photo capture")
+            Toast.makeText(this, "Camera not ready for photo capture - please try again", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
         mCurrentCamera?.let { camera ->
             try {
+                android.util.Log.d("PhotoManager", "Starting photo capture...")
                 val imagePath = createImageFile()
                 camera.captureImage(object : ICaptureCallBack {
                     override fun onBegin() {
                         runOnUiThread {
                             Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
+                            android.util.Log.d("PhotoManager", "Photo capture started")
                         }
                     }
                     
                     override fun onError(error: String?) {
                         runOnUiThread {
                             Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
+                            android.util.Log.e("PhotoManager", "Photo capture failed: $error")
                         }
                     }
                     
@@ -788,13 +1181,16 @@ class MainActivity : AppCompatActivity() {
                             Toast.makeText(this@MainActivity, "Photo saved: $finalPath", Toast.LENGTH_SHORT).show()
                             // Log to database
                             logMediaToDatabase(finalPath, "Image")
+                            android.util.Log.d("PhotoManager", "Photo capture completed: $finalPath")
                         }
                     }
                 }, imagePath)
             } catch (e: Exception) {
+                android.util.Log.e("PhotoManager", "Photo capture failed with exception: ${e.message}")
                 Toast.makeText(this, "Capture failed: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         } ?: run {
+            android.util.Log.w("PhotoManager", "Camera not available for photo capture")
             Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
         }
     }
@@ -834,7 +1230,8 @@ class MainActivity : AppCompatActivity() {
     private fun logMediaToDatabase(filePath: String, mediaType: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val sessionId = sessionManager.getCurrentSessionId()
+                // Only create session when media is actually captured
+                val sessionId = sessionManager.createSessionIfNeeded()
                 val fileName = File(filePath).name
                 val mediaRecord = MediaRecord(
                     sessionId = sessionId,
@@ -845,6 +1242,11 @@ class MainActivity : AppCompatActivity() {
                     filePath = filePath
                 )
                 mediaDatabase.mediaDao().insertMedia(mediaRecord)
+                
+                // Create session in database if it doesn't exist
+                createSessionInDatabaseIfNeeded(sessionId)
+                
+                android.util.Log.d("SessionManager", "Media logged to session: $sessionId")
             } catch (e: Exception) {
                 runOnUiThread {
                     Toast.makeText(this@MainActivity, "Failed to log media: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -853,10 +1255,78 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    private fun createSessionInDatabaseIfNeeded(sessionId: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val existingSession = mediaDatabase.sessionDao().getBySessionId(sessionId)
+                if (existingSession == null) {
+                    val session = Session(
+                        sessionId = sessionId,
+                        createdAt = Date(),
+                        displayName = null
+                    )
+                    mediaDatabase.sessionDao().insert(session)
+                    android.util.Log.d("SessionManager", "Created new session in database: $sessionId")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SessionManager", "Failed to create session in database: ${e.message}")
+            }
+        }
+    }
+    
+    private fun toggleRecordingWithRetry() {
+        toggleRecordingWithRetry(0)
+    }
+    
+    private fun toggleRecordingWithRetry(retryCount: Int) {
+        val maxRetries = 3
+        val retryDelay = 1000L // 1 second between retries
+        
+        android.util.Log.d("RecordingManager", "toggleRecordingWithRetry: attempt ${retryCount + 1}/$maxRetries")
+        
+        // Try to refresh camera reference if it's null
+        if (mCurrentCamera == null) {
+            android.util.Log.d("RecordingManager", "Camera reference is null, attempting to refresh...")
+            refreshCameraReference()
+        }
+        
+        // Check if camera is ready for recording
+        if (!isCameraReadyForRecording()) {
+            if (retryCount < maxRetries) {
+                android.util.Log.w("RecordingManager", "Camera not ready, retrying in ${retryDelay}ms...")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    toggleRecordingWithRetry(retryCount + 1)
+                }, retryDelay)
+                return
+            } else {
+                android.util.Log.e("RecordingManager", "Camera not ready after $maxRetries attempts")
+                Toast.makeText(this, "Camera not ready for recording - please try again", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+        
+        // Camera is ready, proceed with recording
+        toggleRecording()
+    }
+    
     private fun toggleRecording() {
+        // Try to refresh camera reference if it's null (same as resolution management)
+        if (mCurrentCamera == null) {
+            android.util.Log.d("RecordingManager", "Camera reference is null, attempting to refresh...")
+            refreshCameraReference()
+        }
+        
+        // Check if camera is ready for recording
+        if (!isCameraReadyForRecording()) {
+            android.util.Log.w("RecordingManager", "Camera not ready for recording")
+            Toast.makeText(this, "Camera not ready for recording - please try again", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
         mCurrentCamera?.let { camera ->
             if (!isRecording) {
                 try {
+                    android.util.Log.d("RecordingManager", "Starting video recording...")
                     // Create video file in app-specific directory
                     val videoFile = createVideoFile()
                     camera.captureVideoStart(object : ICaptureCallBack {
@@ -867,6 +1337,7 @@ class MainActivity : AppCompatActivity() {
                                 binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark))
                                 startRecordingTimer()
                                 Toast.makeText(this@MainActivity, "Recording started", Toast.LENGTH_SHORT).show()
+                                android.util.Log.d("RecordingManager", "Recording started successfully")
                             }
                         }
                         
@@ -877,6 +1348,7 @@ class MainActivity : AppCompatActivity() {
                                 binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
                                 stopRecordingTimer()
                                 Toast.makeText(this@MainActivity, "Recording failed: $error", Toast.LENGTH_SHORT).show()
+                                android.util.Log.e("RecordingManager", "Recording failed: $error")
                             }
                         }
                         
@@ -890,26 +1362,32 @@ class MainActivity : AppCompatActivity() {
                                 Toast.makeText(this@MainActivity, "Video saved: $finalPath", Toast.LENGTH_SHORT).show()
                                 // Log to database
                                 logMediaToDatabase(finalPath, "Video")
+                                android.util.Log.d("RecordingManager", "Recording completed: $finalPath")
                             }
                         }
                     }, videoFile)
                 } catch (e: Exception) {
+                    android.util.Log.e("RecordingManager", "Recording failed with exception: ${e.message}")
                     Toast.makeText(this, "Recording failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             } else {
                 try {
+                    android.util.Log.d("RecordingManager", "Stopping video recording...")
                     camera.captureVideoStop()
                     isRecording = false
                     binding.btnRecord.text = "Record"
                     binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
                     stopRecordingTimer()
                     Toast.makeText(this, "Recording stopped", Toast.LENGTH_SHORT).show()
+                    android.util.Log.d("RecordingManager", "Recording stopped successfully")
                 } catch (e: Exception) {
+                    android.util.Log.e("RecordingManager", "Stop recording failed with exception: ${e.message}")
                     stopRecordingTimer()
                     Toast.makeText(this, "Stop recording failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         } ?: run {
+            android.util.Log.w("RecordingManager", "Camera not available for recording")
             Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1088,8 +1566,33 @@ class MainActivity : AppCompatActivity() {
         // Clean up exposure update handler
         exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
         
+        // Check if current session has any media, if not, clean it up
+        cleanupEmptySession()
+        
         mCameraClient?.unRegister()
         mCameraClient?.destroy()
         mCameraClient = null
+    }
+    
+    private fun cleanupEmptySession() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val currentSessionId = sessionManager.getCurrentSessionId()
+                if (currentSessionId != null) {
+                    // Check if session has any media
+                    val mediaCount = mediaDatabase.mediaDao().getMediaCountBySession(currentSessionId)
+                    if (mediaCount == 0) {
+                        // Session is empty, remove it from database
+                        val session = mediaDatabase.sessionDao().getBySessionId(currentSessionId)
+                        if (session != null) {
+                            mediaDatabase.sessionDao().delete(session)
+                            android.util.Log.d("SessionManager", "Cleaned up empty session: $currentSessionId")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SessionManager", "Failed to cleanup empty session: ${e.message}")
+            }
+        }
     }
 }
