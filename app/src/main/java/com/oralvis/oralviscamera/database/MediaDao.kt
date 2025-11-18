@@ -28,4 +28,7 @@ interface MediaDao {
 
     @Query("SELECT COUNT(*) FROM media WHERE sessionId = :sessionId")
     suspend fun getMediaCountBySession(sessionId: String): Int
+
+    @Query("SELECT * FROM media ORDER BY captureTime DESC")
+    fun getAllMedia(): Flow<List<MediaRecord>>
 }

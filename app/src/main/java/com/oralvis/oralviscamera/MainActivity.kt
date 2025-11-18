@@ -2,12 +2,20 @@ package com.oralvis.oralviscamera
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
 import android.hardware.usb.UsbDevice
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
+import java.io.FileOutputStream
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -115,24 +123,41 @@ class MainActivity : AppCompatActivity() {
         sessionManager = SessionManager(this)
         mediaDatabase = MediaDatabase.getDatabase(this)
         
+        // Start a new session when app opens
+        startNewSession()
+        
         setupUI()
         checkPermissions()
     }
     
+    private fun startNewSession() {
+        val newSessionId = sessionManager.startNewSession()
+        android.util.Log.d("SessionManager", "Started new session: $newSessionId")
+        Toast.makeText(this, "New session started", Toast.LENGTH_SHORT).show()
+    }
+    
     private fun setupUI() {
-        // Camera action buttons
+        // Camera action buttons - with separate blank capture logic
         binding.btnCapture.setOnClickListener {
-            capturePhotoWithRetry()
+            if (mCurrentCamera != null) {
+                capturePhotoWithRetry()
+            } else {
+                captureBlankImage()
+            }
         }
         
         binding.btnRecord.setOnClickListener {
-            toggleRecordingWithRetry()
+            if (mCurrentCamera != null) {
+                toggleRecordingWithRetry()
+            } else {
+                captureBlankVideo()
+            }
         }
         
-        // Toggle camera controls
-        binding.btnToggleControls.setOnClickListener {
-            toggleCameraControls()
-        }
+        // Toggle camera controls - now handled by settings panel
+        // binding.btnToggleControls.setOnClickListener {
+        //     toggleCameraControls()
+        // }
         
         // Reset controls
         binding.btnResetControls.setOnClickListener {
@@ -349,9 +374,90 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupNewUI() {
-        // Settings button only
+        // Settings button - toggle side panel
         binding.btnSettings.setOnClickListener {
-            showSettingsBottomSheet()
+            toggleSettingsPanel()
+        }
+        
+        // Close settings panel
+        binding.btnCloseSettings.setOnClickListener {
+            hideSettingsPanel()
+        }
+        
+        // Resolution selector
+        binding.resolutionSelector.setOnClickListener {
+            showResolutionDropdown()
+        }
+        
+        // Gallery button - find by ID instead of getChildAt
+        binding.galleryButton.setOnClickListener {
+            openGallery()
+        }
+        
+        // Mode button - find by ID instead of getChildAt  
+        binding.modeButton.setOnClickListener {
+            showModeSelector()
+        }
+        
+        // Setup resolution and mode spinners
+        setupSpinners()
+    }
+    
+    private fun toggleSettingsPanel() {
+        if (binding.settingsPanel.visibility == View.VISIBLE) {
+            hideSettingsPanel()
+        } else {
+            showSettingsPanel()
+        }
+    }
+    
+    private fun showSettingsPanel() {
+        binding.settingsPanel.visibility = View.VISIBLE
+        binding.settingsPanel.alpha = 0f
+        binding.settingsPanel.animate()
+            .alpha(1f)
+            .setDuration(300)
+            .start()
+    }
+    
+    private fun hideSettingsPanel() {
+        binding.settingsPanel.animate()
+            .alpha(0f)
+            .setDuration(300)
+            .withEndAction {
+                binding.settingsPanel.visibility = View.GONE
+            }
+            .start()
+    }
+    
+    private fun showResolutionDropdown() {
+        // This will be handled by the spinner in the settings panel
+        showSettingsPanel()
+    }
+    
+    private fun showModeSelector() {
+        // This will be handled by the mode spinner in the settings panel
+        showSettingsPanel()
+    }
+    
+    private fun setupSpinners() {
+        // Setup resolution spinner
+        val resolutionAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, mutableListOf<String>())
+        resolutionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.resolutionSpinner.adapter = resolutionAdapter
+        
+        // Setup mode spinner
+        val modeAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, listOf("Normal", "Fluorescence"))
+        modeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.modeSpinner.adapter = modeAdapter
+        
+        // Mode selection listener
+        binding.modeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val mode = parent?.getItemAtPosition(position).toString() ?: "Normal"
+                switchToMode(mode)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
     
@@ -435,8 +541,67 @@ class MainActivity : AppCompatActivity() {
     
     
     private fun openGallery() {
-        val intent = Intent(this, com.oralvis.oralviscamera.gallery.GalleryActivity::class.java)
-        startActivity(intent)
+        // Use the same session manager instance to ensure consistency
+        val currentSessionId = sessionManager.getCurrentSessionIdOrCreate()
+        
+        android.util.Log.d("GalleryDebug", "Opening gallery with session ID: $currentSessionId")
+        
+        // Test database before opening gallery
+        testDatabaseBeforeGallery(currentSessionId)
+        
+        // Show gallery fragment instead of starting new activity
+        showGalleryFragment()
+    }
+    
+    private fun showGalleryFragment() {
+        android.util.Log.d("GalleryDebug", "Showing gallery fragment")
+        
+        // Create and show the gallery fragment
+        val galleryFragment = com.oralvis.oralviscamera.gallery.GalleryFragment()
+        
+        supportFragmentManager.beginTransaction()
+            .add(R.id.main, galleryFragment, "GalleryFragment")
+            .commit()
+        
+        // Hide camera controls when gallery is shown
+        binding.settingsPanel.visibility = View.GONE
+    }
+    
+    private fun hideGalleryFragment() {
+        android.util.Log.d("GalleryDebug", "Hiding gallery fragment")
+        
+        val galleryFragment = supportFragmentManager.findFragmentByTag("GalleryFragment")
+        if (galleryFragment != null) {
+            supportFragmentManager.beginTransaction()
+                .remove(galleryFragment)
+                .commit()
+        }
+        
+        // Show camera controls when gallery is hidden
+        // Camera controls are always visible in the main layout
+    }
+    
+    private fun testDatabaseBeforeGallery(sessionId: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val allMedia = mediaDatabase.mediaDao().getAllMedia()
+                allMedia.collect { mediaList ->
+                    android.util.Log.d("GalleryDebug", "MainActivity - Total media in DB: ${mediaList.size}")
+                    mediaList.forEach { media ->
+                        android.util.Log.d("GalleryDebug", "MainActivity - Media: ${media.fileName} - Session: ${media.sessionId}")
+                    }
+                    
+                    val sessionMedia = mediaList.filter { it.sessionId == sessionId }
+                    android.util.Log.d("GalleryDebug", "MainActivity - Media for session $sessionId: ${sessionMedia.size}")
+                    
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "DB has ${mediaList.size} total, ${sessionMedia.size} for current session", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("GalleryDebug", "MainActivity - Database test failed: ${e.message}")
+            }
+        }
     }
     
     private fun loadAvailableResolutions() {
@@ -473,6 +638,15 @@ class MainActivity : AppCompatActivity() {
                 availableResolutions.forEach { res ->
                     android.util.Log.d("ResolutionManager", "Resolution: ${res.width}x${res.height}")
                 }
+                
+                // Update resolution spinner
+                val resolutionAdapter = binding.resolutionSpinner.adapter as? ArrayAdapter<String>
+                resolutionAdapter?.clear()
+                resolutionAdapter?.addAll(availableResolutions.map { "${it.width}x${it.height}" })
+                resolutionAdapter?.notifyDataSetChanged()
+                
+                // Update resolution text
+                updateResolutionUI()
             } else {
                 android.util.Log.w("ResolutionManager", "No resolutions available from camera")
                 // Set some common default resolutions if camera doesn't provide any
@@ -488,6 +662,12 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             android.util.Log.e("ResolutionManager", "Failed to load resolutions: ${e.message}")
+        }
+    }
+    
+    private fun updateResolutionUI() {
+        currentResolution?.let { resolution ->
+            binding.resolutionText.text = "${resolution.width}x${resolution.height}"
         }
     }
     
@@ -884,7 +1064,7 @@ class MainActivity : AppCompatActivity() {
                                         if (isRecording) {
                                             android.util.Log.d("RecordingManager", "Camera closed during recording - resetting recording state")
                                             isRecording = false
-                                            binding.btnRecord.text = "Record"
+                                            // binding.btnRecord.text = "Record" // Text not needed for icon button
                                             binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
                                             stopRecordingTimer()
                                         }
@@ -1000,7 +1180,7 @@ class MainActivity : AppCompatActivity() {
                     
                     // Update auto control button states
                     val autoFocus = camera.getAutoFocus() ?: false
-                    binding.btnAutoFocus.text = if (autoFocus) "Auto Focus ON" else "Auto Focus OFF"
+                    // binding.btnAutoFocus.text = if (autoFocus) "Auto Focus ON" else "Auto Focus OFF" // Text not needed for icon button
                     binding.btnAutoFocus.setBackgroundColor(
                         ContextCompat.getColor(this, if (autoFocus) android.R.color.holo_green_dark else android.R.color.darker_gray)
                     )
@@ -1008,19 +1188,19 @@ class MainActivity : AppCompatActivity() {
                     // Auto Exposure control (Now working with reflection!)
                     if (camera.isAutoExposureSupported()) {
                         val autoExposure = camera.getAutoExposure()
-                        binding.btnAutoExposure.text = if (autoExposure) "Auto Exposure ON" else "Auto Exposure OFF"
+                        // binding.btnAutoExposure.text = if (autoExposure) "Auto Exposure ON" else "Auto Exposure OFF" // Text not needed for icon button
                         binding.btnAutoExposure.setBackgroundColor(
                             ContextCompat.getColor(this, if (autoExposure) android.R.color.holo_green_dark else android.R.color.darker_gray)
                         )
                     } else {
-                        binding.btnAutoExposure.text = "Auto Exposure (N/A)"
+                        // binding.btnAutoExposure.text = "Auto Exposure (N/A)" // Text not needed for icon button
                         binding.btnAutoExposure.setBackgroundColor(
                             ContextCompat.getColor(this, android.R.color.darker_gray)
                         )
                     }
                     
                     val autoWB = camera.getAutoWhiteBalance() ?: false
-                    binding.btnAutoWhiteBalance.text = if (autoWB) "Auto WB ON" else "Auto WB OFF"
+                    // binding.btnAutoWhiteBalance.text = if (autoWB) "Auto WB ON" else "Auto WB OFF" // Text not needed for icon button
                     binding.btnAutoWhiteBalance.setBackgroundColor(
                         ContextCompat.getColor(this, if (autoWB) android.R.color.holo_green_dark else android.R.color.darker_gray)
                     )
@@ -1070,13 +1250,13 @@ class MainActivity : AppCompatActivity() {
         binding.txtWhiteBalance.text = "50"
         
         // Reset auto control buttons
-        binding.btnAutoFocus.text = "Auto Focus"
+        // binding.btnAutoFocus.text = "Auto Focus" // Text not needed for icon button
         binding.btnAutoFocus.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
         
-        binding.btnAutoExposure.text = "Auto Exposure"
+        // binding.btnAutoExposure.text = "Auto Exposure" // Text not needed for icon button
         binding.btnAutoExposure.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
         
-        binding.btnAutoWhiteBalance.text = "Auto WB"
+        // binding.btnAutoWhiteBalance.text = "Auto WB" // Text not needed for icon button
         binding.btnAutoWhiteBalance.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
     }
     
@@ -1230,9 +1410,17 @@ class MainActivity : AppCompatActivity() {
     private fun logMediaToDatabase(filePath: String, mediaType: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Only create session when media is actually captured
-                val sessionId = sessionManager.createSessionIfNeeded()
-                val fileName = File(filePath).name
+                android.util.Log.d("MediaDatabase", "Starting database logging for: $filePath")
+                
+                // Use the same session manager instance to ensure consistency
+                val sessionId = sessionManager.getCurrentSessionIdOrCreate()
+                android.util.Log.d("MediaDatabase", "Session ID: $sessionId")
+                
+                val fileName = java.io.File(filePath).name
+                android.util.Log.d("MediaDatabase", "File name: $fileName")
+                android.util.Log.d("MediaDatabase", "Mode: $currentMode")
+                android.util.Log.d("MediaDatabase", "Media type: $mediaType")
+                
                 val mediaRecord = MediaRecord(
                     sessionId = sessionId,
                     fileName = fileName,
@@ -1241,13 +1429,21 @@ class MainActivity : AppCompatActivity() {
                     captureTime = Date(),
                     filePath = filePath
                 )
-                mediaDatabase.mediaDao().insertMedia(mediaRecord)
+                
+                android.util.Log.d("MediaDatabase", "Inserting media record: $mediaRecord")
+                val insertedId = mediaDatabase.mediaDao().insertMedia(mediaRecord)
+                android.util.Log.d("MediaDatabase", "Media inserted with ID: $insertedId")
                 
                 // Create session in database if it doesn't exist
                 createSessionInDatabaseIfNeeded(sessionId)
                 
-                android.util.Log.d("SessionManager", "Media logged to session: $sessionId")
+                android.util.Log.d("MediaDatabase", "Media logged to session: $sessionId")
+                
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Media logged to database successfully", Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {
+                android.util.Log.e("MediaDatabase", "Failed to log media to database: ${e.message}", e)
                 runOnUiThread {
                     Toast.makeText(this@MainActivity, "Failed to log media: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
@@ -1333,7 +1529,7 @@ class MainActivity : AppCompatActivity() {
                         override fun onBegin() {
                             runOnUiThread {
                                 isRecording = true
-                                binding.btnRecord.text = "Stop Recording"
+                                // binding.btnRecord.text = "Stop Recording" // Text not needed for icon button
                                 binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark))
                                 startRecordingTimer()
                                 Toast.makeText(this@MainActivity, "Recording started", Toast.LENGTH_SHORT).show()
@@ -1344,7 +1540,7 @@ class MainActivity : AppCompatActivity() {
                         override fun onError(error: String?) {
                             runOnUiThread {
                                 isRecording = false
-                                binding.btnRecord.text = "Record"
+                                // binding.btnRecord.text = "Record" // Text not needed for icon button
                                 binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
                                 stopRecordingTimer()
                                 Toast.makeText(this@MainActivity, "Recording failed: $error", Toast.LENGTH_SHORT).show()
@@ -1355,7 +1551,7 @@ class MainActivity : AppCompatActivity() {
                         override fun onComplete(path: String?) {
                             runOnUiThread {
                                 isRecording = false
-                                binding.btnRecord.text = "Record"
+                                // binding.btnRecord.text = "Record" // Text not needed for icon button
                                 binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
                                 stopRecordingTimer()
                                 val finalPath = path ?: videoFile
@@ -1375,7 +1571,7 @@ class MainActivity : AppCompatActivity() {
                     android.util.Log.d("RecordingManager", "Stopping video recording...")
                     camera.captureVideoStop()
                     isRecording = false
-                    binding.btnRecord.text = "Record"
+                    // binding.btnRecord.text = "Record" // Text not needed for icon button
                     binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
                     stopRecordingTimer()
                     Toast.makeText(this, "Recording stopped", Toast.LENGTH_SHORT).show()
@@ -1393,9 +1589,10 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun toggleCameraControls() {
-        controlsVisible = !controlsVisible
-        binding.cameraControlsPanel.visibility = if (controlsVisible) View.VISIBLE else View.GONE
-        binding.btnToggleControls.text = if (controlsVisible) "Hide Controls" else "Camera Controls"
+        // This method is now handled by the settings panel
+        // controlsVisible = !controlsVisible
+        // binding.cameraControlsPanel.visibility = if (controlsVisible) View.VISIBLE else View.GONE
+        // binding.btnToggleControls.text = if (controlsVisible) "Hide Controls" else "Camera Controls"
     }
     
     private fun resetCameraControls() {
@@ -1495,7 +1692,7 @@ class MainActivity : AppCompatActivity() {
                     camera.setAutoFocus(!currentAutoFocus)
                     
                     val newState = !currentAutoFocus
-                    binding.btnAutoFocus.text = if (newState) "Auto Focus ON" else "Auto Focus OFF"
+                    // binding.btnAutoFocus.text = if (newState) "Auto Focus ON" else "Auto Focus OFF" // Text not needed for icon button
                     binding.btnAutoFocus.setBackgroundColor(
                         ContextCompat.getColor(this, if (newState) android.R.color.holo_green_dark else android.R.color.darker_gray)
                     )
@@ -1519,7 +1716,7 @@ class MainActivity : AppCompatActivity() {
                         camera.setAutoExposure(!currentAutoExposure)
                         
                         val newState = !currentAutoExposure
-                        binding.btnAutoExposure.text = if (newState) "Auto Exposure ON" else "Auto Exposure OFF"
+                        // binding.btnAutoExposure.text = if (newState) "Auto Exposure ON" else "Auto Exposure OFF" // Text not needed for icon button
                         binding.btnAutoExposure.setBackgroundColor(
                             ContextCompat.getColor(this, if (newState) android.R.color.holo_green_dark else android.R.color.darker_gray)
                         )
@@ -1545,7 +1742,7 @@ class MainActivity : AppCompatActivity() {
                     camera.setAutoWhiteBalance(!currentAutoWB)
                     
                     val newState = !currentAutoWB
-                    binding.btnAutoWhiteBalance.text = if (newState) "Auto WB ON" else "Auto WB OFF"
+                    // binding.btnAutoWhiteBalance.text = if (newState) "Auto WB ON" else "Auto WB OFF" // Text not needed for icon button
                     binding.btnAutoWhiteBalance.setBackgroundColor(
                         ContextCompat.getColor(this, if (newState) android.R.color.holo_green_dark else android.R.color.darker_gray)
                     )
@@ -1557,6 +1754,151 @@ class MainActivity : AppCompatActivity() {
             }
         } ?: run {
             Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    // ========================================
+    // SEPARATE BLANK CAPTURE SYSTEM
+    // This code runs ONLY when camera is not connected
+    // ========================================
+    
+    private fun captureBlankImage() {
+        try {
+            android.util.Log.d("BlankCapture", "Capturing blank image (no camera connected)...")
+            
+            // Create image file path
+            val imagePath = createImageFile()
+            android.util.Log.d("BlankCapture", "Image path created: $imagePath")
+            
+            // Verify directory exists
+            val imageFile = java.io.File(imagePath)
+            val parentDir = imageFile.parentFile
+            android.util.Log.d("BlankCapture", "Parent directory exists: ${parentDir?.exists()}")
+            android.util.Log.d("BlankCapture", "Parent directory path: ${parentDir?.absolutePath}")
+            
+            // Create a blank bitmap
+            val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            
+            // Fill with black background
+            canvas.drawColor(Color.BLACK)
+            
+            // Add text overlay
+            val paint = Paint().apply {
+                color = Color.WHITE
+                textSize = 60f
+                isAntiAlias = true
+                textAlign = Paint.Align.CENTER
+            }
+            
+            val text = "Blank Image\n${currentMode} Mode\nNo Camera Connected"
+            val textBounds = Rect()
+            paint.getTextBounds(text, 0, text.length, textBounds)
+            
+            val x = bitmap.width / 2f
+            val y = bitmap.height / 2f + textBounds.height() / 2f
+            
+            canvas.drawText(text, x, y, paint)
+            
+            // Save the bitmap
+            android.util.Log.d("BlankCapture", "Saving bitmap to file: $imagePath")
+            val outputStream = FileOutputStream(imageFile)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+            outputStream.flush()
+            outputStream.close()
+            
+            // Verify file was created
+            val fileExists = imageFile.exists()
+            val fileSize = if (fileExists) imageFile.length() else 0
+            android.util.Log.d("BlankCapture", "File exists after save: $fileExists, size: $fileSize bytes")
+            
+            // Small delay to ensure file is fully written
+            Handler(Looper.getMainLooper()).postDelayed({
+                // Log to database
+                android.util.Log.d("BlankCapture", "Logging blank image to database: $imagePath")
+                logMediaToDatabase(imagePath, "Image")
+                
+                // Show success message
+                Toast.makeText(this, "Blank image captured: $imagePath", Toast.LENGTH_SHORT).show()
+                android.util.Log.d("BlankCapture", "Blank image captured successfully: $imagePath")
+            }, 100)
+            
+        } catch (e: Exception) {
+            android.util.Log.e("BlankCapture", "Failed to capture blank image: ${e.message}", e)
+            Toast.makeText(this, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun captureBlankVideo() {
+        try {
+            android.util.Log.d("BlankCapture", "Starting blank video recording (no camera connected)...")
+            
+            // Update UI to show recording state
+            isRecording = true
+            binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_dark))
+            startRecordingTimer()
+            Toast.makeText(this, "Recording started (blank video)", Toast.LENGTH_SHORT).show()
+            
+            // Simulate recording duration (3 seconds)
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    // Create video file path
+                    val videoPath = createVideoFile()
+                    android.util.Log.d("BlankCapture", "Video path created: $videoPath")
+                    
+                    // Verify directory exists
+                    val videoFile = java.io.File(videoPath)
+                    val parentDir = videoFile.parentFile
+                    android.util.Log.d("BlankCapture", "Video parent directory exists: ${parentDir?.exists()}")
+                    android.util.Log.d("BlankCapture", "Video parent directory path: ${parentDir?.absolutePath}")
+                    
+                    // Create a blank video file (text file for now)
+                    android.util.Log.d("BlankCapture", "Creating video file: $videoPath")
+                    val fileCreated = videoFile.createNewFile()
+                    android.util.Log.d("BlankCapture", "Video file created: $fileCreated")
+                    
+                    // Write video information
+                    val outputStream = FileOutputStream(videoFile)
+                    val content = "Blank Video - ${currentMode} Mode - No Camera Connected\nGenerated at: ${Date()}\nThis is a placeholder video file."
+                    outputStream.write(content.toByteArray())
+                    outputStream.flush()
+                    outputStream.close()
+                    
+                    // Verify file was created
+                    val fileExists = videoFile.exists()
+                    val fileSize = if (fileExists) videoFile.length() else 0
+                    android.util.Log.d("BlankCapture", "Video file exists after save: $fileExists, size: $fileSize bytes")
+                    
+                    // Small delay to ensure file is fully written
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        // Log to database
+                        android.util.Log.d("BlankCapture", "Logging blank video to database: $videoPath")
+                        logMediaToDatabase(videoPath, "Video")
+                        
+                        // Show success message
+                        Toast.makeText(this, "Blank video recorded: $videoPath", Toast.LENGTH_SHORT).show()
+                        android.util.Log.d("BlankCapture", "Blank video recorded successfully: $videoPath")
+                    }, 100)
+                    
+                    // Update UI to show recording stopped
+                    isRecording = false
+                    binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
+                    stopRecordingTimer()
+                    
+                } catch (e: Exception) {
+                    android.util.Log.e("BlankCapture", "Failed to create blank video file: ${e.message}")
+                    Toast.makeText(this, "Failed to create blank video: ${e.message}", Toast.LENGTH_SHORT).show()
+                    
+                    // Reset UI state
+                    isRecording = false
+                    binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
+                    stopRecordingTimer()
+                }
+            }, 3000) // 3 second recording
+            
+        } catch (e: Exception) {
+            android.util.Log.e("BlankCapture", "Failed to start blank video recording: ${e.message}")
+            Toast.makeText(this, "Failed to start blank video recording: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
     

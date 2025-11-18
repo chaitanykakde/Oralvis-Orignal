@@ -2,6 +2,9 @@ package com.oralvis.oralviscamera.gallery
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
+import android.media.ThumbnailUtils
+import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.oralvis.oralviscamera.R
 import com.oralvis.oralviscamera.database.MediaRecord
 import java.io.File
+import java.text.DecimalFormat
 
 class MediaAdapter(
     private val onItemClick: (MediaRecord) -> Unit,
@@ -20,13 +24,16 @@ class MediaAdapter(
 ) : ListAdapter<MediaRecord, MediaAdapter.MediaViewHolder>(MediaDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MediaViewHolder {
+        android.util.Log.d("MediaAdapter", "Creating ViewHolder for position: $viewType")
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_media, parent, false)
         return MediaViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: MediaViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        val item = getItem(position)
+        android.util.Log.d("MediaAdapter", "Binding ViewHolder at position: $position, item: ${item.fileName}")
+        holder.bind(item)
     }
 
     inner class MediaViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -39,6 +46,8 @@ class MediaAdapter(
         private val fileSizeText: TextView = itemView.findViewById(R.id.fileSizeText)
 
         fun bind(mediaRecord: MediaRecord) {
+            android.util.Log.d("MediaAdapter", "Binding media: ${mediaRecord.fileName}, path: ${mediaRecord.filePath}")
+            
             fileNameText.text = mediaRecord.fileName
             modeText.text = mediaRecord.mode
             timeText.text = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
@@ -52,36 +61,102 @@ class MediaAdapter(
                     android.R.drawable.ic_menu_camera
             )
             
-            // Set file size (placeholder for now)
-            fileSizeText.text = "2.4 MB"
+            // Set file size
+            fileSizeText.text = getFileSize(mediaRecord.filePath)
 
             // Load thumbnail
-            loadThumbnail(mediaRecord.filePath)
+            loadThumbnail(mediaRecord.filePath, mediaRecord.mediaType)
 
             itemView.setOnClickListener {
+                android.util.Log.d("MediaAdapter", "Item clicked: ${mediaRecord.fileName}")
                 onItemClick(mediaRecord)
             }
 
             deleteButton.setOnClickListener {
+                android.util.Log.d("MediaAdapter", "Delete clicked: ${mediaRecord.fileName}")
                 deleteMedia(mediaRecord)
             }
         }
 
-        private fun loadThumbnail(filePath: String) {
+        private fun loadThumbnail(filePath: String, mediaType: String) {
             try {
+                android.util.Log.d("MediaAdapter", "Loading thumbnail for: $filePath, type: $mediaType")
                 val file = File(filePath)
                 if (file.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(filePath)
+                    android.util.Log.d("MediaAdapter", "File exists, size: ${file.length()} bytes")
+                    
+                    val bitmap = when (mediaType) {
+                        "Image" -> loadImageThumbnail(filePath)
+                        "Video" -> loadVideoThumbnail(filePath)
+                        else -> null
+                    }
+                    
                     if (bitmap != null) {
+                        android.util.Log.d("MediaAdapter", "Thumbnail loaded successfully: ${bitmap.width}x${bitmap.height}")
                         imageView.setImageBitmap(bitmap)
                     } else {
-                        imageView.setImageResource(R.drawable.ic_media_placeholder)
+                        android.util.Log.w("MediaAdapter", "Failed to load thumbnail")
+                        imageView.setImageResource(
+                            if (mediaType == "Video") android.R.drawable.ic_media_play 
+                            else android.R.drawable.ic_menu_camera
+                        )
                     }
                 } else {
-                    imageView.setImageResource(R.drawable.ic_media_placeholder)
+                    android.util.Log.w("MediaAdapter", "File does not exist: $filePath")
+                    imageView.setImageResource(
+                        if (mediaType == "Video") android.R.drawable.ic_media_play 
+                        else android.R.drawable.ic_menu_camera
+                    )
                 }
             } catch (e: Exception) {
-                imageView.setImageResource(R.drawable.ic_media_placeholder)
+                android.util.Log.e("MediaAdapter", "Error loading thumbnail: ${e.message}")
+                imageView.setImageResource(
+                    if (mediaType == "Video") android.R.drawable.ic_media_play 
+                    else android.R.drawable.ic_menu_camera
+                )
+            }
+        }
+        
+        private fun loadImageThumbnail(filePath: String): Bitmap? {
+            return try {
+                // Load image with reduced size for better performance
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = 4 // Reduce size by 4x for thumbnails
+                }
+                BitmapFactory.decodeFile(filePath, options)
+            } catch (e: Exception) {
+                android.util.Log.e("MediaAdapter", "Error loading image thumbnail: ${e.message}")
+                null
+            }
+        }
+        
+        private fun loadVideoThumbnail(filePath: String): Bitmap? {
+            return try {
+                // Use ThumbnailUtils to create video thumbnail
+                ThumbnailUtils.createVideoThumbnail(filePath, MediaStore.Video.Thumbnails.MINI_KIND)
+            } catch (e: Exception) {
+                android.util.Log.e("MediaAdapter", "Error loading video thumbnail: ${e.message}")
+                null
+            }
+        }
+        
+        private fun getFileSize(filePath: String): String {
+            return try {
+                val file = File(filePath)
+                if (file.exists()) {
+                    val bytes = file.length()
+                    val df = DecimalFormat("#.##")
+                    when {
+                        bytes < 1024 -> "$bytes B"
+                        bytes < 1024 * 1024 -> "${df.format(bytes / 1024.0)} KB"
+                        else -> "${df.format(bytes / (1024.0 * 1024.0))} MB"
+                    }
+                } else {
+                    "0 B"
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MediaAdapter", "Error getting file size: ${e.message}")
+                "Unknown"
             }
         }
 

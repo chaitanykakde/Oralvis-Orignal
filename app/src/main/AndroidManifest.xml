@@ -56,11 +56,6 @@
                 android:resource="@xml/device_filter" />
         </activity>
         
-        <activity
-            android:name=".gallery.GalleryActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.OralVisCamera" />
 
         <activity
             android:name=".SessionDetailActivity"
