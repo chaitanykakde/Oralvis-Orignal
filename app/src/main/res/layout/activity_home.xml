@@ -121,17 +121,10 @@
                 android:textColor="#80FFFFFF"
                 android:textSize="12sp" />
 
-            <!-- Spacer to push theme to bottom -->
-            <View
-                android:layout_width="1dp"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
             <ImageView
                 android:id="@+id/navTheme"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
-                android:layout_marginBottom="12dp"
                 android:padding="12dp"
                 android:background="@drawable/nav_icon_background"
                 android:src="@drawable/ic_theme"
