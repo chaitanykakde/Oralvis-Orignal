@@ -48,6 +48,12 @@ class HomeActivity : AppCompatActivity() {
         observeSessions()
         applyTheme()
     }
+    
+    override fun onResume() {
+        super.onResume()
+        // Reapply theme when returning from other activities to sync theme changes
+        applyTheme()
+    }
 
     private fun setupRecycler() {
         adapter = PatientListAdapter { patient ->
@@ -121,57 +127,201 @@ class HomeActivity : AppCompatActivity() {
         val textSecondary = themeManager.getTextSecondaryColor(this)
         val borderColor = themeManager.getBorderColor(this)
         
-        // Apply to main background
+        // ============= MAIN BACKGROUND =============
         binding.main.setBackgroundColor(backgroundColor)
         
-        // Apply to navigation rail
+        // ============= NAVIGATION RAIL =============
         binding.navigationRailCard.setCardBackgroundColor(surfaceColor)
+        
+        // Update all nav icons and text
+        binding.navLogo.setColorFilter(textPrimary)
+        binding.navHome.setColorFilter(textPrimary) // Selected item
+        binding.navCamera.setColorFilter(textSecondary)
+        binding.navPatients.setColorFilter(textSecondary)
+        binding.navSettings.setColorFilter(textSecondary)
+        binding.navTheme.setColorFilter(textSecondary)
+        
+        // Nav text labels
         val navLayout = binding.navigationRailCard.getChildAt(0) as? ViewGroup
         navLayout?.let { layout ->
             for (i in 0 until layout.childCount) {
                 val child = layout.getChildAt(i)
-                if (child is TextView) {
+                if (child is TextView && child.id != View.NO_ID) {
                     child.setTextColor(textSecondary)
-                } else if (child is ImageView) {
+                }
+            }
+        }
+        binding.navThemeText?.setTextColor(textSecondary)
+        
+        // ============= HEADER CARD =============
+        binding.headerCard.setCardBackgroundColor(cardColor)
+        
+        // Get header layout
+        val headerLayout = binding.headerCard.getChildAt(0) as? ViewGroup
+        
+        // Search bar (first child in header layout)
+        val searchBarCard = headerLayout?.getChildAt(0) as? com.google.android.material.card.MaterialCardView
+        searchBarCard?.let { card ->
+            // Set search bar background
+            val searchBg = if (themeManager.isDarkTheme) {
+                Color.parseColor("#1E293B") // Darker background
+            } else {
+                Color.parseColor("#F4F7FB") // Light gray
+            }
+            card.setCardBackgroundColor(searchBg)
+            
+            // Update search icon and text
+            val searchLayout = card.getChildAt(0) as? ViewGroup
+            searchLayout?.let { layout ->
+                for (i in 0 until layout.childCount) {
+                    when (val child = layout.getChildAt(i)) {
+                        is ImageView -> child.setColorFilter(textSecondary)
+                        is TextView -> child.setTextColor(textSecondary)
+                    }
+                }
+            }
+        }
+        
+        // Notification bell (second child)
+        binding.notificationBell?.setColorFilter(textSecondary)
+        
+        // Profile section (third child - LinearLayout)
+        binding.profileName.setTextColor(textPrimary)
+        binding.profileTitle.setTextColor(textSecondary)
+        binding.profileImage?.setColorFilter(textSecondary)
+        
+        // Profile dropdown arrow
+        val profileLayout = headerLayout?.getChildAt(2) as? ViewGroup
+        profileLayout?.let { layout ->
+            for (i in 0 until layout.childCount) {
+                val child = layout.getChildAt(i)
+                if (child is ImageView && i == layout.childCount - 1) {
                     child.setColorFilter(textSecondary)
                 }
             }
         }
         
-        // Highlight selected nav item (Home)
-        binding.navHome.setColorFilter(textPrimary)
-        
-        // Apply to header card
-        binding.headerCard.setCardBackgroundColor(cardColor)
-        
-        // Apply to search bar
-        val searchCard = binding.headerCard.findViewById<View>(R.id.headerCard)?.let { header ->
-            (header as? ViewGroup)?.getChildAt(0) as? ViewGroup
-        }?.getChildAt(0) as? ViewGroup
-        
-        // Apply to profile section
-        binding.profileName.setTextColor(textPrimary)
-        binding.profileTitle.setTextColor(textSecondary)
-        
-        // Apply to patients card
+        // ============= PATIENTS CARD =============
         binding.patientsCard.setCardBackgroundColor(cardColor)
-        updateTextColorsInView(binding.patientsCard, textPrimary, textSecondary)
         
-        // Apply to widgets
-        val widgetsColumn = binding.widgetsColumn
-        for (i in 0 until widgetsColumn.childCount) {
-            val widget = widgetsColumn.getChildAt(i)
-            if (widget is com.google.android.material.card.MaterialCardView) {
-                widget.setCardBackgroundColor(cardColor)
-                updateTextColorsInView(widget, textPrimary, textSecondary)
+        // Patients header and "View All" button
+        val patientsLayout = binding.patientsCard.getChildAt(0) as? ViewGroup
+        patientsLayout?.let { layout ->
+            for (i in 0 until layout.childCount) {
+                val child = layout.getChildAt(i)
+                if (child is ViewGroup) {
+                    for (j in 0 until child.childCount) {
+                        when (val grandChild = child.getChildAt(j)) {
+                            is TextView -> {
+                                if (grandChild.id == binding.viewAllPatients?.id) {
+                                    grandChild.setTextColor(Color.parseColor("#10B981")) // Keep green
+                                } else if (grandChild.text.contains("Patients")) {
+                                    grandChild.setTextColor(textPrimary)
+                                } else {
+                                    grandChild.setTextColor(textSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         
-        // Update empty state
-        updateTextColorsInView(binding.emptyStateLayout, textPrimary, textSecondary)
+        // Empty state
+        val emptyIcon = binding.emptyStateLayout.getChildAt(0) as? ImageView
+        emptyIcon?.setColorFilter(textSecondary)
         
-        // Update add patient button colors (keep gradient but adjust if needed)
-        // Button already has gradient, so we keep it as is
+        for (i in 0 until binding.emptyStateLayout.childCount) {
+            val child = binding.emptyStateLayout.getChildAt(i)
+            if (child is TextView) {
+                if (i == 1) {
+                    child.setTextColor(textPrimary) // "No Patients Yet" title
+                } else {
+                    child.setTextColor(textSecondary) // Description
+                }
+            }
+        }
+        
+        // ============= CALENDAR WIDGET =============
+        val calendarWidget = binding.widgetsColumn.getChildAt(0) as? com.google.android.material.card.MaterialCardView
+        calendarWidget?.let { widget ->
+            widget.setCardBackgroundColor(cardColor)
+            
+            val calendarLayout = widget.getChildAt(0) as? ViewGroup
+            calendarLayout?.let { layout ->
+                // Update header
+                val calendarHeader = layout.getChildAt(0) as? ViewGroup
+                calendarHeader?.let { header ->
+                    for (i in 0 until header.childCount) {
+                        when (val child = header.getChildAt(i)) {
+                            is ImageView -> child.setColorFilter(textPrimary)
+                            is TextView -> {
+                                if (child.text.contains("Calendar")) {
+                                    child.setTextColor(textPrimary)
+                                } else {
+                                    child.setTextColor(Color.parseColor("#10B981")) // "Open →"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Update CalendarView
+                val calendarView = layout.getChildAt(1) as? android.widget.CalendarView
+                calendarView?.let { calendar ->
+                    if (themeManager.isDarkTheme) {
+                        calendar.setBackgroundColor(cardColor)
+                    } else {
+                        calendar.setBackgroundColor(Color.WHITE)
+                    }
+                }
+            }
+        }
+        
+        // ============= REPORTS WIDGET =============
+        val reportsWidget = binding.widgetsColumn.getChildAt(1) as? com.google.android.material.card.MaterialCardView
+        reportsWidget?.let { widget ->
+            widget.setCardBackgroundColor(cardColor)
+            
+            val reportsLayout = widget.getChildAt(0) as? ViewGroup
+            reportsLayout?.let { layout ->
+                // Update header
+                val reportsHeader = layout.getChildAt(0) as? ViewGroup
+                reportsHeader?.let { header ->
+                    for (i in 0 until header.childCount) {
+                        when (val child = header.getChildAt(i)) {
+                            is ImageView -> child.setColorFilter(textPrimary)
+                            is TextView -> {
+                                if (child.text.contains("Reports")) {
+                                    child.setTextColor(textPrimary)
+                                } else {
+                                    child.setTextColor(Color.parseColor("#10B981")) // "View All →"
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Update report rows
+                val reportsContent = layout.getChildAt(1) as? ViewGroup
+                reportsContent?.let { content ->
+                    for (i in 0 until content.childCount) {
+                        val reportRow = content.getChildAt(i) as? ViewGroup
+                        reportRow?.let { row ->
+                            for (j in 0 until row.childCount) {
+                                val child = row.getChildAt(j)
+                                if (child is TextView) {
+                                    child.setTextColor(textSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // RecyclerView background (for patient list items)
+        binding.recyclerViewPatients.setBackgroundColor(Color.TRANSPARENT)
     }
     
     private fun updateTextColorsInView(viewGroup: ViewGroup, primaryColor: Int, secondaryColor: Int) {

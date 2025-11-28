@@ -182,6 +182,12 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
     }
     
+    override fun onResume() {
+        super.onResume()
+        // Reapply theme when returning from other activities to sync theme changes
+        applyTheme()
+    }
+    
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         // Force landscape even if device rotates
