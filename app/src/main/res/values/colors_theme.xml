@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark Theme Colors (Default) -->
+    <color name="theme_background_dark">#000000</color>
+    <color name="theme_surface_dark">#121318</color>
+    <color name="theme_card_dark">#1A1B23</color>
+    <color name="theme_text_primary_dark">#FFFFFF</color>
+    <color name="theme_text_secondary_dark">#94A3B8</color>
+    <color name="theme_border_dark">#33FFFFFF</color>
+    
+    <!-- Light Theme Colors -->
+    <color name="theme_background_light">#F4F7FB</color>
+    <color name="theme_surface_light">#FFFFFF</color>
+    <color name="theme_card_light">#F0F4F8</color>
+    <color name="theme_text_primary_light">#1F2937</color>
+    <color name="theme_text_secondary_light">#6B7280</color>
+    <color name="theme_border_light">#E5E7EB</color>
+</resources>
+

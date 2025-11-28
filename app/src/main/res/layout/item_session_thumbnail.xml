@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="4dp">
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/thumbnailCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="4dp"
+        app:cardBackgroundColor="#2A2D3A">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <!-- Thumbnail Image (square aspect ratio) -->
+            <ImageView
+                android:id="@+id/thumbnailImage"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:scaleType="centerCrop"
+                android:contentDescription="Media thumbnail"
+                app:layout_constraintDimensionRatio="1:1"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent" />
+
+            <!-- Video indicator overlay -->
+            <ImageView
+                android:id="@+id/videoIndicator"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_play_arrow"
+                android:tint="@color/white"
+                android:background="@drawable/media_count_background"
+                android:padding="3dp"
+                android:visibility="gone"
+                android:contentDescription="Video"
+                app:layout_constraintBottom_toBottomOf="@id/thumbnailImage"
+                app:layout_constraintStart_toStartOf="parent"
+                android:layout_margin="6dp" />
+
+            <!-- Remove button -->
+            <ImageView
+                android:id="@+id/btnRemove"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_close"
+                android:tint="@color/white"
+                android:background="@drawable/remove_button_background"
+                android:padding="4dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Remove"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                android:layout_margin="4dp" />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
+    </com.google.android.material.card.MaterialCardView>
+
+</FrameLayout>

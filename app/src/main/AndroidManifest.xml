@@ -14,6 +14,14 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     
+    <!-- Bluetooth permissions for Android 12+ -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    
+    <!-- Notification permission for Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    
     <!-- USB Host feature -->
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -31,7 +39,7 @@
         <activity
             android:name=".SplashActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -41,12 +49,13 @@
         <activity
             android:name=".HomeActivity"
             android:exported="false"
-            android:screenOrientation="portrait" />
+            android:screenOrientation="landscape" />
 
         <activity
             android:name=".MainActivity"
             android:exported="false"
-            android:screenOrientation="portrait">
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             
             <!-- USB device attached intent -->
             <intent-filter>
@@ -60,13 +69,19 @@
         <activity
             android:name=".SessionDetailActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.OralVisCamera" />
 
         <activity
             android:name=".MediaViewerActivity"
             android:exported="false"
-            android:screenOrientation="portrait"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+
+        <activity
+            android:name=".AddPatientActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.OralVisCamera" />
     </application>
 

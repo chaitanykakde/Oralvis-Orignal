@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="12dp"
+    app:cardCornerRadius="28dp"
+    app:cardElevation="4dp"
+    app:cardBackgroundColor="@color/white">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="16dp">
+
+        <ImageView
+            android:id="@+id/avatarView"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/media_count_background"
+            android:src="@drawable/ic_person_placeholder"
+            android:scaleType="centerInside" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/patientName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Gagan Preetam"
+                android:textColor="#101828"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/patientSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Student · 22 years"
+                android:textColor="#667085"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginEnd="16dp">
+
+            <TextView
+                android:id="@+id/patientProblem"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Problem"
+                android:textColor="#475467"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/patientTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="10:00 AM"
+                android:textColor="#101828"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/patientStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="IN"
+            android:textColor="#2DD36F"
+            android:textStyle="bold"
+            android:layout_marginEnd="16dp" />
+
+        <ImageButton
+            android:id="@+id/btnDetails"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:backgroundTint="@android:color/transparent"
+            android:background="@drawable/preview_thumbnail_background"
+            android:src="@drawable/ic_arrow_forward"
+            android:contentDescription="@string/app_name" />
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
+

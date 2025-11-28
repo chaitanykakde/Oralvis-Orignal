@@ -166,27 +166,32 @@ public final class USBMonitor {
 	 * register BroadcastReceiver to monitor USB events
 	 * @throws IllegalStateException
 	 */
-	@SuppressLint({"UnspecifiedImmutableFlag", "WrongConstant"})
 	public synchronized void register() throws IllegalStateException {
 		if (destroyed) throw new IllegalStateException("already destroyed");
 		if (mPermissionIntent == null) {
 			if (DEBUG) XLogWrapper.i(TAG, "register:");
 			final Context context = mWeakContext.get();
 			if (context != null) {
-				if (Build.VERSION.SDK_INT >= 31) {
-					// avoid acquiring intent data failed in receiver on Android12
-					// when using PendingIntent.FLAG_IMMUTABLE
-					// because it means Intent can't be modified anywhere -- jiangdg/20220929
-					int PENDING_FLAG_IMMUTABLE = 1<<25;
-					mPermissionIntent = PendingIntent.getBroadcast(context, 0, new Intent(ACTION_USB_PERMISSION), PENDING_FLAG_IMMUTABLE);
-				} else {
-					mPermissionIntent = PendingIntent.getBroadcast(context, 0, new Intent(ACTION_USB_PERMISSION), 0);
-				}
+				final Intent intent = new Intent(ACTION_USB_PERMISSION)
+					.setPackage(context.getPackageName());
+				final int flags =
+					(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+						? PendingIntent.FLAG_IMMUTABLE : 0)
+						| PendingIntent.FLAG_CANCEL_CURRENT;
+				mPermissionIntent = PendingIntent.getBroadcast(
+					context, 0, intent, flags);
 				final IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
 				// ACTION_USB_DEVICE_ATTACHED never comes on some devices so it should not be added here
 				filter.addAction(ACTION_USB_DEVICE_ATTACHED);
 				filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-				context.registerReceiver(mUsbReceiver, filter);
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+					context.registerReceiver(
+						mUsbReceiver,
+						filter,
+						Context.RECEIVER_NOT_EXPORTED);
+				} else {
+					context.registerReceiver(mUsbReceiver, filter);
+				}
 			}
 			// start connection check
 			mDeviceCounts = 0;

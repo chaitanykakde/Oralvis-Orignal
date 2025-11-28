@@ -1,6 +1,7 @@
 package com.oralvis.oralviscamera
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -8,19 +9,26 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.hardware.usb.UsbDevice
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.View
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import java.io.FileOutputStream
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
@@ -38,17 +46,27 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.io.File
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.widget.TextView
 import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.AdapterView
+import android.widget.ImageView
+import android.view.ViewGroup
 import com.oralvis.oralviscamera.databinding.ActivityMainBinding
 import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.database.MediaRecord
 import com.oralvis.oralviscamera.database.Session
+import com.oralvis.oralviscamera.database.Patient
+import com.oralvis.oralviscamera.database.PatientDao
 import com.oralvis.oralviscamera.session.SessionManager
 import com.oralvis.oralviscamera.camera.CameraModePresets
 import com.oralvis.oralviscamera.camera.CameraModePreset
+import com.oralvis.oralviscamera.home.PatientPickerAdapter
+import com.oralvis.oralviscamera.AddPatientActivity
+import com.oralvis.oralviscamera.session.SessionMedia
+import com.oralvis.oralviscamera.session.SessionMediaAdapter
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +84,8 @@ class MainActivity : AppCompatActivity() {
     // New features
     private lateinit var sessionManager: SessionManager
     private lateinit var mediaDatabase: MediaDatabase
+    private lateinit var patientDao: PatientDao
+    private lateinit var themeManager: ThemeManager
     private var currentMode = "Normal"
     private var settingsBottomSheet: BottomSheetDialog? = null
     
@@ -90,24 +110,50 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private var controlsVisible = false
+    private var selectedPatient: Patient? = null
     
     // Recording timer
     private var recordingStartTime = 0L
     private var recordingHandler: android.os.Handler? = null
     private var recordingRunnable: Runnable? = null
     
+    // Session media tracking
+    private val sessionMediaList = mutableListOf<SessionMedia>()
+    private var sessionMediaAdapter: SessionMediaAdapter? = null
+    private var mediaIdCounter = 0L
+    
     companion object {
         private const val REQUEST_PERMISSION = 1001
-        private val REQUIRED_PERMISSIONS = arrayOf(
+
+        fun createIntent(context: Context) =
+            Intent(context, MainActivity::class.java)
+    }
+
+    private fun getRequiredPermissions(): Array<String> {
+        val permissions = mutableListOf(
             Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.READ_EXTERNAL_STORAGE
+            Manifest.permission.RECORD_AUDIO
         )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions += Manifest.permission.READ_MEDIA_IMAGES
+            permissions += Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            permissions += Manifest.permission.READ_EXTERNAL_STORAGE
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                permissions += Manifest.permission.WRITE_EXTERNAL_STORAGE
+            }
+        }
+
+        return permissions.toTypedArray()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Force landscape orientation - lock to horizontal
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        
         enableEdgeToEdge()
         
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -122,6 +168,11 @@ class MainActivity : AppCompatActivity() {
         // Initialize new features
         sessionManager = SessionManager(this)
         mediaDatabase = MediaDatabase.getDatabase(this)
+        patientDao = mediaDatabase.patientDao()
+        themeManager = ThemeManager(this)
+        
+        // Apply saved theme
+        applyTheme()
         
         // Start a new session when app opens
         startNewSession()
@@ -130,13 +181,44 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
     }
     
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Force landscape even if device rotates
+        if (newConfig.orientation != Configuration.ORIENTATION_LANDSCAPE) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+    }
+    
     private fun startNewSession() {
         val newSessionId = sessionManager.startNewSession()
         android.util.Log.d("SessionManager", "Started new session: $newSessionId")
+        
+        // Clear session media for new session
+        sessionMediaList.clear()
+        mediaIdCounter = 0L
+        updateSessionMediaUI()
+        
         Toast.makeText(this, "New session started", Toast.LENGTH_SHORT).show()
     }
     
     private fun setupUI() {
+        binding.navHome.setOnClickListener {
+            val intent = Intent(this, HomeActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
+        }
+
+        binding.navCamera.setOnClickListener {
+            // Already on camera screen; no action required
+        }
+        
+        binding.navTheme.setOnClickListener {
+            themeManager.toggleTheme()
+            applyTheme()
+            Toast.makeText(this, if (themeManager.isDarkTheme) "Dark Theme" else "Light Theme", Toast.LENGTH_SHORT).show()
+        }
+
         // Camera action buttons - with separate blank capture logic
         binding.btnCapture.setOnClickListener {
             if (mCurrentCamera != null) {
@@ -384,23 +466,118 @@ class MainActivity : AppCompatActivity() {
             hideSettingsPanel()
         }
         
+        // Click on scrim to close settings
+        binding.settingsScrim.setOnClickListener {
+            hideSettingsPanel()
+        }
+        
         // Resolution selector
         binding.resolutionSelector.setOnClickListener {
             showResolutionDropdown()
         }
-        
-        // Gallery button - find by ID instead of getChildAt
-        binding.galleryButton.setOnClickListener {
-            openGallery()
+
+        binding.btnStartSession.setOnClickListener {
+            showPatientPicker()
         }
         
-        // Mode button - find by ID instead of getChildAt  
-        binding.modeButton.setOnClickListener {
-            showModeSelector()
+        // Edit patient button in top info bar
+        binding.btnEditPatient.setOnClickListener {
+            showPatientPicker()
         }
+        
+        // Save button - save current session
+        binding.btnSaveSession.setOnClickListener {
+            saveCurrentSession()
+        }
+        
+        // Initially hide capture/record buttons until patient is selected
+        setSessionUIState(hasActiveSession = false)
         
         // Setup resolution and mode spinners
         setupSpinners()
+        
+        // Setup session media RecyclerView
+        setupSessionMediaRecycler()
+    }
+    
+    private fun setupSessionMediaRecycler() {
+        sessionMediaAdapter = SessionMediaAdapter(
+            onMediaClick = { media ->
+                // Preview the media
+                openMediaPreview(media.filePath, media.isVideo)
+            },
+            onRemoveClick = { media ->
+                // Remove from list and delete file
+                removeSessionMedia(media)
+            }
+        )
+        
+        binding.sessionMediaRecycler.apply {
+            // Use GridLayoutManager with 2 columns for vertical grid display
+            layoutManager = androidx.recyclerview.widget.GridLayoutManager(this@MainActivity, 2)
+            adapter = sessionMediaAdapter
+            setHasFixedSize(false)
+        }
+        
+        updateSessionMediaUI()
+    }
+    
+    private fun addSessionMedia(filePath: String, isVideo: Boolean) {
+        val media = SessionMedia(
+            id = ++mediaIdCounter,
+            filePath = filePath,
+            isVideo = isVideo
+        )
+        sessionMediaList.add(0, media) // Add to beginning
+        updateSessionMediaUI()
+        
+        // Scroll to show the new item
+        binding.sessionMediaRecycler.smoothScrollToPosition(0)
+    }
+    
+    private fun removeSessionMedia(media: SessionMedia) {
+        // Remove from list
+        sessionMediaList.remove(media)
+        updateSessionMediaUI()
+        
+        // Delete the file
+        try {
+            val file = java.io.File(media.filePath)
+            if (file.exists()) {
+                file.delete()
+                Toast.makeText(this, "Media removed", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SessionMedia", "Failed to delete file: ${e.message}")
+        }
+    }
+    
+    private fun updateSessionMediaUI() {
+        sessionMediaAdapter?.submitList(sessionMediaList.toList())
+        
+        // Update media count
+        binding.sessionMediaCount.text = sessionMediaList.size.toString()
+        
+        // Show/hide empty state
+        if (sessionMediaList.isEmpty()) {
+            binding.emptyMediaState.visibility = View.VISIBLE
+            binding.sessionMediaRecycler.visibility = View.GONE
+        } else {
+            binding.emptyMediaState.visibility = View.GONE
+            binding.sessionMediaRecycler.visibility = View.VISIBLE
+        }
+    }
+    
+    private fun openMediaPreview(filePath: String, isVideo: Boolean) {
+        try {
+            val intent = Intent(this, MediaViewerActivity::class.java).apply {
+                putExtra("media_path", filePath)
+                putExtra("is_video", isVideo)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Cannot open media preview", Toast.LENGTH_SHORT).show()
+        }
     }
     
     private fun toggleSettingsPanel() {
@@ -412,17 +589,39 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showSettingsPanel() {
+        // Show scrim (dim background)
+        binding.settingsScrim.visibility = View.VISIBLE
+        binding.settingsScrim.alpha = 0f
+        binding.settingsScrim.animate()
+            .alpha(1f)
+            .setDuration(300)
+            .start()
+        
+        // Show settings panel
         binding.settingsPanel.visibility = View.VISIBLE
         binding.settingsPanel.alpha = 0f
+        binding.settingsPanel.translationX = binding.settingsPanel.width.toFloat()
         binding.settingsPanel.animate()
             .alpha(1f)
+            .translationX(0f)
             .setDuration(300)
             .start()
     }
     
     private fun hideSettingsPanel() {
+        // Hide scrim
+        binding.settingsScrim.animate()
+            .alpha(0f)
+            .setDuration(300)
+            .withEndAction {
+                binding.settingsScrim.visibility = View.GONE
+            }
+            .start()
+        
+        // Hide settings panel
         binding.settingsPanel.animate()
             .alpha(0f)
+            .translationX(binding.settingsPanel.width.toFloat())
             .setDuration(300)
             .withEndAction {
                 binding.settingsPanel.visibility = View.GONE
@@ -446,19 +645,8 @@ class MainActivity : AppCompatActivity() {
         resolutionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.resolutionSpinner.adapter = resolutionAdapter
         
-        // Setup mode spinner
-        val modeAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, listOf("Normal", "Fluorescence"))
-        modeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.modeSpinner.adapter = modeAdapter
-        
-        // Mode selection listener
-        binding.modeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val mode = parent?.getItemAtPosition(position).toString() ?: "Normal"
-                switchToMode(mode)
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
+        // Setup mode spinner - moved to setupModeSpinner() for theme support
+        setupModeSpinner()
     }
     
     private fun switchToMode(mode: String) {
@@ -600,6 +788,348 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 android.util.Log.e("GalleryDebug", "MainActivity - Database test failed: ${e.message}")
+            }
+        }
+    }
+
+    private fun showPatientPicker() {
+        lifecycleScope.launch {
+            val patients = patientDao.getPatientsOnce()
+            val sheet = BottomSheetDialog(this@MainActivity)
+            val view = layoutInflater.inflate(R.layout.bottomsheet_patient_picker, null)
+            val recycler = view.findViewById<RecyclerView>(R.id.pickerRecycler)
+            val adapter = PatientPickerAdapter {
+                sheet.dismiss()
+                onPatientSelectedForSession(it)
+            }
+            recycler.layoutManager = LinearLayoutManager(this@MainActivity)
+            recycler.adapter = adapter
+            adapter.submitList(patients)
+            
+            // Use AddPatientBottomSheet instead of AddPatientActivity
+            view.findViewById<View>(R.id.btnAddPatient).setOnClickListener {
+                sheet.dismiss()
+                showAddPatientBottomSheet()
+            }
+            
+            sheet.setContentView(view)
+            sheet.show()
+        }
+    }
+    
+    private fun showAddPatientBottomSheet() {
+        val addPatientSheet = AddPatientBottomSheet()
+        addPatientSheet.show(supportFragmentManager, AddPatientBottomSheet.TAG)
+        
+        // Listen for when the bottom sheet is dismissed to refresh patient list
+        addPatientSheet.parentFragmentManager.setFragmentResultListener(
+            "patient_added",
+            this
+        ) { _, _ ->
+            // Refresh is handled automatically if we reopen the picker
+        }
+    }
+
+    private fun onPatientSelectedForSession(patient: Patient) {
+        selectedPatient = patient
+        val sessionId = sessionManager.startNewSession()
+        sessionManager.setCurrentPatientId(patient.id)
+        sessionManager.setCurrentSession(sessionId)
+        
+        // Update UI to show capture/record buttons and change patient option
+        setSessionUIState(hasActiveSession = true)
+        
+        // Update patient info display
+        updatePatientInfoDisplay()
+        
+        Toast.makeText(this, "Session started for ${patient.displayName}", Toast.LENGTH_SHORT).show()
+    }
+    
+    /**
+     * Controls visibility of UI elements based on session state
+     * @param hasActiveSession true if a patient is selected and session is active
+     */
+    private fun setSessionUIState(hasActiveSession: Boolean) {
+        if (hasActiveSession) {
+            // Hide Start Session button
+            binding.btnStartSession.visibility = View.GONE
+            
+            // Show patient info card in top bar and session buttons container at bottom
+            binding.patientInfoCard.visibility = View.VISIBLE
+            binding.sessionButtonsContainer.visibility = View.VISIBLE
+        } else {
+            // Show Start Session button
+            binding.btnStartSession.visibility = View.VISIBLE
+            
+            // Hide patient info card and session buttons container
+            binding.patientInfoCard.visibility = View.GONE
+            binding.sessionButtonsContainer.visibility = View.GONE
+        }
+    }
+    
+    /**
+     * Updates the patient info display with current patient details
+     */
+    private fun updatePatientInfoDisplay() {
+        selectedPatient?.let { patient ->
+            binding.txtPatientName.text = patient.displayName
+            binding.txtPatientDetails.text = "ID: ${patient.code} • Age: ${patient.age ?: "N/A"}"
+        }
+    }
+    
+    /**
+     * Applies the current theme to all UI elements
+     */
+    private fun applyTheme() {
+        // Get theme colors
+        val backgroundColor = themeManager.getBackgroundColor(this)
+        val surfaceColor = themeManager.getSurfaceColor(this)
+        val cardColor = themeManager.getCardColor(this)
+        val textPrimary = themeManager.getTextPrimaryColor(this)
+        val textSecondary = themeManager.getTextSecondaryColor(this)
+        val borderColor = themeManager.getBorderColor(this)
+        
+        // Apply background color
+        binding.main.setBackgroundColor(backgroundColor)
+        
+        // ============= NAVIGATION BAR =============
+        binding.navigationRailCard.setCardBackgroundColor(surfaceColor)
+        
+        // Find and update all navigation labels (TextViews)
+        val navLayout = binding.navigationRailCard.getChildAt(0) as? android.view.ViewGroup
+        navLayout?.let { layout ->
+            for (i in 0 until layout.childCount) {
+                val child = layout.getChildAt(i)
+                if (child is TextView) {
+                    // Update text color for navigation labels
+                    child.setTextColor(textSecondary)
+                } else if (child is ImageView) {
+                    // Update icon tint for navigation icons
+                    if (child.id != R.id.navCamera) { // Skip selected item
+                        child.setColorFilter(textSecondary)
+                    }
+                }
+            }
+        }
+        
+        // ============= TOP INFO BAR =============
+        binding.topInfoBar.setBackgroundColor(if (themeManager.isDarkTheme) android.graphics.Color.TRANSPARENT else surfaceColor)
+        
+        // Mode label and dropdown
+        binding.modeLabel.setTextColor(textPrimary)
+        
+        // Mode spinner background
+        val spinnerBg = if (themeManager.isDarkTheme) {
+            ContextCompat.getDrawable(this, R.drawable.spinner_background)
+        } else {
+            ContextCompat.getDrawable(this, R.drawable.spinner_background_light)
+        }
+        binding.modeSpinner.background = spinnerBg
+        
+        // Status text background
+        val statusBg = if (themeManager.isDarkTheme) {
+            ContextCompat.getDrawable(this, R.drawable.status_background)
+        } else {
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(cardColor)
+                cornerRadius = 20f
+                setStroke(2, borderColor)
+            }
+        }
+        binding.statusText.background = statusBg
+        binding.statusText.setTextColor(textPrimary)
+        
+        // Recording timer
+        binding.recordingTimer.setTextColor(textPrimary)
+        
+        // Resolution selector
+        val resolutionBg = if (themeManager.isDarkTheme) {
+            ContextCompat.getDrawable(this, R.drawable.status_background)
+        } else {
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(cardColor)
+                cornerRadius = 20f
+                setStroke(2, borderColor)
+            }
+        }
+        binding.resolutionSelector.background = resolutionBg
+        binding.resolutionText.setTextColor(textPrimary)
+        
+        // Settings button
+        binding.btnSettings.setColorFilter(textPrimary)
+        val settingsBg = if (themeManager.isDarkTheme) {
+            ContextCompat.getDrawable(this, R.drawable.nav_icon_background)
+        } else {
+            android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                setColor(cardColor)
+                cornerRadius = 20f
+            }
+        }
+        binding.btnSettings.background = settingsBg
+        
+        // ============= CAMERA PREVIEW =============
+        binding.cameraPreviewCard.setCardBackgroundColor(if (themeManager.isDarkTheme) Color.BLACK else Color.WHITE)
+        binding.cameraPreviewCard.strokeColor = borderColor
+        
+        // ============= SESSION MEDIA CARD =============
+        binding.sessionMediaCard.setCardBackgroundColor(cardColor)
+        // Update text colors in session media card
+        val sessionMediaLayout = binding.sessionMediaCard.getChildAt(0) as? android.view.ViewGroup
+        sessionMediaLayout?.let { updateTextColors(it, textPrimary, textSecondary) }
+        
+        // ============= PATIENT INFO CARD =============
+        binding.patientInfoCard.setCardBackgroundColor(cardColor)
+        binding.txtPatientName.setTextColor(textPrimary)
+        binding.txtPatientDetails.setTextColor(textSecondary)
+        
+        // ============= BOTTOM CONTROL PANEL =============
+        binding.bottomControlPanel.setBackgroundColor(if (themeManager.isDarkTheme) surfaceColor else cardColor)
+        
+        // ============= SETTINGS PANEL =============
+        binding.settingsPanel.setBackgroundColor(cardColor)
+        binding.settingsScrim.setBackgroundColor(if (themeManager.isDarkTheme) Color.parseColor("#80000000") else Color.parseColor("#80FFFFFF"))
+        
+        // Update settings header background
+        val settingsHeaderBg = if (themeManager.isDarkTheme) {
+            ContextCompat.getDrawable(this, R.drawable.settings_header_background)
+        } else {
+            android.graphics.drawable.GradientDrawable().apply {
+                setColor(surfaceColor)
+                cornerRadius = 0f
+            }
+        }
+        binding.settingsHeader.background = settingsHeaderBg
+        
+        // Update settings header title
+        val headerLayout = binding.settingsHeader
+        for (i in 0 until headerLayout.childCount) {
+            val child = headerLayout.getChildAt(i)
+            if (child is TextView) {
+                child.setTextColor(textPrimary)
+            }
+        }
+        
+        // Update close button in settings
+        binding.btnCloseSettings.setColorFilter(textPrimary)
+        
+        // Update all text in settings panel
+        val settingsScrollView = binding.settingsPanel.getChildAt(1) as? android.widget.ScrollView
+        settingsScrollView?.let { scrollView ->
+            val settingsContent = scrollView.getChildAt(0) as? ViewGroup
+            settingsContent?.let { content ->
+                updateTextColors(content, textPrimary, textSecondary)
+                updateSeekBarColors(content)
+            }
+        }
+        
+        // Update resolution spinner in settings
+        val resolutionSpinnerBg = if (themeManager.isDarkTheme) {
+            ContextCompat.getDrawable(this, R.drawable.spinner_background)
+        } else {
+            ContextCompat.getDrawable(this, R.drawable.spinner_background_light)
+        }
+        binding.resolutionSpinner.background = resolutionSpinnerBg
+        
+        // Recreate mode spinner adapter with proper theme colors
+        setupModeSpinner()
+    }
+    
+    /**
+     * Helper function to recursively update text colors in a ViewGroup
+     */
+    private fun updateTextColors(viewGroup: ViewGroup, primaryColor: Int, secondaryColor: Int) {
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            when (child) {
+                is TextView -> {
+                    child.setTextColor(primaryColor)
+                }
+                is ViewGroup -> {
+                    updateTextColors(child, primaryColor, secondaryColor)
+                }
+            }
+        }
+    }
+    
+    /**
+     * Helper function to recursively update SeekBar colors in a ViewGroup
+     */
+    private fun updateSeekBarColors(viewGroup: ViewGroup) {
+        val progressColor = if (themeManager.isDarkTheme) Color.WHITE else Color.parseColor("#1F2937")
+        val thumbColor = if (themeManager.isDarkTheme) Color.WHITE else Color.parseColor("#2563EB")
+        
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            when (child) {
+                is SeekBar -> {
+                    child.progressTintList = android.content.res.ColorStateList.valueOf(progressColor)
+                    child.thumbTintList = android.content.res.ColorStateList.valueOf(thumbColor)
+                }
+                is ViewGroup -> {
+                    updateSeekBarColors(child)
+                }
+            }
+        }
+    }
+    
+    /**
+     * Setup mode spinner with theme-appropriate colors
+     */
+    private fun setupModeSpinner() {
+        val modeAdapter = if (themeManager.isDarkTheme) {
+            ArrayAdapter(this, R.layout.spinner_item_white, listOf("Normal", "Fluorescence"))
+        } else {
+            ArrayAdapter(this, R.layout.spinner_item_black, listOf("Normal", "Fluorescence"))
+        }
+        
+        if (themeManager.isDarkTheme) {
+            modeAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item_white)
+        } else {
+            modeAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item_black)
+        }
+        
+        binding.modeSpinner.adapter = modeAdapter
+        
+        // Mode selection listener
+        binding.modeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val mode = parent?.getItemAtPosition(position).toString() ?: "Normal"
+                switchToMode(mode)
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+    
+    /**
+     * Saves the current session and captured media
+     */
+    private fun saveCurrentSession() {
+        if (sessionMediaList.isEmpty()) {
+            Toast.makeText(this, "No media to save. Capture some photos or videos first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        // Save session logic
+        lifecycleScope.launch {
+            try {
+                val sessionId = sessionManager.getCurrentSessionId()
+                if (sessionId != null) {
+                    // Session is already being tracked by SessionManager
+                    Toast.makeText(
+                        this@MainActivity, 
+                        "Session saved! ${sessionMediaList.size} items captured for ${selectedPatient?.displayName}", 
+                        Toast.LENGTH_LONG
+                    ).show()
+                    
+                    // Optionally end the session or keep it running
+                    // sessionManager.endCurrentSession()
+                    // setSessionUIState(false)
+                } else {
+                    Toast.makeText(this@MainActivity, "No active session found", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@MainActivity, "Error saving session: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -973,17 +1503,53 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun checkPermissions() {
-        val missingPermissions = REQUIRED_PERMISSIONS.filter {
+        val requiredPermissions = getRequiredPermissions()
+        val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
-        
-        if (missingPermissions.isNotEmpty()) {
-            Toast.makeText(this, "Requesting permissions: ${missingPermissions.joinToString(", ")}", Toast.LENGTH_SHORT).show()
-            ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSION)
-        } else {
-            Toast.makeText(this, "All permissions already granted!", Toast.LENGTH_SHORT).show()
+
+        if (missingPermissions.isEmpty()) {
             initializeCamera()
+            return
         }
+
+        val needsRationale = missingPermissions.any { ActivityCompat.shouldShowRequestPermissionRationale(this, it) }
+        if (needsRationale) {
+            showPermissionExplanationDialog(missingPermissions)
+        } else {
+            ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSION)
+        }
+    }
+    
+    private fun showPermissionExplanationDialog(missingPermissions: List<String>) {
+        val hasStoragePermission = missingPermissions.any { 
+            it == Manifest.permission.WRITE_EXTERNAL_STORAGE || 
+            it == Manifest.permission.READ_EXTERNAL_STORAGE ||
+            it == Manifest.permission.READ_MEDIA_IMAGES ||
+            it == Manifest.permission.READ_MEDIA_VIDEO
+        }
+        
+        val message = if (hasStoragePermission) {
+            "This app needs storage permission to save photos and videos. Please allow storage access in settings."
+        } else {
+            "This app needs camera and audio permissions to function properly. Please allow these permissions."
+        }
+        
+        AlertDialog.Builder(this)
+            .setTitle("Permission Required")
+            .setMessage(message)
+            .setPositiveButton("Allow") { _, _ ->
+                ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSION)
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                Toast.makeText(this, "Permissions are required for the app to work properly", Toast.LENGTH_LONG).show()
+                binding.statusText.text = "Permissions denied. Some features may not work."
+                binding.statusText.visibility = View.VISIBLE
+                // Still try to initialize camera - USB camera might work without all permissions
+                initializeCamera()
+            }
+            .setCancelable(false)
+            .show()
     }
     
     private fun initializeCamera() {
@@ -1064,8 +1630,8 @@ class MainActivity : AppCompatActivity() {
                                         if (isRecording) {
                                             android.util.Log.d("RecordingManager", "Camera closed during recording - resetting recording state")
                                             isRecording = false
-                                            // binding.btnRecord.text = "Record" // Text not needed for icon button
-                                            binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
+                                            // Restore gradient background
+                                            binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
                                             stopRecordingTimer()
                                         }
                                     }
@@ -1358,9 +1924,11 @@ class MainActivity : AppCompatActivity() {
                     override fun onComplete(path: String?) {
                         runOnUiThread {
                             val finalPath = path ?: imagePath
-                            Toast.makeText(this@MainActivity, "Photo saved: $finalPath", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
                             // Log to database
                             logMediaToDatabase(finalPath, "Image")
+                            // Add to session media list
+                            addSessionMedia(finalPath, isVideo = false)
                             android.util.Log.d("PhotoManager", "Photo capture completed: $finalPath")
                         }
                     }
@@ -1529,8 +2097,8 @@ class MainActivity : AppCompatActivity() {
                         override fun onBegin() {
                             runOnUiThread {
                                 isRecording = true
-                                // binding.btnRecord.text = "Stop Recording" // Text not needed for icon button
-                                binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_dark))
+                                // Keep gradient but can add a pulse animation or different state if needed
+                                // For now, keep the gradient
                                 startRecordingTimer()
                                 Toast.makeText(this@MainActivity, "Recording started", Toast.LENGTH_SHORT).show()
                                 android.util.Log.d("RecordingManager", "Recording started successfully")
@@ -1540,8 +2108,8 @@ class MainActivity : AppCompatActivity() {
                         override fun onError(error: String?) {
                             runOnUiThread {
                                 isRecording = false
-                                // binding.btnRecord.text = "Record" // Text not needed for icon button
-                                binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
+                                // Restore gradient background
+                                binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
                                 stopRecordingTimer()
                                 Toast.makeText(this@MainActivity, "Recording failed: $error", Toast.LENGTH_SHORT).show()
                                 android.util.Log.e("RecordingManager", "Recording failed: $error")
@@ -1551,13 +2119,15 @@ class MainActivity : AppCompatActivity() {
                         override fun onComplete(path: String?) {
                             runOnUiThread {
                                 isRecording = false
-                                // binding.btnRecord.text = "Record" // Text not needed for icon button
-                                binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
+                                // Restore gradient background
+                                binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
                                 stopRecordingTimer()
                                 val finalPath = path ?: videoFile
-                                Toast.makeText(this@MainActivity, "Video saved: $finalPath", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@MainActivity, "Video saved", Toast.LENGTH_SHORT).show()
                                 // Log to database
                                 logMediaToDatabase(finalPath, "Video")
+                                // Add to session media list
+                                addSessionMedia(finalPath, isVideo = true)
                                 android.util.Log.d("RecordingManager", "Recording completed: $finalPath")
                             }
                         }
@@ -1571,8 +2141,8 @@ class MainActivity : AppCompatActivity() {
                     android.util.Log.d("RecordingManager", "Stopping video recording...")
                     camera.captureVideoStop()
                     isRecording = false
-                    // binding.btnRecord.text = "Record" // Text not needed for icon button
-                    binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
+                    // Restore gradient background
+                    binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
                     stopRecordingTimer()
                     Toast.makeText(this, "Recording stopped", Toast.LENGTH_SHORT).show()
                     android.util.Log.d("RecordingManager", "Recording stopped successfully")
@@ -1631,9 +2201,15 @@ class MainActivity : AppCompatActivity() {
         
         if (requestCode == REQUEST_PERMISSION) {
             val deniedPermissions = mutableListOf<String>()
+            val permanentlyDeniedPermissions = mutableListOf<String>()
+            
             for (i in permissions.indices) {
                 if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
                     deniedPermissions.add(permissions[i])
+                    // Check if permission is permanently denied
+                    if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])) {
+                        permanentlyDeniedPermissions.add(permissions[i])
+                    }
                 }
             }
             
@@ -1641,10 +2217,38 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Permissions granted! Initializing camera...", Toast.LENGTH_SHORT).show()
                 initializeCamera()
             } else {
-                val message = "Denied permissions: ${deniedPermissions.joinToString(", ")}"
-                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                // Check if storage permission is permanently denied
+                val hasStoragePermissionDenied = permanentlyDeniedPermissions.any { 
+                    it == Manifest.permission.WRITE_EXTERNAL_STORAGE || 
+                    it == Manifest.permission.READ_EXTERNAL_STORAGE ||
+                    it == Manifest.permission.READ_MEDIA_IMAGES ||
+                    it == Manifest.permission.READ_MEDIA_VIDEO
+                }
                 
-                // Don't finish the app, just show a message and continue
+                if (hasStoragePermissionDenied) {
+                    // Show dialog to guide user to settings
+                    AlertDialog.Builder(this)
+                        .setTitle("Storage Permission Required")
+                        .setMessage("Storage permission is required to save photos and videos. Please enable it in app settings.")
+                        .setPositiveButton("Open Settings") { _, _ ->
+                            try {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                intent.data = Uri.parse("package:$packageName")
+                                startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(this, "Could not open settings", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .setNegativeButton("Cancel") { _, _ ->
+                            Toast.makeText(this, "Storage permission is required to save media files", Toast.LENGTH_LONG).show()
+                        }
+                        .setCancelable(false)
+                        .show()
+                } else {
+                    val message = "Some permissions were denied. App may have limited functionality."
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                }
+                
                 binding.statusText.text = "Some permissions denied. App may have limited functionality."
                 binding.statusText.visibility = View.VISIBLE
                 
@@ -1817,9 +2421,11 @@ class MainActivity : AppCompatActivity() {
                 // Log to database
                 android.util.Log.d("BlankCapture", "Logging blank image to database: $imagePath")
                 logMediaToDatabase(imagePath, "Image")
+                // Add to session media list
+                addSessionMedia(imagePath, isVideo = false)
                 
                 // Show success message
-                Toast.makeText(this, "Blank image captured: $imagePath", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Image captured", Toast.LENGTH_SHORT).show()
                 android.util.Log.d("BlankCapture", "Blank image captured successfully: $imagePath")
             }, 100)
             
@@ -1835,7 +2441,7 @@ class MainActivity : AppCompatActivity() {
             
             // Update UI to show recording state
             isRecording = true
-            binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_dark))
+            // Keep gradient background
             startRecordingTimer()
             Toast.makeText(this, "Recording started (blank video)", Toast.LENGTH_SHORT).show()
             
@@ -1874,15 +2480,18 @@ class MainActivity : AppCompatActivity() {
                         // Log to database
                         android.util.Log.d("BlankCapture", "Logging blank video to database: $videoPath")
                         logMediaToDatabase(videoPath, "Video")
+                        // Add to session media list
+                        addSessionMedia(videoPath, isVideo = true)
                         
                         // Show success message
-                        Toast.makeText(this, "Blank video recorded: $videoPath", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Video recorded", Toast.LENGTH_SHORT).show()
                         android.util.Log.d("BlankCapture", "Blank video recorded successfully: $videoPath")
                     }, 100)
                     
                     // Update UI to show recording stopped
                     isRecording = false
-                    binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
+                    // Restore gradient background
+                    binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
                     stopRecordingTimer()
                     
                 } catch (e: Exception) {
@@ -1891,7 +2500,8 @@ class MainActivity : AppCompatActivity() {
                     
                     // Reset UI state
                     isRecording = false
-                    binding.btnRecord.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_red_light))
+                    // Restore gradient background
+                    binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
                     stopRecordingTimer()
                 }
             }, 3000) // 3 second recording

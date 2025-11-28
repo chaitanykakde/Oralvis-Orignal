@@ -7,14 +7,15 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @Database(
-    entities = [MediaRecord::class, Session::class],
-    version = 2,
+    entities = [MediaRecord::class, Session::class, Patient::class],
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class MediaDatabase : RoomDatabase() {
     abstract fun mediaDao(): MediaDao
     abstract fun sessionDao(): SessionDao
+    abstract fun patientDao(): PatientDao
 
     companion object {
         @Volatile

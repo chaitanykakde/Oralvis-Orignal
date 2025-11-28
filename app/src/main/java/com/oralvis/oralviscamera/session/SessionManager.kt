@@ -7,6 +7,7 @@ import java.util.UUID
 class SessionManager(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("session_prefs", Context.MODE_PRIVATE)
     private val currentSessionKey = "current_session_id"
+    private val currentPatientKey = "current_patient_id"
     
     fun getCurrentSessionId(): String? {
         return prefs.getString(currentSessionKey, null)
@@ -41,6 +42,7 @@ class SessionManager(private val context: Context) {
     
     fun clearCurrentSession() {
         prefs.edit().remove(currentSessionKey).apply()
+        prefs.edit().remove(currentPatientKey).apply()
     }
     
     fun createSessionIfNeeded(): String {
@@ -52,5 +54,14 @@ class SessionManager(private val context: Context) {
             prefs.edit().putString(currentSessionKey, newSessionId).apply()
             newSessionId
         }
+    }
+
+    fun setCurrentPatientId(patientId: Long) {
+        prefs.edit().putLong(currentPatientKey, patientId).apply()
+    }
+
+    fun getCurrentPatientId(): Long? {
+        val stored = prefs.getLong(currentPatientKey, -1)
+        return if (stored == -1L) null else stored
     }
 }

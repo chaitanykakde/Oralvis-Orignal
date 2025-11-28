@@ -11,21 +11,16 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.oralvis.oralviscamera.database.MediaDatabase
-import com.oralvis.oralviscamera.database.Session
-import com.oralvis.oralviscamera.database.SessionDao
+import com.oralvis.oralviscamera.database.PatientDao
 import com.oralvis.oralviscamera.databinding.ActivityHomeBinding
-import com.oralvis.oralviscamera.session.SessionManager
-import kotlinx.coroutines.Dispatchers
+import com.oralvis.oralviscamera.home.PatientListAdapter
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.util.Date
-import java.util.UUID
 
 class HomeActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHomeBinding
-    private lateinit var sessionDao: SessionDao
-    private lateinit var sessionManager: SessionManager
-    private lateinit var adapter: SessionListAdapter
+    private lateinit var patientDao: PatientDao
+    private lateinit var adapter: PatientListAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,8 +34,7 @@ class HomeActivity : AppCompatActivity() {
             insets
         }
         
-        sessionManager = SessionManager(this)
-        sessionDao = MediaDatabase.getDatabase(this).sessionDao()
+        patientDao = MediaDatabase.getDatabase(this).patientDao()
         
         setupRecycler()
         setupActions()
@@ -48,53 +42,56 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun setupRecycler() {
-        adapter = SessionListAdapter { session ->
-            openSession(session.sessionId)
+        adapter = PatientListAdapter { patient ->
+            openPatient(patient.id)
         }
-        binding.recyclerViewSessions.layoutManager = LinearLayoutManager(this)
-        binding.recyclerViewSessions.adapter = adapter
+        binding.recyclerViewPatients.layoutManager = LinearLayoutManager(this)
+        binding.recyclerViewPatients.adapter = adapter
     }
 
     private fun setupActions() {
-        binding.btnNewSession.setOnClickListener {
-            startNewSession()
+        binding.btnAddPatient.setOnClickListener {
+            showAddPatientBottomSheet()
         }
-        
-        binding.fabNewSession.setOnClickListener {
-            startNewSession()
+
+        binding.navHome.setOnClickListener {
+            // Already on home; no action needed
         }
-        
-        binding.btnSettings.setOnClickListener {
+
+        binding.navCamera.setOnClickListener {
+            openCamera()
+            finish()
+        }
+
+        binding.navSettings.setOnClickListener {
             // TODO: Open settings
             Toast.makeText(this, "Settings coming soon", Toast.LENGTH_SHORT).show()
         }
     }
-    
-    private fun startNewSession() {
-        // Clear any existing session to start fresh
-        sessionManager.clearCurrentSession()
-        // Navigate directly to camera - session will be created when media is captured
-        openCamera()
+
+    private fun showAddPatientBottomSheet() {
+        val bottomSheet = AddPatientBottomSheet()
+        bottomSheet.show(supportFragmentManager, AddPatientBottomSheet.TAG)
     }
+    
 
     private fun observeSessions() {
         lifecycleScope.launch {
-            sessionDao.getAllSessions().collectLatest { list ->
+            patientDao.observePatients().collectLatest { list ->
                 adapter.submitList(list)
                 binding.emptyStateLayout.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
-                binding.sessionCount.text = "${list.size} sessions"
             }
         }
     }
 
-    private fun openSession(sessionId: String) {
-        val intent = Intent(this, SessionDetailActivity::class.java)
-        intent.putExtra("session_id", sessionId)
-        startActivity(intent)
+    private fun openPatient(patientId: Long) {
+        Toast.makeText(this, "Patient #$patientId", Toast.LENGTH_SHORT).show()
     }
 
     private fun openCamera() {
-        val intent = Intent(this, MainActivity::class.java)
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
         startActivity(intent)
     }
 }
