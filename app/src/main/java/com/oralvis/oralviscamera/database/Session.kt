@@ -9,6 +9,9 @@ data class Session(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val sessionId: String,
+    val patientId: Long,
     val createdAt: Date,
-    val displayName: String? = null
+    val completedAt: Date? = null,
+    val displayName: String? = null,
+    val mediaCount: Int = 0
 )

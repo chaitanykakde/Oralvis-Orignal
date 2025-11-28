@@ -13,6 +13,9 @@ interface PatientDao {
 
     @Query("SELECT * FROM patients ORDER BY createdAt DESC")
     suspend fun getPatientsOnce(): List<Patient>
+    
+    @Query("SELECT * FROM patients WHERE id = :patientId LIMIT 1")
+    suspend fun getPatientById(patientId: Long): Patient?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(patient: Patient)

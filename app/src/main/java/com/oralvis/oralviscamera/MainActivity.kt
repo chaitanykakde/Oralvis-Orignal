@@ -71,6 +71,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.jiangdg.ausbc.camera.bean.PreviewSize
 
 class MainActivity : AppCompatActivity() {
@@ -1110,26 +1111,54 @@ class MainActivity : AppCompatActivity() {
             return
         }
         
+        val patient = selectedPatient
+        if (patient == null) {
+            Toast.makeText(this, "No patient selected", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
         // Save session logic
         lifecycleScope.launch {
             try {
                 val sessionId = sessionManager.getCurrentSessionId()
                 if (sessionId != null) {
-                    // Session is already being tracked by SessionManager
-                    Toast.makeText(
-                        this@MainActivity, 
-                        "Session saved! ${sessionMediaList.size} items captured for ${selectedPatient?.displayName}", 
-                        Toast.LENGTH_LONG
-                    ).show()
+                    // Update session with completion info
+                    val session = mediaDatabase.sessionDao().getBySessionId(sessionId)
+                    if (session != null) {
+                        val updatedSession = session.copy(
+                            completedAt = Date(),
+                            mediaCount = sessionMediaList.size
+                        )
+                        mediaDatabase.sessionDao().update(updatedSession)
+                    }
                     
-                    // Optionally end the session or keep it running
-                    // sessionManager.endCurrentSession()
-                    // setSessionUIState(false)
+                    // Show success message
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Session saved! ${sessionMediaList.size} items captured for ${patient.displayName}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        
+                        // Clear session and reset UI to initial state
+                        sessionManager.clearCurrentSession()
+                        selectedPatient = null
+                        sessionMediaList.clear()
+                        sessionMediaAdapter?.notifyDataSetChanged()
+                        binding.emptyMediaState.visibility = View.VISIBLE
+                        
+                        // Reset UI to Start Session state
+                        setSessionUIState(hasActiveSession = false)
+                    }
                 } else {
-                    Toast.makeText(this@MainActivity, "No active session found", Toast.LENGTH_SHORT).show()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "No active session found", Toast.LENGTH_SHORT).show()
+                    }
                 }
             } catch (e: Exception) {
-                Toast.makeText(this@MainActivity, "Error saving session: ${e.message}", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, "Error saving session: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -2024,13 +2053,15 @@ class MainActivity : AppCompatActivity() {
             try {
                 val existingSession = mediaDatabase.sessionDao().getBySessionId(sessionId)
                 if (existingSession == null) {
+                    val patientId = selectedPatient?.id ?: return@launch
                     val session = Session(
                         sessionId = sessionId,
+                        patientId = patientId,
                         createdAt = Date(),
-                        displayName = null
+                        displayName = "Session ${SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date())}"
                     )
                     mediaDatabase.sessionDao().insert(session)
-                    android.util.Log.d("SessionManager", "Created new session in database: $sessionId")
+                    android.util.Log.d("SessionManager", "Created new session in database: $sessionId for patient: $patientId")
                 }
             } catch (e: Exception) {
                 android.util.Log.e("SessionManager", "Failed to create session in database: ${e.message}")

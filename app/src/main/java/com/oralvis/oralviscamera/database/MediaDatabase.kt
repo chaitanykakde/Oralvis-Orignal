@@ -8,7 +8,7 @@ import androidx.room.TypeConverters
 
 @Database(
     entities = [MediaRecord::class, Session::class, Patient::class],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -33,6 +33,10 @@ abstract class MediaDatabase : RoomDatabase() {
                 INSTANCE = instance
                 instance
             }
+        }
+        
+        fun getInstance(context: Context): MediaDatabase {
+            return getDatabase(context)
         }
     }
 }

@@ -67,6 +67,12 @@
         
 
         <activity
+            android:name=".PatientSessionsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+        
+        <activity
             android:name=".SessionDetailActivity"
             android:exported="false"
             android:screenOrientation="landscape"

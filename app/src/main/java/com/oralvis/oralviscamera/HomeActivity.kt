@@ -85,7 +85,9 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun openPatient(patientId: Long) {
-        Toast.makeText(this, "Patient #$patientId", Toast.LENGTH_SHORT).show()
+        val intent = Intent(this, PatientSessionsActivity::class.java)
+        intent.putExtra("PATIENT_ID", patientId)
+        startActivity(intent)
     }
 
     private fun openCamera() {
