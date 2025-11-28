@@ -1144,8 +1144,17 @@ class MainActivity : AppCompatActivity() {
                         sessionManager.clearCurrentSession()
                         selectedPatient = null
                         sessionMediaList.clear()
-                        sessionMediaAdapter?.notifyDataSetChanged()
+                        
+                        // Update RecyclerView with empty list
+                        sessionMediaAdapter?.submitList(emptyList())
+                        binding.sessionMediaCount.text = "0 items"
+                        
+                        // Show empty state, hide RecyclerView
                         binding.emptyMediaState.visibility = View.VISIBLE
+                        binding.sessionMediaRecycler.visibility = View.GONE
+                        
+                        // Hide patient info card
+                        binding.patientInfoCard.visibility = View.GONE
                         
                         // Reset UI to Start Session state
                         setSessionUIState(hasActiveSession = false)

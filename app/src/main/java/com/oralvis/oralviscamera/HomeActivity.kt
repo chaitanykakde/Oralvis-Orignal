@@ -1,11 +1,16 @@
 package com.oralvis.oralviscamera
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
@@ -21,6 +26,7 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var binding: ActivityHomeBinding
     private lateinit var patientDao: PatientDao
     private lateinit var adapter: PatientListAdapter
+    private lateinit var themeManager: ThemeManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,10 +41,12 @@ class HomeActivity : AppCompatActivity() {
         }
         
         patientDao = MediaDatabase.getDatabase(this).patientDao()
+        themeManager = ThemeManager(this)
         
         setupRecycler()
         setupActions()
         observeSessions()
+        applyTheme()
     }
 
     private fun setupRecycler() {
@@ -66,6 +74,14 @@ class HomeActivity : AppCompatActivity() {
         binding.navSettings.setOnClickListener {
             // TODO: Open settings
             Toast.makeText(this, "Settings coming soon", Toast.LENGTH_SHORT).show()
+        }
+        
+        binding.navTheme.setOnClickListener {
+            themeManager.toggleTheme()
+            applyTheme()
+            Toast.makeText(this, 
+                if (themeManager.isDarkTheme) "Dark theme enabled" else "Light theme enabled", 
+                Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -95,5 +111,88 @@ class HomeActivity : AppCompatActivity() {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)
+    }
+    
+    private fun applyTheme() {
+        val backgroundColor = themeManager.getBackgroundColor(this)
+        val surfaceColor = themeManager.getSurfaceColor(this)
+        val cardColor = themeManager.getCardColor(this)
+        val textPrimary = themeManager.getTextPrimaryColor(this)
+        val textSecondary = themeManager.getTextSecondaryColor(this)
+        val borderColor = themeManager.getBorderColor(this)
+        
+        // Apply to main background
+        binding.main.setBackgroundColor(backgroundColor)
+        
+        // Apply to navigation rail
+        binding.navigationRailCard.setCardBackgroundColor(surfaceColor)
+        val navLayout = binding.navigationRailCard.getChildAt(0) as? ViewGroup
+        navLayout?.let { layout ->
+            for (i in 0 until layout.childCount) {
+                val child = layout.getChildAt(i)
+                if (child is TextView) {
+                    child.setTextColor(textSecondary)
+                } else if (child is ImageView) {
+                    child.setColorFilter(textSecondary)
+                }
+            }
+        }
+        
+        // Highlight selected nav item (Home)
+        binding.navHome.setColorFilter(textPrimary)
+        
+        // Apply to header card
+        binding.headerCard.setCardBackgroundColor(cardColor)
+        
+        // Apply to search bar
+        val searchCard = binding.headerCard.findViewById<View>(R.id.headerCard)?.let { header ->
+            (header as? ViewGroup)?.getChildAt(0) as? ViewGroup
+        }?.getChildAt(0) as? ViewGroup
+        
+        // Apply to profile section
+        binding.profileName.setTextColor(textPrimary)
+        binding.profileTitle.setTextColor(textSecondary)
+        
+        // Apply to patients card
+        binding.patientsCard.setCardBackgroundColor(cardColor)
+        updateTextColorsInView(binding.patientsCard, textPrimary, textSecondary)
+        
+        // Apply to widgets
+        val widgetsColumn = binding.widgetsColumn
+        for (i in 0 until widgetsColumn.childCount) {
+            val widget = widgetsColumn.getChildAt(i)
+            if (widget is com.google.android.material.card.MaterialCardView) {
+                widget.setCardBackgroundColor(cardColor)
+                updateTextColorsInView(widget, textPrimary, textSecondary)
+            }
+        }
+        
+        // Update empty state
+        updateTextColorsInView(binding.emptyStateLayout, textPrimary, textSecondary)
+        
+        // Update add patient button colors (keep gradient but adjust if needed)
+        // Button already has gradient, so we keep it as is
+    }
+    
+    private fun updateTextColorsInView(viewGroup: ViewGroup, primaryColor: Int, secondaryColor: Int) {
+        for (i in 0 until viewGroup.childCount) {
+            val child = viewGroup.getChildAt(i)
+            when (child) {
+                is TextView -> {
+                    // Update text colors based on style
+                    if (child.textSize > 16f || child.typeface?.isBold == true) {
+                        child.setTextColor(primaryColor)
+                    } else {
+                        child.setTextColor(secondaryColor)
+                    }
+                }
+                is ImageView -> {
+                    // Skip images with specific drawables, only update tint
+                }
+                is ViewGroup -> {
+                    updateTextColorsInView(child, primaryColor, secondaryColor)
+                }
+            }
+        }
     }
 }

@@ -106,6 +106,7 @@
                 android:id="@+id/navSettings"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
+                android:layout_marginBottom="12dp"
                 android:padding="12dp"
                 android:background="@drawable/nav_icon_background"
                 android:src="@drawable/ic_settings"
@@ -115,7 +116,33 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
                 android:text="Settings"
+                android:textColor="#80FFFFFF"
+                android:textSize="12sp" />
+
+            <!-- Spacer to push theme to bottom -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <ImageView
+                android:id="@+id/navTheme"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginBottom="12dp"
+                android:padding="12dp"
+                android:background="@drawable/nav_icon_background"
+                android:src="@drawable/ic_theme"
+                android:tint="#66FFFFFF"
+                android:contentDescription="Toggle Theme" />
+
+            <TextView
+                android:id="@+id/navThemeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Theme"
                 android:textColor="#80FFFFFF"
                 android:textSize="12sp" />
 
