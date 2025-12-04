@@ -11,8 +11,19 @@ class SplashActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
         Handler(Looper.getMainLooper()).post {
-            startActivity(Intent(this, MainActivity::class.java))
+            val clinicManager = ClinicManager(this)
+
+            val intent = if (clinicManager.hasClinicId()) {
+                // Clinic is registered, go to Home screen
+                Intent(this, HomeActivity::class.java)
+            } else {
+                // First launch, go to Clinic Registration
+                Intent(this, ClinicRegistrationActivity::class.java)
+            }
+
+            startActivity(intent)
             finish()
         }
     }

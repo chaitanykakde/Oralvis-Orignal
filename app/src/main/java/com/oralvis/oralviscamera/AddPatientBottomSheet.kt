@@ -10,6 +10,8 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.database.Patient
 import com.oralvis.oralviscamera.databinding.BottomSheetAddPatientBinding
+import com.oralvis.oralviscamera.api.ApiClient
+import com.oralvis.oralviscamera.api.PatientDto
 import kotlinx.coroutines.launch
 
 class AddPatientBottomSheet : BottomSheetDialogFragment() {
@@ -29,24 +31,16 @@ class AddPatientBottomSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Generate and set auto-generated Patient ID
-        val patientId = generatePatientId()
-        binding.inputPatientId.setText(patientId)
+        // Patient ID will be generated based on name/age/phone using GlobalPatientId rules
         binding.inputPatientId.isEnabled = false
 
         // Save button click listener
         binding.btnSavePatient.setOnClickListener {
-            savePatient(patientId)
+            savePatient()
         }
     }
 
-    private fun generatePatientId(): String {
-        // Generate a unique ID like "PID-1024"
-        val randomNum = (1000..9999).random()
-        return "PID-$randomNum"
-    }
-
-    private fun savePatient(patientId: String) {
+    private fun savePatient() {
         val name = binding.inputName.text?.toString()?.trim() ?: ""
         val ageText = binding.inputAge.text?.toString()?.trim() ?: ""
         val mobile = binding.inputMobile.text?.toString()?.trim() ?: ""
@@ -73,10 +67,26 @@ class AddPatientBottomSheet : BottomSheetDialogFragment() {
         val firstName = nameParts[0]
         val lastName = if (nameParts.size > 1) nameParts[1] else ""
 
+        // For GlobalPatientId we need full name and non-null age/phone
+        val safeAge = age ?: 0
+        val phoneForId = if (mobile.isNotBlank()) mobile else "00000"
+        val fullNameForId = name
+
+        val globalPatientId = PatientIdGenerator.generateGlobalPatientId(
+            fullNameForId,
+            safeAge,
+            phoneForId
+        )
+
+        // Show generated ID in the read-only field
+        binding.inputPatientId.setText(globalPatientId)
+
         lifecycleScope.launch {
-            val dao = MediaDatabase.getDatabase(requireContext()).patientDao()
+            val context = requireContext()
+            val dao = MediaDatabase.getDatabase(context).patientDao()
+
             val patient = Patient(
-                code = patientId,
+                code = globalPatientId,
                 firstName = firstName,
                 lastName = lastName,
                 title = null,
@@ -97,12 +107,46 @@ class AddPatientBottomSheet : BottomSheetDialogFragment() {
                 city = null,
                 pincode = null
             )
+
+            // First save locally
             dao.insert(patient)
-            Toast.makeText(requireContext(), "Patient saved successfully", Toast.LENGTH_SHORT).show()
-            
+
+            // Then try to sync to cloud (non-blocking for local save)
+            try {
+                val clinicId = ClinicManager(context).getClinicId()
+                if (clinicId != null) {
+                    val dto = PatientDto(
+                        patientId = globalPatientId,
+                        name = fullNameForId,
+                        age = safeAge,
+                        phoneNumber = phoneForId
+                    )
+                    val response = ApiClient.apiService.upsertPatient(
+                        ApiClient.API_PATIENT_SYNC_ENDPOINT,
+                        clinicId,
+                        dto
+                    )
+                    if (!response.isSuccessful) {
+                        Toast.makeText(
+                            context,
+                            "Patient saved locally, but cloud sync failed",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "Patient saved locally, but cloud sync error: ${e.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+
+            Toast.makeText(context, "Patient saved successfully", Toast.LENGTH_SHORT).show()
+
             // Notify parent that a patient was added
             parentFragmentManager.setFragmentResult("patient_added", Bundle())
-            
+
             dismiss()
         }
     }

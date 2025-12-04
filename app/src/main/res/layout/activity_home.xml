@@ -184,29 +184,34 @@
                     app:cardElevation="2dp"
                     app:cardBackgroundColor="#F4F7FB">
 
-                        <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent"
-                            android:gravity="center_vertical"
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center_vertical"
                         android:paddingHorizontal="20dp">
 
-                            <ImageView
-                                android:layout_width="20dp"
-                                android:layout_height="20dp"
-                                android:layout_marginEnd="12dp"
-                                android:src="@android:drawable/ic_menu_search"
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginEnd="12dp"
+                            android:src="@android:drawable/ic_menu_search"
                             android:tint="#8390A6" />
 
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Search patients or reports"
-                            android:textColor="#94A2B8"
-                                android:textSize="16sp" />
+                        <EditText
+                            android:id="@+id/searchPatientsInput"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:background="@android:color/transparent"
+                            android:hint="Search patients"
+                            android:singleLine="true"
+                            android:textColor="#111827"
+                            android:textColorHint="#94A2B8"
+                            android:textSize="16sp" />
 
-                        </LinearLayout>
+                    </LinearLayout>
 
-                    </com.google.android.material.card.MaterialCardView>
+                </com.google.android.material.card.MaterialCardView>
 
                 <!-- Notification Bell -->
                 <ImageView
@@ -250,7 +255,7 @@
                             android:id="@+id/profileName"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="GAGAN"
+                            android:text="Clinic Name"
                             android:textColor="#101828"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -259,9 +264,18 @@
                             android:id="@+id/profileTitle"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Doctor"
+                            android:text="Clinic"
                             android:textColor="#667085"
                             android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/logoutText"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Logout"
+                            android:textColor="#EF4444"
+                            android:textSize="12sp"
+                            android:paddingTop="2dp" />
 
                     </LinearLayout>
 

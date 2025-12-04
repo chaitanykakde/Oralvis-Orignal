@@ -7,6 +7,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -16,6 +18,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.oralvis.oralviscamera.database.MediaDatabase
+import com.oralvis.oralviscamera.database.Patient
 import com.oralvis.oralviscamera.database.PatientDao
 import com.oralvis.oralviscamera.databinding.ActivityHomeBinding
 import com.oralvis.oralviscamera.home.PatientListAdapter
@@ -27,6 +30,10 @@ class HomeActivity : AppCompatActivity() {
     private lateinit var patientDao: PatientDao
     private lateinit var adapter: PatientListAdapter
     private lateinit var themeManager: ThemeManager
+    private lateinit var clinicManager: ClinicManager
+
+    private var allPatients: List<Patient> = emptyList()
+    private var currentSearchQuery: String = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,9 +49,11 @@ class HomeActivity : AppCompatActivity() {
         
         patientDao = MediaDatabase.getDatabase(this).patientDao()
         themeManager = ThemeManager(this)
+        clinicManager = ClinicManager(this)
         
         setupRecycler()
         setupActions()
+        setupSearch()
         observeSessions()
         applyTheme()
     }
@@ -65,7 +74,7 @@ class HomeActivity : AppCompatActivity() {
 
     private fun setupActions() {
         binding.btnAddPatient.setOnClickListener {
-            showAddPatientBottomSheet()
+            showPatientDialog()
         }
 
         binding.navHome.setOnClickListener {
@@ -85,25 +94,61 @@ class HomeActivity : AppCompatActivity() {
         binding.navTheme.setOnClickListener {
             themeManager.toggleTheme()
             applyTheme()
-            Toast.makeText(this, 
-                if (themeManager.isDarkTheme) "Dark theme enabled" else "Light theme enabled", 
-                Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                if (themeManager.isDarkTheme) "Dark theme enabled" else "Light theme enabled",
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
-    private fun showAddPatientBottomSheet() {
-        val bottomSheet = AddPatientBottomSheet()
-        bottomSheet.show(supportFragmentManager, AddPatientBottomSheet.TAG)
+    private fun setupSearch() {
+        val searchInput = binding.searchPatientsInput
+        searchInput?.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                currentSearchQuery = s?.toString()?.trim().orEmpty()
+                applyPatientFilter()
+            }
+        })
+
+        // Logout from header
+        binding.logoutText?.setOnClickListener {
+            clinicManager.clearClinicId()
+            val intent = Intent(this, ClinicRegistrationActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            startActivity(intent)
+            finish()
+        }
+    }
+
+    private fun showPatientDialog() {
+        PatientSessionDialogFragment().show(
+            supportFragmentManager,
+            "PatientSessionDialog"
+        )
     }
     
 
     private fun observeSessions() {
         lifecycleScope.launch {
             patientDao.observePatients().collectLatest { list ->
-                adapter.submitList(list)
-                binding.emptyStateLayout.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+                allPatients = list
+                applyPatientFilter()
             }
         }
+    }
+
+    private fun applyPatientFilter() {
+        val filtered = if (currentSearchQuery.isEmpty()) {
+            allPatients
+        } else {
+            allPatients.filter { it.displayName.contains(currentSearchQuery, ignoreCase = true) }
+        }
+        adapter.submitList(filtered)
+        binding.emptyStateLayout.visibility = if (filtered.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun openPatient(patientId: Long) {
@@ -188,6 +233,7 @@ class HomeActivity : AppCompatActivity() {
         // Profile section (third child - LinearLayout)
         binding.profileName.setTextColor(textPrimary)
         binding.profileTitle.setTextColor(textSecondary)
+        binding.logoutText?.setTextColor(Color.parseColor("#EF4444"))
         binding.profileImage?.setColorFilter(textSecondary)
         
         // Profile dropdown arrow
@@ -201,6 +247,11 @@ class HomeActivity : AppCompatActivity() {
             }
         }
         
+        // Update clinic name in header
+        val clinicName = clinicManager.getClinicName() ?: "Clinic"
+        binding.profileName.text = clinicName
+        binding.profileTitle.text = "Clinic"
+
         // ============= PATIENTS CARD =============
         binding.patientsCard.setCardBackgroundColor(cardColor)
         

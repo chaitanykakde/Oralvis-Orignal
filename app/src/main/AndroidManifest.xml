@@ -22,6 +22,10 @@
     <!-- Notification permission for Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
+    <!-- Internet permission for API calls -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
     <!-- USB Host feature -->
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -86,6 +90,18 @@
 
         <activity
             android:name=".AddPatientActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+
+        <activity
+            android:name=".ClinicRegistrationActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+
+        <activity
+            android:name=".PatientDashboardActivity"
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.OralVisCamera" />

@@ -123,8 +123,26 @@ class MainActivity : AppCompatActivity() {
     private var sessionMediaAdapter: SessionMediaAdapter? = null
     private var mediaIdCounter = 0L
     
+    // Patient and Clinic context (for S3 folder structure: s3://{bucket}/{GlobalPatientId}/{ClinicId}/{FileName})
+    private var globalPatientId: String? = null
+    private var clinicId: String? = null
+    
+    /**
+     * Get the current Global Patient ID for S3 folder structure
+     * Format: s3://{bucket}/{GlobalPatientId}/{ClinicId}/{FileName}
+     */
+    fun getGlobalPatientId(): String? = globalPatientId
+    
+    /**
+     * Get the current Clinic ID for S3 folder structure
+     * Format: s3://{bucket}/{GlobalPatientId}/{ClinicId}/{FileName}
+     */
+    fun getClinicId(): String? = clinicId
+    
     companion object {
         private const val REQUEST_PERMISSION = 1001
+        const val EXTRA_GLOBAL_PATIENT_ID = "GLOBAL_PATIENT_ID"
+        const val EXTRA_CLINIC_ID = "CLINIC_ID"
 
         fun createIntent(context: Context) =
             Intent(context, MainActivity::class.java)
@@ -171,6 +189,12 @@ class MainActivity : AppCompatActivity() {
         mediaDatabase = MediaDatabase.getDatabase(this)
         patientDao = mediaDatabase.patientDao()
         themeManager = ThemeManager(this)
+
+        // Derive clinic and patient context:
+        // - ClinicId always comes from ClinicManager (single clinic per device)
+        // - GlobalPatientId is resolved from the currently selected Patient when saving/uploading
+        clinicId = ClinicManager(this).getClinicId()
+        globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
         
         // Apply saved theme
         applyTheme()
@@ -243,11 +267,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        // Toggle camera controls - now handled by settings panel
-        // binding.btnToggleControls.setOnClickListener {
-        //     toggleCameraControls()
-        // }
-        
+        // Start Session -> open patient dialog when there is no active session
+        binding.btnStartSession.setOnClickListener {
+            openPatientDialogForSession()
+        }
+
         // Reset controls
         binding.btnResetControls.setOnClickListener {
             resetCameraControls()
@@ -274,6 +298,35 @@ class MainActivity : AppCompatActivity() {
         
         // Initialize recording timer
         recordingHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    }
+
+    /**
+     * Opens the patient dialog to choose or create a patient before starting a session.
+     */
+    private fun openPatientDialogForSession() {
+        supportFragmentManager.setFragmentResultListener(
+            PatientSessionDialogFragment.REQUEST_KEY,
+            this
+        ) { _, bundle ->
+            val patientId = bundle.getLong(PatientSessionDialogFragment.KEY_PATIENT_ID, -1L)
+            if (patientId == -1L) return@setFragmentResultListener
+
+            lifecycleScope.launch {
+                val patient = mediaDatabase.patientDao().getPatientById(patientId)
+                if (patient != null) {
+                    withContext(Dispatchers.Main) {
+                        onPatientSelectedForSession(patient)
+                        // Also ensure globalPatientId is aligned with this patient code for S3 usage
+                        globalPatientId = patient.code
+                    }
+                }
+            }
+        }
+
+        PatientSessionDialogFragment().show(
+            supportFragmentManager,
+            "PatientSessionDialog"
+        )
     }
     
     private fun setupCameraControlSeekBars() {
@@ -800,41 +853,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPatientPicker() {
-        lifecycleScope.launch {
-            val patients = patientDao.getPatientsOnce()
-            val sheet = BottomSheetDialog(this@MainActivity)
-            val view = layoutInflater.inflate(R.layout.bottomsheet_patient_picker, null)
-            val recycler = view.findViewById<RecyclerView>(R.id.pickerRecycler)
-            val adapter = PatientPickerAdapter {
-                sheet.dismiss()
-                onPatientSelectedForSession(it)
-            }
-            recycler.layoutManager = LinearLayoutManager(this@MainActivity)
-            recycler.adapter = adapter
-            adapter.submitList(patients)
-            
-            // Use AddPatientBottomSheet instead of AddPatientActivity
-            view.findViewById<View>(R.id.btnAddPatient).setOnClickListener {
-                sheet.dismiss()
-                showAddPatientBottomSheet()
-            }
-            
-            sheet.setContentView(view)
-            sheet.show()
-        }
-    }
-    
-    private fun showAddPatientBottomSheet() {
-        val addPatientSheet = AddPatientBottomSheet()
-        addPatientSheet.show(supportFragmentManager, AddPatientBottomSheet.TAG)
-        
-        // Listen for when the bottom sheet is dismissed to refresh patient list
-        addPatientSheet.parentFragmentManager.setFragmentResultListener(
-            "patient_added",
-            this
-        ) { _, _ ->
-            // Refresh is handled automatically if we reopen the picker
-        }
+        // Legacy entry point; delegate to new dialog-based flow
+        openPatientDialogForSession()
     }
 
     private fun onPatientSelectedForSession(patient: Patient) {
