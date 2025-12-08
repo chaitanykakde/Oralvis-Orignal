@@ -85,7 +85,7 @@
                 android:textSize="12sp" />
 
             <ImageView
-                android:id="@+id/navPatient"
+                android:id="@+id/navFindPatients"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginBottom="12dp"
@@ -93,18 +93,18 @@
                 android:background="@drawable/nav_icon_background"
                 android:src="@drawable/ic_home"
                 android:tint="#66FFFFFF"
-                android:contentDescription="Patient" />
+                android:contentDescription="Find Patients" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                android:text="Patient"
+                android:text="Find Patients"
                 android:textColor="#80FFFFFF"
                 android:textSize="12sp" />
 
             <ImageView
-                android:id="@+id/navPatients"
+                android:id="@+id/navPatient"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
                 android:layout_marginBottom="12dp"
@@ -112,49 +112,13 @@
                 android:background="@drawable/nav_icon_background"
                 android:src="@drawable/ic_sessions"
                 android:tint="#66FFFFFF"
-                android:contentDescription="Sessions" />
+                android:contentDescription="Patient Selection" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                android:text="Sessions"
-                android:textColor="#80FFFFFF"
-                android:textSize="12sp" />
-
-            <ImageView
-                android:id="@+id/navSettings"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginBottom="12dp"
-                android:padding="12dp"
-                android:background="@drawable/nav_icon_background"
-                android:src="@drawable/ic_settings"
-                android:tint="#66FFFFFF"
-                android:contentDescription="Settings" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:text="Settings"
-                android:textColor="#80FFFFFF"
-                android:textSize="12sp" />
-
-            <ImageView
-                android:id="@+id/navTheme"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:padding="12dp"
-                android:background="@drawable/nav_icon_background"
-                android:src="@drawable/ic_theme"
-                android:tint="#66FFFFFF"
-                android:contentDescription="Theme" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Theme"
+                android:text="Patient Selection"
                 android:textColor="#80FFFFFF"
                 android:textSize="12sp" />
 

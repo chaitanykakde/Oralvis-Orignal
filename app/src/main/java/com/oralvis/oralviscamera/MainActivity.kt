@@ -198,6 +198,9 @@ class MainActivity : AppCompatActivity() {
         clinicId = ClinicManager(this).getClinicId()
         globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
         
+        // Clear previous patient selection on app start
+        GlobalPatientManager.clearCurrentPatient()
+        
         // Apply saved theme
         applyTheme()
         
@@ -206,12 +209,10 @@ class MainActivity : AppCompatActivity() {
         initializeFromGlobalPatient()
         checkPermissions()
         
-        // Auto-open patient dialog on every app start if no patient is selected
+        // Auto-open patient dialog on every app start (mandatory selection)
         // Post to ensure UI is fully initialized
         Handler(Looper.getMainLooper()).post {
-            if (!GlobalPatientManager.hasPatientSelected()) {
-                openPatientDialogForSession()
-            }
+            openPatientDialogForSession()
         }
     }
     
@@ -232,13 +233,6 @@ class MainActivity : AppCompatActivity() {
     // Removed startNewSession() - sessions are now auto-created by GlobalPatientManager
     
     private fun setupUI() {
-        binding.navPatient.setOnClickListener {
-            val intent = Intent(this, FindPatientsActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            }
-            startActivity(intent)
-        }
-
         binding.navCamera.setOnClickListener {
             // Already on camera screen; no action required
         }
@@ -252,14 +246,23 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        binding.navTheme.setOnClickListener {
-            themeManager.toggleTheme()
-            applyTheme()
-            Toast.makeText(this, if (themeManager.isDarkTheme) "Dark Theme" else "Light Theme", Toast.LENGTH_SHORT).show()
+        binding.navFindPatients.setOnClickListener {
+            val intent = Intent(this, FindPatientsActivity::class.java)
+            startActivity(intent)
+        }
+        
+        binding.navPatient.setOnClickListener {
+            // Open patient selection dialog
+            openPatientDialogForSession()
         }
 
         // Camera action buttons - with separate blank capture logic
         binding.btnCapture.setOnClickListener {
+            if (!GlobalPatientManager.hasPatientSelected()) {
+                Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
+                openPatientDialogForSession()
+                return@setOnClickListener
+            }
             if (mCurrentCamera != null) {
                 capturePhotoWithRetry()
             } else {
@@ -268,6 +271,11 @@ class MainActivity : AppCompatActivity() {
         }
         
         binding.btnRecord.setOnClickListener {
+            if (!GlobalPatientManager.hasPatientSelected()) {
+                Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
+                openPatientDialogForSession()
+                return@setOnClickListener
+            }
             if (mCurrentCamera != null) {
                 toggleRecordingWithRetry()
             } else {
@@ -917,18 +925,35 @@ class MainActivity : AppCompatActivity() {
         // ============= NAVIGATION BAR =============
         binding.navigationRailCard.setCardBackgroundColor(surfaceColor)
         
-        // Find and update all navigation labels (TextViews)
+        // Update nav icons and backgrounds - Camera is selected
+        binding.navLogo.setColorFilter(textPrimary)
+        
+        // Camera - selected
+        binding.navCamera.setBackgroundResource(R.drawable.nav_icon_selected_background)
+        binding.navCamera.setColorFilter(textPrimary)
+        
+        // Gallery - not selected
+        binding.navGallery.setBackgroundResource(R.drawable.nav_icon_background)
+        binding.navGallery.setColorFilter(textSecondary)
+        
+        // Find Patients - not selected
+        binding.navFindPatients.setBackgroundResource(R.drawable.nav_icon_background)
+        binding.navFindPatients.setColorFilter(textSecondary)
+        
+        // Patient Selection - not selected
+        binding.navPatient.setBackgroundResource(R.drawable.nav_icon_background)
+        binding.navPatient.setColorFilter(textSecondary)
+        
+        // Nav text labels
         val navLayout = binding.navigationRailCard.getChildAt(0) as? android.view.ViewGroup
         navLayout?.let { layout ->
             for (i in 0 until layout.childCount) {
                 val child = layout.getChildAt(i)
                 if (child is TextView) {
-                    // Update text color for navigation labels
-                    child.setTextColor(textSecondary)
-                } else if (child is ImageView) {
-                    // Update icon tint for navigation icons
-                    if (child.id != R.id.navCamera) { // Skip selected item
-                        child.setColorFilter(textSecondary)
+                    if (child.text == "Camera") {
+                        child.setTextColor(textPrimary)
+                    } else {
+                        child.setTextColor(textSecondary)
                     }
                 }
             }

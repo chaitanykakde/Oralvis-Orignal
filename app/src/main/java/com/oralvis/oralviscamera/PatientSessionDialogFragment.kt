@@ -44,8 +44,8 @@ class PatientSessionDialogFragment : DialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Make dialog non-dismissible - user must select a patient
-        setStyle(STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        // Use dialog style (not fullscreen) - will show as overlay
+        setStyle(STYLE_NORMAL, android.R.style.Theme_Material_Dialog)
     }
 
     override fun onCreateView(
@@ -59,13 +59,26 @@ class PatientSessionDialogFragment : DialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        // Make the dialog window almost full-screen so the dark background area is minimal
         dialog?.window?.let { window ->
             val metrics = DisplayMetrics()
             requireActivity().windowManager.defaultDisplay.getMetrics(metrics)
-            window.setLayout(metrics.widthPixels, metrics.heightPixels)
+            
+            // Set dialog size to ~90% of screen (centered overlay)
+            val width = (metrics.widthPixels * 0.9).toInt()
+            val height = (metrics.heightPixels * 0.85).toInt()
+            window.setLayout(width, height)
+            
+            // Make background semi-transparent (not blacked out)
+            window.setDimAmount(0.3f) // 30% dimming instead of full black
+            
+            // Make dialog window background transparent so underlying screen is visible
+            window.setBackgroundDrawableResource(android.R.color.transparent)
+            
+            // Center the dialog
+            window.setGravity(android.view.Gravity.CENTER)
         }
-        // Make dialog non-dismissible - cannot be closed until patient is selected
+        
+        // Allow dismissing with close button, but not by clicking outside or back button
         dialog?.setCancelable(false)
         dialog?.setCanceledOnTouchOutside(false)
         
@@ -99,6 +112,8 @@ class PatientSessionDialogFragment : DialogFragment() {
         adapter = PatientsAdapter(
             onSelected = { patient ->
                 selectedPatient = patient
+                // Show close button when patient is selected
+                binding.btnClose.visibility = View.VISIBLE
             },
             onSyncClick = { patient ->
                 syncPatientMedia(patient)
@@ -202,6 +217,24 @@ class PatientSessionDialogFragment : DialogFragment() {
             )
             dismiss()
         }
+
+        // Close button - only allows dismissing after a patient is selected
+        binding.btnClose.setOnClickListener {
+            if (selectedPatient != null) {
+                // Only allow closing if a patient is selected
+                dismiss()
+            } else {
+                // Show message that patient must be selected first
+                Toast.makeText(
+                    requireContext(),
+                    "Please select a patient before closing",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+        
+        // Initially hide close button until patient is selected
+        binding.btnClose.visibility = View.GONE
     }
 
     private fun createPatient() {

@@ -188,6 +188,22 @@
 
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Close button at top right, overlaying the card -->
+    <ImageView
+        android:id="@+id/btnClose"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_margin="8dp"
+        android:src="@android:drawable/ic_menu_close_clear_cancel"
+        android:tint="@color/white"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:clickable="true"
+        android:focusable="true"
+        android:padding="8dp"
+        android:elevation="20dp"
+        app:layout_constraintTop_toTopOf="@id/cardContainer"
+        app:layout_constraintEnd_toEndOf="@id/cardContainer" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
 
 
