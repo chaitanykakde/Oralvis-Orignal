@@ -4,6 +4,15 @@ plugins {
     id 'kotlin-kapt'
 }
 
+// Load AWS credentials from local.properties
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
 android {
     namespace 'com.oralvis.oralviscamera'
     compileSdkVersion rootProject.ext.versionCompiler
@@ -16,6 +25,10 @@ android {
         versionName rootProject.ext.versionNameString
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        
+        // AWS Credentials from local.properties (not committed to git)
+        buildConfigField "String", "AWS_ACCESS_KEY", "\"${localProperties.getProperty('aws.access.key', '')}\""
+        buildConfigField "String", "AWS_SECRET_KEY", "\"${localProperties.getProperty('aws.secret.key', '')}\""
     }
 
     buildTypes {
@@ -33,6 +46,7 @@ android {
     }
     buildFeatures {
         viewBinding true
+        buildConfig true
     }
     
     lint {
