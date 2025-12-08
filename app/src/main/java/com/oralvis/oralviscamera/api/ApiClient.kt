@@ -16,6 +16,14 @@ object ApiClient {
      */
     const val AWS_REGION = "ap-south-1"
     const val S3_BUCKET_NAME = "oralvis-media"
+    
+    // AWS Credentials - Configure these in your local.properties or BuildConfig
+    // For security, these should not be committed to version control
+    // Example: Add to local.properties: aws.access.key=YOUR_KEY and aws.secret.key=YOUR_SECRET
+    // Then read using: BuildConfig.AWS_ACCESS_KEY and BuildConfig.AWS_SECRET_KEY
+    // For now, these need to be configured separately
+    const val AWS_ACCESS_KEY = "" // TODO: Configure AWS credentials securely
+    const val AWS_SECRET_KEY = "" // TODO: Configure AWS credentials securely
 
     // API Gateway endpoints
     const val API_MEDIA_SYNC_ENDPOINT =

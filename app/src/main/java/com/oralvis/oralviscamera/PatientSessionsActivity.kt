@@ -27,6 +27,7 @@ class PatientSessionsActivity : AppCompatActivity() {
         binding = ActivityPatientSessionsBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
+        LocalPatientIdManager.initialize(this)
         mediaDatabase = MediaDatabase.getInstance(this)
         patientId = intent.getLongExtra("PATIENT_ID", -1)
         
@@ -67,7 +68,8 @@ class PatientSessionsActivity : AppCompatActivity() {
                 patient?.let { pat ->
                     // Update UI with patient details
                     binding.txtPatientName.text = pat.displayName
-                    binding.txtPatientInfo.text = if (pat.code.isNotEmpty()) "ID: ${pat.code}" else "Patient #${pat.id}"
+                    val localId = LocalPatientIdManager.getLocalId(pat.id)
+                    binding.txtPatientInfo.text = "ID: $localId"
                     
                     // Load sessions for this patient
                     mediaDatabase.sessionDao().getSessionsByPatient(patientId).collect { sessions ->

@@ -42,6 +42,12 @@ class PatientSessionDialogFragment : DialogFragment() {
     private var allPatients: List<Patient> = emptyList()
     private var selectedPatient: Patient? = null
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Make dialog non-dismissible - user must select a patient
+        setStyle(STYLE_NORMAL, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -59,12 +65,26 @@ class PatientSessionDialogFragment : DialogFragment() {
             requireActivity().windowManager.defaultDisplay.getMetrics(metrics)
             window.setLayout(metrics.widthPixels, metrics.heightPixels)
         }
+        // Make dialog non-dismissible - cannot be closed until patient is selected
+        dialog?.setCancelable(false)
+        dialog?.setCanceledOnTouchOutside(false)
+        
+        // Prevent back button from dismissing the dialog
+        dialog?.setOnKeyListener { _, keyCode, _ ->
+            if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+                // Consume the back button event - don't dismiss dialog
+                true
+            } else {
+                false
+            }
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         val context = requireContext()
+        LocalPatientIdManager.initialize(context)
         val db = MediaDatabase.getDatabase(context)
         patientDao = db.patientDao()
 
@@ -76,11 +96,58 @@ class PatientSessionDialogFragment : DialogFragment() {
     }
 
     private fun setupRecycler() {
-        adapter = PatientsAdapter { patient ->
-            selectedPatient = patient
-        }
+        adapter = PatientsAdapter(
+            onSelected = { patient ->
+                selectedPatient = patient
+            },
+            onSyncClick = { patient ->
+                syncPatientMedia(patient)
+            }
+        )
         binding.recyclerPatients.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerPatients.adapter = adapter
+    }
+    
+    private fun syncPatientMedia(patient: Patient) {
+        lifecycleScope.launch {
+            try {
+                val context = requireContext()
+                val result = com.oralvis.oralviscamera.cloud.CloudSyncService.syncPatientMedia(
+                    context,
+                    patient
+                ) { current, total ->
+                    // Update progress if needed
+                }
+                
+                if (result.successCount > 0) {
+                    Toast.makeText(
+                        context,
+                        "Synced ${result.successCount} media file(s) successfully",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    // Refresh the list to update unsynced counts
+                    adapter.notifyDataSetChanged()
+                } else if (result.errorCount > 0) {
+                    Toast.makeText(
+                        context,
+                        "Sync failed: ${result.error ?: "Unknown error"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        context,
+                        "No media to sync",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    requireContext(),
+                    "Sync error: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     private fun observePatients() {
@@ -207,8 +274,10 @@ class PatientSessionDialogFragment : DialogFragment() {
                 pincode = null
             )
 
-            withContext(Dispatchers.IO) {
+            val insertedPatient = withContext(Dispatchers.IO) {
                 patientDao.insert(patient)
+                // Get the inserted patient with its ID
+                patientDao.getPatientByCode(globalPatientId)
             }
 
             // Cloud upsert, non-blocking for local save
@@ -242,12 +311,21 @@ class PatientSessionDialogFragment : DialogFragment() {
                 ).show()
             }
 
-            Toast.makeText(context, "Patient created", Toast.LENGTH_SHORT).show()
-
-            // Clear form for convenience
-            binding.inputPatientName.setText("")
-            binding.inputAge.setText("")
-            binding.inputPhone.setText("")
+            // Auto-select the newly created patient and dismiss dialog
+            if (insertedPatient != null) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Patient created", Toast.LENGTH_SHORT).show()
+                    // Return selection to host via Fragment Result API
+                    setFragmentResult(
+                        REQUEST_KEY,
+                        bundleOf(
+                            KEY_PATIENT_ID to insertedPatient.id,
+                            KEY_PATIENT_CODE to insertedPatient.code
+                        )
+                    )
+                    dismiss()
+                }
+            }
         }
     }
 
@@ -257,11 +335,13 @@ class PatientSessionDialogFragment : DialogFragment() {
     }
 
     private class PatientsAdapter(
-        private val onSelected: (Patient) -> Unit
+        private val onSelected: (Patient) -> Unit,
+        private val onSyncClick: (Patient) -> Unit
     ) : RecyclerView.Adapter<PatientsAdapter.PatientViewHolder>() {
 
         private var patients: List<Patient> = emptyList()
         private var selectedId: Long? = null
+        private val unsyncedCounts = mutableMapOf<Long, Int>()
 
         fun submitList(list: List<Patient>) {
             patients = list
@@ -274,7 +354,7 @@ class PatientSessionDialogFragment : DialogFragment() {
                 parent,
                 false
             )
-            return PatientViewHolder(binding)
+            return PatientViewHolder(binding, onSyncClick)
         }
 
         override fun getItemCount(): Int = patients.size
@@ -290,12 +370,14 @@ class PatientSessionDialogFragment : DialogFragment() {
         }
 
         class PatientViewHolder(
-            private val binding: ItemPatientBinding
+            private val binding: ItemPatientBinding,
+            private val onSyncClick: (Patient) -> Unit
         ) : RecyclerView.ViewHolder(binding.root) {
 
             fun bind(patient: Patient, selected: Boolean) {
                 binding.txtPatientName.text = patient.displayName
-                binding.txtPatientId.text = "ID: ${patient.code}"
+                val localId = LocalPatientIdManager.getLocalId(patient.id)
+                binding.txtPatientId.text = "ID: $localId"
                 binding.txtPhoneNumber.text = patient.phone ?: ""
 
                 binding.root.setBackgroundColor(
@@ -305,6 +387,26 @@ class PatientSessionDialogFragment : DialogFragment() {
                         binding.root.context.getColor(android.R.color.transparent)
                     }
                 )
+                
+                // Load and display unsynced count
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    val database = MediaDatabase.getDatabase(binding.root.context)
+                    val unsyncedCount = database.mediaDao().getUnsyncedMediaCount(patient.id)
+                    
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        if (unsyncedCount > 0) {
+                            binding.txtUnsyncedCount.text = unsyncedCount.toString()
+                            binding.txtUnsyncedCount.visibility = View.VISIBLE
+                        } else {
+                            binding.txtUnsyncedCount.visibility = View.GONE
+                        }
+                    }
+                }
+                
+                // Set sync button click listener
+                binding.imgCloudSync.setOnClickListener {
+                    onSyncClick(patient)
+                }
             }
         }
     }

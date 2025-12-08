@@ -22,6 +22,7 @@ class SessionMediaGridAdapter(
     inner class MediaViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val imgThumbnail: ImageView = view.findViewById(R.id.imgThumbnail)
         val imgPlayIcon: ImageView = view.findViewById(R.id.imgPlayIcon)
+        val playIconCard: View = view.findViewById(R.id.playIconCard)
         val txtMediaType: TextView = view.findViewById(R.id.txtMediaType)
         
         init {
@@ -52,18 +53,18 @@ class SessionMediaGridAdapter(
                     MediaStore.Images.Thumbnails.MINI_KIND
                 )
                 holder.imgThumbnail.setImageBitmap(thumbnail)
-                holder.imgPlayIcon.visibility = View.VISIBLE
+                holder.playIconCard.visibility = View.VISIBLE
                 holder.txtMediaType.text = "Video"
             } else {
                 // Load image
                 val bitmap = BitmapFactory.decodeFile(media.filePath)
                 holder.imgThumbnail.setImageBitmap(bitmap)
-                holder.imgPlayIcon.visibility = View.GONE
+                holder.playIconCard.visibility = View.GONE
                 holder.txtMediaType.text = media.mode
             }
         } else {
             holder.imgThumbnail.setImageResource(R.drawable.ic_mode)
-            holder.imgPlayIcon.visibility = View.GONE
+            holder.playIconCard.visibility = View.GONE
             holder.txtMediaType.text = "Not found"
         }
     }

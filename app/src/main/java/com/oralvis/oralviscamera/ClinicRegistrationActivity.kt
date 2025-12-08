@@ -59,8 +59,11 @@ class ClinicRegistrationActivity : AppCompatActivity() {
                     clinicManager.saveClinicId(clinicId)
                     clinicManager.saveClinicName(clinicName)
 
-                    // Navigate to Home screen after successful registration
-                    val intent = Intent(this@ClinicRegistrationActivity, HomeActivity::class.java)
+                    // Navigate to Camera screen (MainActivity) after successful registration
+                    // and auto-open patient selection dialog
+                    val intent = Intent(this@ClinicRegistrationActivity, MainActivity::class.java).apply {
+                        putExtra("AUTO_OPEN_PATIENT_DIALOG", true)
+                    }
                     startActivity(intent)
                     finish()
                 } else {

@@ -18,8 +18,11 @@ import com.oralvis.oralviscamera.api.ApiClient
 import com.oralvis.oralviscamera.api.PatientDto
 import com.oralvis.oralviscamera.databinding.ActivityPatientDashboardBinding
 import com.oralvis.oralviscamera.databinding.ItemPatientBinding
+import com.oralvis.oralviscamera.database.MediaDatabase
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class PatientDashboardActivity : AppCompatActivity() {
     
@@ -35,6 +38,7 @@ class PatientDashboardActivity : AppCompatActivity() {
         binding = ActivityPatientDashboardBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
+        LocalPatientIdManager.initialize(this)
         clinicManager = ClinicManager(this)
         
         // Initialize adapter
@@ -277,7 +281,28 @@ class PatientDashboardActivity : AppCompatActivity() {
             
             fun bind(patient: PatientDto, isSelected: Boolean) {
                 binding.txtPatientName.text = patient.name
+                
+                // Try to find database patient by code (global ID) to get local ID
+                // For now, show global ID - local ID will be assigned when patient is saved to database
                 binding.txtPatientId.text = "ID: ${patient.patientId}"
+                
+                // Try to look up local ID asynchronously
+                val context = binding.root.context
+                kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val database = MediaDatabase.getDatabase(context)
+                        val dbPatient = database.patientDao().getPatientByCode(patient.patientId)
+                        if (dbPatient != null) {
+                            val localId = LocalPatientIdManager.getLocalId(dbPatient.id)
+                            withContext(Dispatchers.Main) {
+                                binding.txtPatientId.text = "ID: $localId"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Keep showing global ID if lookup fails
+                    }
+                }
+                
                 binding.txtPhoneNumber.text = patient.phoneNumber
                 
                 // Highlight selected patient

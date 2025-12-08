@@ -185,6 +185,8 @@ class MainActivity : AppCompatActivity() {
         }
         
         // Initialize new features
+        GlobalPatientManager.initialize(this)
+        LocalPatientIdManager.initialize(this)
         sessionManager = SessionManager(this)
         mediaDatabase = MediaDatabase.getDatabase(this)
         patientDao = mediaDatabase.patientDao()
@@ -199,11 +201,18 @@ class MainActivity : AppCompatActivity() {
         // Apply saved theme
         applyTheme()
         
-        // Start a new session when app opens
-        startNewSession()
-        
         setupUI()
+        observeGlobalPatient()
+        initializeFromGlobalPatient()
         checkPermissions()
+        
+        // Auto-open patient dialog on every app start if no patient is selected
+        // Post to ensure UI is fully initialized
+        Handler(Looper.getMainLooper()).post {
+            if (!GlobalPatientManager.hasPatientSelected()) {
+                openPatientDialogForSession()
+            }
+        }
     }
     
     override fun onResume() {
@@ -220,21 +229,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun startNewSession() {
-        val newSessionId = sessionManager.startNewSession()
-        android.util.Log.d("SessionManager", "Started new session: $newSessionId")
-        
-        // Clear session media for new session
-        sessionMediaList.clear()
-        mediaIdCounter = 0L
-        updateSessionMediaUI()
-        
-        Toast.makeText(this, "New session started", Toast.LENGTH_SHORT).show()
-    }
+    // Removed startNewSession() - sessions are now auto-created by GlobalPatientManager
     
     private fun setupUI() {
-        binding.navHome.setOnClickListener {
-            val intent = Intent(this, HomeActivity::class.java).apply {
+        binding.navPatient.setOnClickListener {
+            val intent = Intent(this, FindPatientsActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             startActivity(intent)
@@ -242,6 +241,15 @@ class MainActivity : AppCompatActivity() {
 
         binding.navCamera.setOnClickListener {
             // Already on camera screen; no action required
+        }
+        
+        binding.navGallery.setOnClickListener {
+            if (GlobalPatientManager.hasPatientSelected()) {
+                val intent = Intent(this, GalleryActivity::class.java)
+                startActivity(intent)
+            } else {
+                Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
+            }
         }
         
         binding.navTheme.setOnClickListener {
@@ -315,14 +323,15 @@ class MainActivity : AppCompatActivity() {
                 val patient = mediaDatabase.patientDao().getPatientById(patientId)
                 if (patient != null) {
                     withContext(Dispatchers.Main) {
-                        onPatientSelectedForSession(patient)
-                        // Also ensure globalPatientId is aligned with this patient code for S3 usage
+                        GlobalPatientManager.setCurrentPatient(this@MainActivity, patient)
                         globalPatientId = patient.code
+                        selectedPatient = patient
+                        updatePatientInfoDisplay()
+                        binding.patientInfoCard.visibility = View.VISIBLE
                     }
                 }
             }
         }
-
         PatientSessionDialogFragment().show(
             supportFragmentManager,
             "PatientSessionDialog"
@@ -536,22 +545,15 @@ class MainActivity : AppCompatActivity() {
             showResolutionDropdown()
         }
 
-        binding.btnStartSession.setOnClickListener {
-            showPatientPicker()
-        }
-        
-        // Edit patient button in top info bar
+        // Edit patient button in top info bar - opens Find Patients screen
         binding.btnEditPatient.setOnClickListener {
-            showPatientPicker()
+            val intent = Intent(this, FindPatientsActivity::class.java)
+            startActivity(intent)
         }
         
-        // Save button - save current session
-        binding.btnSaveSession.setOnClickListener {
-            saveCurrentSession()
-        }
-        
-        // Initially hide capture/record buttons until patient is selected
-        setSessionUIState(hasActiveSession = false)
+        // Always show capture buttons - patient selection is global
+        binding.sessionButtonsContainer.visibility = View.VISIBLE
+        binding.btnStartSession.visibility = View.GONE
         
         // Setup resolution and mode spinners
         setupSpinners()
@@ -852,55 +854,48 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPatientPicker() {
-        // Legacy entry point; delegate to new dialog-based flow
-        openPatientDialogForSession()
-    }
-
-    private fun onPatientSelectedForSession(patient: Patient) {
-        selectedPatient = patient
-        val sessionId = sessionManager.startNewSession()
-        sessionManager.setCurrentPatientId(patient.id)
-        sessionManager.setCurrentSession(sessionId)
-        
-        // Update UI to show capture/record buttons and change patient option
-        setSessionUIState(hasActiveSession = true)
-        
-        // Update patient info display
-        updatePatientInfoDisplay()
-        
-        Toast.makeText(this, "Session started for ${patient.displayName}", Toast.LENGTH_SHORT).show()
-    }
-    
     /**
-     * Controls visibility of UI elements based on session state
-     * @param hasActiveSession true if a patient is selected and session is active
+     * Observe global patient changes and update UI accordingly
      */
-    private fun setSessionUIState(hasActiveSession: Boolean) {
-        if (hasActiveSession) {
-            // Hide Start Session button
-            binding.btnStartSession.visibility = View.GONE
-            
-            // Show patient info card in top bar and session buttons container at bottom
-            binding.patientInfoCard.visibility = View.VISIBLE
-            binding.sessionButtonsContainer.visibility = View.VISIBLE
-        } else {
-            // Show Start Session button
-            binding.btnStartSession.visibility = View.VISIBLE
-            
-            // Hide patient info card and session buttons container
-            binding.patientInfoCard.visibility = View.GONE
-            binding.sessionButtonsContainer.visibility = View.GONE
+    private fun observeGlobalPatient() {
+        GlobalPatientManager.currentPatient.observe(this) { patient ->
+            if (patient != null) {
+                selectedPatient = patient
+                globalPatientId = patient.code
+                updatePatientInfoDisplay()
+                binding.patientInfoCard.visibility = View.VISIBLE
+            } else {
+                selectedPatient = null
+                globalPatientId = null
+                binding.patientInfoCard.visibility = View.GONE
+            }
         }
     }
     
     /**
-     * Updates the patient info display with current patient details
+     * Initialize from global patient if one is already selected
+     */
+    private fun initializeFromGlobalPatient() {
+        val patient = GlobalPatientManager.getCurrentPatient()
+        if (patient != null) {
+            selectedPatient = patient
+            globalPatientId = patient.code
+            updatePatientInfoDisplay()
+            binding.patientInfoCard.visibility = View.VISIBLE
+        } else {
+            binding.patientInfoCard.visibility = View.GONE
+        }
+    }
+    
+    /**
+     * Updates the patient info display with current patient details from GlobalPatientManager
      */
     private fun updatePatientInfoDisplay() {
-        selectedPatient?.let { patient ->
-            binding.txtPatientName.text = patient.displayName
-            binding.txtPatientDetails.text = "ID: ${patient.code} • Age: ${patient.age ?: "N/A"}"
+        val patient = GlobalPatientManager.getCurrentPatient()
+        patient?.let {
+            binding.txtPatientName.text = it.displayName
+            val localId = LocalPatientIdManager.getLocalId(it.id)
+            binding.txtPatientDetails.text = "ID: $localId • Age: ${it.age ?: "N/A"}"
         }
     }
     
@@ -1183,7 +1178,9 @@ class MainActivity : AppCompatActivity() {
                         binding.patientInfoCard.visibility = View.GONE
                         
                         // Reset UI to Start Session state
-                        setSessionUIState(hasActiveSession = false)
+                        GlobalPatientManager.clearCurrentPatient()
+                        selectedPatient = null
+                        globalPatientId = null
                     }
                 } else {
                     withContext(Dispatchers.Main) {

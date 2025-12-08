@@ -17,6 +17,9 @@ interface PatientDao {
     @Query("SELECT * FROM patients WHERE id = :patientId LIMIT 1")
     suspend fun getPatientById(patientId: Long): Patient?
 
+    @Query("SELECT * FROM patients WHERE code = :code LIMIT 1")
+    suspend fun getPatientByCode(code: String): Patient?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(patient: Patient)
 }

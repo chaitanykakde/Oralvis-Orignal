@@ -105,6 +105,18 @@
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.OralVisCamera" />
+
+        <activity
+            android:name=".FindPatientsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+
+        <activity
+            android:name=".GalleryActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
     </application>
 
 </manifest>
