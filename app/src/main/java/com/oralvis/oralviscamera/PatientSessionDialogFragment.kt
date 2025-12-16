@@ -111,13 +111,13 @@ class PatientSessionDialogFragment : DialogFragment() {
     private fun setupRecycler() {
         adapter = PatientsAdapter(
             onSelected = { patient ->
-                selectedPatient = patient
+            selectedPatient = patient
                 // Show close button when patient is selected
                 binding.btnClose.visibility = View.VISIBLE
             },
             onSyncClick = { patient ->
                 syncPatientMedia(patient)
-            }
+        }
         )
         binding.recyclerPatients.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerPatients.adapter = adapter
@@ -347,7 +347,7 @@ class PatientSessionDialogFragment : DialogFragment() {
             // Auto-select the newly created patient and dismiss dialog
             if (insertedPatient != null) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Patient created", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Patient created", Toast.LENGTH_SHORT).show()
                     // Return selection to host via Fragment Result API
                     setFragmentResult(
                         REQUEST_KEY,

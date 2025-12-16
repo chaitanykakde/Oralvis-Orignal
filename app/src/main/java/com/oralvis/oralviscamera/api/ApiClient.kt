@@ -16,7 +16,7 @@ object ApiClient {
      */
     const val AWS_REGION = "ap-south-1"
     const val S3_BUCKET_NAME = "oralvis-media"
-    
+
     // AWS Credentials from BuildConfig (loaded from local.properties)
     // Add to local.properties:
     // aws.access.key=YOUR_ACCESS_KEY

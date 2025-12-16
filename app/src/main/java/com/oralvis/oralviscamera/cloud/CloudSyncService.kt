@@ -144,8 +144,10 @@ object CloudSyncService {
                 s3Url = s3Url,
                 mediaType = mediaTypeForApi,
                 cameraMode = cameraMode,
-                dentalArch = null, // Optional - Lambda handles null
-                sequenceNumber = null, // Optional - Lambda handles null
+                // For legacy/manual captures these will be null.
+                // For guided auto-capture, they are populated from MediaRecord.
+                dentalArch = mediaRecord.dentalArch,
+                sequenceNumber = mediaRecord.sequenceNumber,
                 captureTime = captureTimeStr
             )
 

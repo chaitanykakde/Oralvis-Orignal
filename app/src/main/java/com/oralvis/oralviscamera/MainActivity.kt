@@ -73,6 +73,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.jiangdg.ausbc.camera.bean.PreviewSize
+import com.oralvis.oralviscamera.guidedcapture.GuidedCaptureManager
+import com.oralvis.oralviscamera.guidedcapture.SessionBridge
 
 class MainActivity : AppCompatActivity() {
     
@@ -126,6 +128,21 @@ class MainActivity : AppCompatActivity() {
     // Patient and Clinic context (for S3 folder structure: s3://{bucket}/{GlobalPatientId}/{ClinicId}/{FileName})
     private var globalPatientId: String? = null
     private var clinicId: String? = null
+
+    // Guided auto-capture (currently forced ON for development/demo; no flags)
+    private val isGuidedCaptureEnabled: Boolean = true // kept for future use but ignored for now
+    private var guidedCaptureManager: GuidedCaptureManager? = null
+
+    // Lightweight frame-tick loop for guided capture. This drives MotionAnalyzer /
+    // AutoCaptureController at ~20 FPS without needing direct access to pixel data.
+    private val guidedFrameHandler: Handler = Handler(Looper.getMainLooper())
+    private val guidedFrameRunnable: Runnable = object : Runnable {
+        override fun run() {
+            guidedCaptureManager?.onFrame()
+            // Schedule next tick; onFrame() itself is a no-op when guided is disabled.
+            guidedFrameHandler.postDelayed(this, 50L)
+        }
+    }
     
     /**
      * Get the current Global Patient ID for S3 folder structure
@@ -191,13 +208,16 @@ class MainActivity : AppCompatActivity() {
         mediaDatabase = MediaDatabase.getDatabase(this)
         patientDao = mediaDatabase.patientDao()
         themeManager = ThemeManager(this)
-
         // Derive clinic and patient context:
         // - ClinicId always comes from ClinicManager (single clinic per device)
         // - GlobalPatientId is resolved from the currently selected Patient when saving/uploading
         clinicId = ClinicManager(this).getClinicId()
         globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
-        
+
+        if (isGuidedCaptureEnabled) {
+            initializeGuidedCapture()
+        }
+
         // Clear previous patient selection on app start
         GlobalPatientManager.clearCurrentPatient()
         
@@ -229,9 +249,76 @@ class MainActivity : AppCompatActivity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
     }
-    
+
     // Removed startNewSession() - sessions are now auto-created by GlobalPatientManager
     
+    private fun initializeGuidedCapture() {
+        val cameraFrame = binding.cameraFrame
+        guidedCaptureManager = GuidedCaptureManager(
+            context = this,
+            rootContainer = cameraFrame,
+            sessionBridge = object : SessionBridge {
+                override fun ensureGuidedSessionId(): String {
+                    // Generate a unique guided session id for each press of "Start Session".
+                    return "guided_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(8)}"
+                }
+
+                override fun onGuidedCaptureRequested(
+                    guidedSessionId: String,
+                    dentalArch: String,
+                    sequenceNumber: Int
+                ) {
+                    // Reuse the existing capture pipeline, then update the latest record with guided metadata.
+                    if (mCurrentCamera != null) {
+                        capturePhotoWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
+                    } else {
+                        captureBlankImageWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
+                    }
+                }
+
+                override fun onGuidedSessionComplete(guidedSessionId: String?) {
+                    // No-op for now; all state is tracked via MediaRecord rows.
+                }
+
+                override fun onRecaptureLower(guidedSessionId: String) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val mediaDao = mediaDatabase.mediaDao()
+                        mediaDao.getAllMedia().collect { list ->
+                            list.filter {
+                                it.guidedSessionId == guidedSessionId &&
+                                    it.dentalArch == SessionBridge.DENTAL_ARCH_LOWER
+                            }.forEach { record ->
+                                mediaDao.deleteMediaById(record.id)
+                                try {
+                                    File(record.filePath).delete()
+                                } catch (_: Exception) {
+                                }
+                            }
+                        }
+                    }
+                }
+
+                override fun onRecaptureUpper(guidedSessionId: String) {
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val mediaDao = mediaDatabase.mediaDao()
+                        mediaDao.getAllMedia().collect { list ->
+                            list.filter {
+                                it.guidedSessionId == guidedSessionId &&
+                                    it.dentalArch == SessionBridge.DENTAL_ARCH_UPPER
+                            }.forEach { record ->
+                                mediaDao.deleteMediaById(record.id)
+                                try {
+                                    File(record.filePath).delete()
+                                } catch (_: Exception) {
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    }
+
     private fun setupUI() {
         binding.navCamera.setOnClickListener {
             // Already on camera screen; no action required
@@ -283,10 +370,53 @@ class MainActivity : AppCompatActivity() {
             }
         }
         
-        // Start Session -> open patient dialog when there is no active session
-        binding.btnStartSession.setOnClickListener {
-            openPatientDialogForSession()
+        // Start Session (top-right button near patient info) - primary guided entry point
+        val startSessionClickListener = View.OnClickListener {
+            android.util.Log.e("Guided", "Start Session CLICKED")
+
+            // Temporary: ensure some patient context exists for demo purposes
+            if (!GlobalPatientManager.hasPatientSelected()) {
+                android.util.Log.e("Guided", "No patient selected - attaching demo patient for guided flow")
+                // Attach a simple in-memory demo patient to satisfy session creation.
+                // This does not touch the real patient DB.
+                selectedPatient = com.oralvis.oralviscamera.database.Patient(
+                    id = -1,
+                    code = "DEMO",
+                    firstName = "Demo",
+                    lastName = "Patient",
+                    title = null,
+                    gender = null,
+                    age = null,
+                    diagnosis = null,
+                    appointmentTime = null,
+                    phone = null,
+                    email = null,
+                    otp = null,
+                    mobile = null,
+                    dob = null,
+                    addressLine1 = null,
+                    addressLine2 = null,
+                    area = null,
+                    city = null,
+                    pincode = null
+                )
+                updatePatientInfoDisplay()
+                binding.patientInfoCard.visibility = View.VISIBLE
+            }
+
+            if (guidedCaptureManager == null) {
+                android.util.Log.e("Guided", "GuidedCaptureManager is null, initializing now")
+                initializeGuidedCapture()
+            }
+            android.util.Log.e("Guided", "Calling guidedCaptureManager.enable()")
+            guidedCaptureManager?.enable()
+            // Start driving the guided pipeline with regular frame ticks.
+            guidedFrameHandler.removeCallbacks(guidedFrameRunnable)
+            guidedFrameHandler.post(guidedFrameRunnable)
+            android.util.Log.e("Guided", "guidedFrameRunnable POSTED")
         }
+        binding.btnStartSession.setOnClickListener(startSessionClickListener)
+        binding.btnStartGuidedSession.setOnClickListener(startSessionClickListener)
 
         // Reset controls
         binding.btnResetControls.setOnClickListener {
@@ -1946,6 +2076,65 @@ class MainActivity : AppCompatActivity() {
         // Camera is ready, proceed with photo capture
         capturePhoto()
     }
+
+    /**
+     * Guided variant of capture that attaches guided metadata to the inserted MediaRecord.
+     * This reuses the existing capturePhoto() implementation but passes additional
+     * parameters to logMediaToDatabase once the file path is known.
+     */
+    private fun capturePhotoWithGuidedMetadata(
+        guidedSessionId: String,
+        dentalArch: String,
+        sequenceNumber: Int
+    ) {
+        // For now, reuse the same readiness checks as normal photo capture
+        if (!isCameraReadyForPhotoCapture()) {
+            android.util.Log.w("PhotoManager", "Camera not ready for guided photo capture")
+            Toast.makeText(this, "Camera not ready for guided capture - please try again", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        mCurrentCamera?.let { camera ->
+            try {
+                android.util.Log.d("PhotoManager", "Starting guided photo capture...")
+                val imagePath = createImageFile()
+                camera.captureImage(object : ICaptureCallBack {
+                    override fun onBegin() {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    override fun onError(error: String?) {
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    override fun onComplete(path: String?) {
+                        runOnUiThread {
+                            val finalPath = path ?: imagePath
+                            Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
+                            logMediaToDatabase(
+                                filePath = finalPath,
+                                mediaType = "Image",
+                                guidedSessionId = guidedSessionId,
+                                dentalArch = dentalArch,
+                                sequenceNumber = sequenceNumber
+                            )
+                            addSessionMedia(finalPath, isVideo = false)
+                        }
+                    }
+                }, imagePath)
+            } catch (e: Exception) {
+                android.util.Log.e("PhotoManager", "Guided photo capture failed: ${e.message}")
+                Toast.makeText(this, "Capture failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } ?: run {
+            android.util.Log.w("PhotoManager", "Camera not available for guided photo capture")
+            Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
+        }
+    }
     
     private fun isCameraReadyForPhotoCapture(): Boolean {
         if (mCurrentCamera == null) {
@@ -2061,7 +2250,13 @@ class MainActivity : AppCompatActivity() {
         return imageFile.absolutePath
     }
     
-    private fun logMediaToDatabase(filePath: String, mediaType: String) {
+    private fun logMediaToDatabase(
+        filePath: String,
+        mediaType: String,
+        guidedSessionId: String? = null,
+        dentalArch: String? = null,
+        sequenceNumber: Int? = null
+    ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 android.util.Log.d("MediaDatabase", "Starting database logging for: $filePath")
@@ -2081,7 +2276,10 @@ class MainActivity : AppCompatActivity() {
                     mode = currentMode,
                     mediaType = mediaType,
                     captureTime = Date(),
-                    filePath = filePath
+                    filePath = filePath,
+                    dentalArch = dentalArch,
+                    sequenceNumber = sequenceNumber,
+                    guidedSessionId = guidedSessionId
                 )
                 
                 android.util.Log.d("MediaDatabase", "Inserting media record: $mediaRecord")
@@ -2522,6 +2720,55 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
+
+    private fun captureBlankImageWithGuidedMetadata(
+        guidedSessionId: String,
+        dentalArch: String,
+        sequenceNumber: Int
+    ) {
+        try {
+            android.util.Log.d("BlankCapture", "Capturing guided blank image (no camera connected)...")
+            val imagePath = createImageFile()
+            val imageFile = java.io.File(imagePath)
+
+            val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.BLACK)
+
+            val paint = Paint().apply {
+                color = Color.WHITE
+                textSize = 60f
+                isAntiAlias = true
+                textAlign = Paint.Align.CENTER
+            }
+            val text = "Blank Guided Image\n${currentMode} Mode\nNo Camera Connected"
+            val textBounds = Rect()
+            paint.getTextBounds(text, 0, text.length, textBounds)
+            val x = bitmap.width / 2f
+            val y = bitmap.height / 2f + textBounds.height() / 2f
+            canvas.drawText(text, x, y, paint)
+
+            val outputStream = FileOutputStream(imageFile)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+            outputStream.flush()
+            outputStream.close()
+
+            Handler(Looper.getMainLooper()).postDelayed({
+                logMediaToDatabase(
+                    filePath = imagePath,
+                    mediaType = "Image",
+                    guidedSessionId = guidedSessionId,
+                    dentalArch = dentalArch,
+                    sequenceNumber = sequenceNumber
+                )
+                addSessionMedia(imagePath, isVideo = false)
+                Toast.makeText(this, "Guided blank image captured", Toast.LENGTH_SHORT).show()
+            }, 100)
+        } catch (e: Exception) {
+            android.util.Log.e("BlankCapture", "Failed to capture guided blank image: ${e.message}", e)
+            Toast.makeText(this, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
     
     private fun captureBlankVideo() {
         try {
@@ -2602,7 +2849,9 @@ class MainActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
-        
+        // Stop guided frame loop to avoid leaks when activity is destroyed.
+        guidedFrameHandler.removeCallbacks(guidedFrameRunnable)
+
         // Clean up exposure update handler
         exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
         

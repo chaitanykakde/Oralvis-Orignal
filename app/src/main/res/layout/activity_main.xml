@@ -249,6 +249,19 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Start Session button next to patient info (top-right of camera screen) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnStartGuidedSession"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:layout_marginStart="12dp"
+                android:text="Start Session"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:paddingHorizontal="16dp"
+                android:backgroundTint="@color/white"
+                app:cornerRadius="20dp" />
+
             <!-- Spacer -->
             <View
                 android:layout_width="0dp"
@@ -495,7 +508,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <!-- Start Session Button - Initially centered and visible -->
+        <!-- Start Session Button - temporarily hidden; top-bar button is primary entry -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStartSession"
             android:layout_width="0dp"
@@ -519,7 +532,7 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintWidth_percent="0.45"
-            android:visibility="visible" />
+            android:visibility="gone" />
 
         <!-- Centered Button Container - Initially hidden (3 buttons) -->
         <LinearLayout
