@@ -14,7 +14,9 @@ import kotlin.math.sqrt
 
 /**
  * MotionAnalyzer performs frame-difference motion analysis on camera preview frames.
- *
+ * 
+ * FULL IMPLEMENTATION - Replace MotionAnalyzer.kt with this file after adding OpenCV module.
+ * 
  * This class:
  * - Receives NV21 frames from the camera pipeline
  * - Samples frames at ~8-10 FPS (drops frames in between)
@@ -67,9 +69,7 @@ class MotionAnalyzer {
     @Volatile
     var scanningState: ScanningState = ScanningState.READY_TO_SCAN_LOWER
         set(value) {
-            val oldValue = field
             field = value
-            Log.d(TAG, "scanningState changed: $oldValue -> $value")
             // Clear previous frame when state changes (not scanning)
             if (value != ScanningState.SCANNING_LOWER && value != ScanningState.SCANNING_UPPER) {
                 clearPreviousFrame()
@@ -125,18 +125,11 @@ class MotionAnalyzer {
      * Frame sampling (8-10 FPS) happens here.
      */
     fun onFrame(data: ByteArray, width: Int, height: Int) {
-        if (!isRunning.get()) {
-            Log.d(TAG, "onFrame: MotionAnalyzer not running")
-            return
-        }
+        if (!isRunning.get()) return
         
         // Gate by scanning state
         if (scanningState != ScanningState.SCANNING_LOWER && 
             scanningState != ScanningState.SCANNING_UPPER) {
-            // Only log occasionally to avoid spam
-            if (System.currentTimeMillis() % 2000 < 100) {
-                Log.d(TAG, "onFrame: Not in scanning state (current: $scanningState)")
-            }
             return
         }
         
@@ -146,8 +139,6 @@ class MotionAnalyzer {
             return
         }
         lastSampleTimeMs = nowMs
-        
-        Log.d(TAG, "onFrame: Processing frame ${width}x${height}, state=$scanningState")
         
         // Process on background thread
         workerHandler?.post {

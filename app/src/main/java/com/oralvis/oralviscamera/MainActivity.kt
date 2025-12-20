@@ -132,17 +132,6 @@ class MainActivity : AppCompatActivity() {
     // Guided auto-capture (currently forced ON for development/demo; no flags)
     private val isGuidedCaptureEnabled: Boolean = true // kept for future use but ignored for now
     private var guidedCaptureManager: GuidedCaptureManager? = null
-
-    // Lightweight frame-tick loop for guided capture. This drives MotionAnalyzer /
-    // AutoCaptureController at ~20 FPS without needing direct access to pixel data.
-    private val guidedFrameHandler: Handler = Handler(Looper.getMainLooper())
-    private val guidedFrameRunnable: Runnable = object : Runnable {
-        override fun run() {
-            guidedCaptureManager?.onFrame()
-            // Schedule next tick; onFrame() itself is a no-op when guided is disabled.
-            guidedFrameHandler.postDelayed(this, 50L)
-        }
-    }
     
     /**
      * Get the current Global Patient ID for S3 folder structure
@@ -410,10 +399,14 @@ class MainActivity : AppCompatActivity() {
             }
             android.util.Log.e("Guided", "Calling guidedCaptureManager.enable()")
             guidedCaptureManager?.enable()
-            // Start driving the guided pipeline with regular frame ticks.
-            guidedFrameHandler.removeCallbacks(guidedFrameRunnable)
-            guidedFrameHandler.post(guidedFrameRunnable)
-            android.util.Log.e("Guided", "guidedFrameRunnable POSTED")
+            
+            // Register GuidedCaptureManager as preview callback to receive NV21 frames
+            mCurrentCamera?.let { camera ->
+                camera.addPreviewDataCallBack(guidedCaptureManager!!)
+                android.util.Log.e("Guided", "Registered GuidedCaptureManager as preview callback")
+            } ?: run {
+                android.util.Log.w("Guided", "Camera not available, will register callback when camera opens")
+            }
         }
         binding.btnStartSession.setOnClickListener(startSessionClickListener)
         binding.btnStartGuidedSession.setOnClickListener(startSessionClickListener)
@@ -1834,6 +1827,14 @@ class MainActivity : AppCompatActivity() {
                         
                         // Refresh resolution list if settings dialog is open
                         refreshResolutionSpinnerIfOpen()
+                        
+                        // Register GuidedCaptureManager as preview callback if enabled
+                        guidedCaptureManager?.let { manager ->
+                            if (manager.isEnabled) {
+                                camera.addPreviewDataCallBack(manager)
+                                android.util.Log.e("Guided", "Registered GuidedCaptureManager as preview callback (camera opened)")
+                            }
+                        }
                                     }
                                     ICameraStateCallBack.State.CLOSED -> {
                                         binding.statusText.text = "Camera closed"
@@ -1849,6 +1850,12 @@ class MainActivity : AppCompatActivity() {
                                             // Restore gradient background
                                             binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
                                             stopRecordingTimer()
+                                        }
+                                        
+                                        // Unregister GuidedCaptureManager preview callback
+                                        guidedCaptureManager?.let { manager ->
+                                            camera.removePreviewDataCallBack(manager)
+                                            android.util.Log.e("Guided", "Unregistered GuidedCaptureManager preview callback (camera closed)")
                                         }
                                     }
                                     ICameraStateCallBack.State.ERROR -> {
@@ -1882,6 +1889,7 @@ class MainActivity : AppCompatActivity() {
                         .setRenderMode(CameraRequest.RenderMode.OPENGL)
                         .setDefaultRotateType(RotateType.ANGLE_0)
                         .setAudioSource(CameraRequest.AudioSource.SOURCE_AUTO)
+                        .setRawPreviewData(true)  // Enable raw preview data for motion analysis
                         .create()
                     
                     // Open camera with texture view
@@ -2100,29 +2108,41 @@ class MainActivity : AppCompatActivity() {
                 val imagePath = createImageFile()
                 camera.captureImage(object : ICaptureCallBack {
                     override fun onBegin() {
-                        runOnUiThread {
-                            Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
+                        if (!isFinishing && !isDestroyed) {
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     }
 
                     override fun onError(error: String?) {
-                        runOnUiThread {
-                            Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
+                        if (!isFinishing && !isDestroyed) {
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     }
 
                     override fun onComplete(path: String?) {
-                        runOnUiThread {
-                            val finalPath = path ?: imagePath
-                            Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-                            logMediaToDatabase(
-                                filePath = finalPath,
-                                mediaType = "Image",
-                                guidedSessionId = guidedSessionId,
-                                dentalArch = dentalArch,
-                                sequenceNumber = sequenceNumber
-                            )
-                            addSessionMedia(finalPath, isVideo = false)
+                        if (!isFinishing && !isDestroyed) {
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    val finalPath = path ?: imagePath
+                                    Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
+                                    logMediaToDatabase(
+                                        filePath = finalPath,
+                                        mediaType = "Image",
+                                        guidedSessionId = guidedSessionId,
+                                        dentalArch = dentalArch,
+                                        sequenceNumber = sequenceNumber
+                                    )
+                                    addSessionMedia(finalPath, isVideo = false)
+                                }
+                            }
                         }
                     }
                 }, imagePath)
@@ -2183,28 +2203,40 @@ class MainActivity : AppCompatActivity() {
                 val imagePath = createImageFile()
                 camera.captureImage(object : ICaptureCallBack {
                     override fun onBegin() {
-                        runOnUiThread {
-                            Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
-                            android.util.Log.d("PhotoManager", "Photo capture started")
+                        if (!isFinishing && !isDestroyed) {
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
+                                    android.util.Log.d("PhotoManager", "Photo capture started")
+                                }
+                            }
                         }
                     }
                     
                     override fun onError(error: String?) {
-                        runOnUiThread {
-                            Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
-                            android.util.Log.e("PhotoManager", "Photo capture failed: $error")
+                        if (!isFinishing && !isDestroyed) {
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
+                                    android.util.Log.e("PhotoManager", "Photo capture failed: $error")
+                                }
+                            }
                         }
                     }
                     
                     override fun onComplete(path: String?) {
-                        runOnUiThread {
-                            val finalPath = path ?: imagePath
-                            Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-                            // Log to database
-                            logMediaToDatabase(finalPath, "Image")
-                            // Add to session media list
-                            addSessionMedia(finalPath, isVideo = false)
-                            android.util.Log.d("PhotoManager", "Photo capture completed: $finalPath")
+                        if (!isFinishing && !isDestroyed) {
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    val finalPath = path ?: imagePath
+                                    Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
+                                    // Log to database
+                                    logMediaToDatabase(finalPath, "Image")
+                                    // Add to session media list
+                                    addSessionMedia(finalPath, isVideo = false)
+                                    android.util.Log.d("PhotoManager", "Photo capture completed: $finalPath")
+                                }
+                            }
                         }
                     }
                 }, imagePath)
@@ -2381,40 +2413,52 @@ class MainActivity : AppCompatActivity() {
                     val videoFile = createVideoFile()
                     camera.captureVideoStart(object : ICaptureCallBack {
                         override fun onBegin() {
-                            runOnUiThread {
-                                isRecording = true
-                                // Keep gradient but can add a pulse animation or different state if needed
-                                // For now, keep the gradient
-                                startRecordingTimer()
-                                Toast.makeText(this@MainActivity, "Recording started", Toast.LENGTH_SHORT).show()
-                                android.util.Log.d("RecordingManager", "Recording started successfully")
+                            if (!isFinishing && !isDestroyed) {
+                                runOnUiThread {
+                                    if (!isFinishing && !isDestroyed) {
+                                        isRecording = true
+                                        // Keep gradient but can add a pulse animation or different state if needed
+                                        // For now, keep the gradient
+                                        startRecordingTimer()
+                                        Toast.makeText(this@MainActivity, "Recording started", Toast.LENGTH_SHORT).show()
+                                        android.util.Log.d("RecordingManager", "Recording started successfully")
+                                    }
+                                }
                             }
                         }
                         
                         override fun onError(error: String?) {
-                            runOnUiThread {
-                                isRecording = false
-                                // Restore gradient background
-                                binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                                stopRecordingTimer()
-                                Toast.makeText(this@MainActivity, "Recording failed: $error", Toast.LENGTH_SHORT).show()
-                                android.util.Log.e("RecordingManager", "Recording failed: $error")
+                            if (!isFinishing && !isDestroyed) {
+                                runOnUiThread {
+                                    if (!isFinishing && !isDestroyed) {
+                                        isRecording = false
+                                        // Restore gradient background
+                                        binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
+                                        stopRecordingTimer()
+                                        Toast.makeText(this@MainActivity, "Recording failed: $error", Toast.LENGTH_SHORT).show()
+                                        android.util.Log.e("RecordingManager", "Recording failed: $error")
+                                    }
+                                }
                             }
                         }
                         
                         override fun onComplete(path: String?) {
-                            runOnUiThread {
-                                isRecording = false
-                                // Restore gradient background
-                                binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                                stopRecordingTimer()
-                                val finalPath = path ?: videoFile
-                                Toast.makeText(this@MainActivity, "Video saved", Toast.LENGTH_SHORT).show()
-                                // Log to database
-                                logMediaToDatabase(finalPath, "Video")
-                                // Add to session media list
-                                addSessionMedia(finalPath, isVideo = true)
-                                android.util.Log.d("RecordingManager", "Recording completed: $finalPath")
+                            if (!isFinishing && !isDestroyed) {
+                                runOnUiThread {
+                                    if (!isFinishing && !isDestroyed) {
+                                        isRecording = false
+                                        // Restore gradient background
+                                        binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
+                                        stopRecordingTimer()
+                                        val finalPath = path ?: videoFile
+                                        Toast.makeText(this@MainActivity, "Video saved", Toast.LENGTH_SHORT).show()
+                                        // Log to database
+                                        logMediaToDatabase(finalPath, "Video")
+                                        // Add to session media list
+                                        addSessionMedia(finalPath, isVideo = true)
+                                        android.util.Log.d("RecordingManager", "Recording completed: $finalPath")
+                                    }
+                                }
                             }
                         }
                     }, videoFile)
@@ -2849,8 +2893,11 @@ class MainActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
-        // Stop guided frame loop to avoid leaks when activity is destroyed.
-        guidedFrameHandler.removeCallbacks(guidedFrameRunnable)
+        
+        // Unregister GuidedCaptureManager preview callback
+        guidedCaptureManager?.let { manager ->
+            mCurrentCamera?.removePreviewDataCallBack(manager)
+        }
 
         // Clean up exposure update handler
         exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)

@@ -2,6 +2,7 @@ package com.oralvis.oralviscamera.guidedcapture
 
 import android.content.Context
 import android.view.ViewGroup
+import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.oralvis.oralviscamera.R
 
 /**
@@ -13,14 +14,14 @@ import com.oralvis.oralviscamera.R
  *
  * Host (MainActivity) is responsible for:
  *  - Providing a SessionBridge implementation
- *  - Feeding frame ticks into onFrame()
+ *  - Registering this as IPreviewDataCallBack to receive NV21 frames
  *  - Forwarding button clicks (or allowing the overlay to do so)
  */
 class GuidedCaptureManager(
     private val context: Context,
     private val rootContainer: ViewGroup,
     private val sessionBridge: SessionBridge
-) : GuidedSessionController.Listener {
+) : GuidedSessionController.Listener, IPreviewDataCallBack {
 
     private val motionAnalyzer = MotionAnalyzer()
     private val autoCaptureController = AutoCaptureController()
@@ -79,9 +80,7 @@ class GuidedCaptureManager(
         overlayView.bringToFront()
         android.util.Log.e("Guided", "Guided Overlay VISIBLE & FRONT")
 
-        // Enable auto-capture for demo builds. MotionAnalyzer currently emits
-        // neutral motion; once real optical flow is wired, this will drive the
-        // full three-gate capture logic.
+        // Enable auto-capture now that motion analysis is implemented
         autoCaptureController.enableAutoCapture = true
         android.util.Log.e("Guided", "AutoCapture ENABLED")
 
@@ -95,6 +94,10 @@ class GuidedCaptureManager(
         if (!isEnabled) return
         isEnabled = false
         android.util.Log.e("Guided", "GuidedCaptureManager DISABLE called")
+        
+        // Note: Preview callback unregistration should be handled by MainActivity
+        // when camera closes or when this manager is disabled
+        
         motionAnalyzer.stop()
         guidedSessionController.stopGuidedSession()
         rootContainer.removeView(overlayView)
@@ -102,16 +105,38 @@ class GuidedCaptureManager(
     }
 
     /**
-     * To be called from the camera preview loop whenever a new frame is available.
-     * The first implementation only forwards a logical tick; optical flow will be
-     * implemented later.
+     * IPreviewDataCallBack implementation: receives NV21 frames from camera.
+     * Only processes frames when enabled and in scanning states.
      */
-    fun onFrame() {
+    override fun onPreviewData(data: ByteArray?, width: Int, height: Int, format: IPreviewDataCallBack.DataFormat) {
         if (!isEnabled) return
-        android.util.Log.v("Guided", "onFrame tick")
+        
+        // Only process NV21 format (not RGBA)
+        if (format != IPreviewDataCallBack.DataFormat.NV21) {
+            // Log occasionally for debugging
+            if (System.currentTimeMillis() % 5000 < 100) {
+                android.util.Log.d("Guided", "Skipping non-NV21 frame: $format")
+            }
+            return
+        }
+        
+        if (data == null) {
+            android.util.Log.w("Guided", "onPreviewData: data is null!")
+            return
+        }
+        
+        // Log frame reception (throttled to avoid spam)
+        val now = System.currentTimeMillis()
+        if (now % 2000 < 100) { // Log occasionally
+            android.util.Log.d("Guided", "Received NV21 frame: ${width}x${height}, size=${data.size}")
+        }
+        
+        // Update flash controller (for visual feedback)
         flashController.onFrameRendered()
         overlayView.showFlash = flashController.isActive
-        motionAnalyzer.onFrame()
+        
+        // Pass frame to MotionAnalyzer (it will handle sampling and gating)
+        motionAnalyzer.onFrame(data, width, height)
     }
 
     override fun onUiStateUpdated(
@@ -124,6 +149,10 @@ class GuidedCaptureManager(
         overlayView.mainText = mainText
         overlayView.buttonText = buttonText
         overlayView.progressText = progressText
+        
+        // Update MotionAnalyzer with current scanning state (for gating)
+        motionAnalyzer.scanningState = state
+        android.util.Log.d("Guided", "Updated MotionAnalyzer scanningState to: $state")
     }
 
     override fun onFlashRequested() {

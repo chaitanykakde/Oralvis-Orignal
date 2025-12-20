@@ -29,6 +29,7 @@ import com.jiangdg.ausbc.render.env.RotateType
 import com.jiangdg.ausbc.render.effect.AbstractEffect
 import com.jiangdg.ausbc.render.internal.*
 import com.jiangdg.ausbc.utils.*
+import com.jiangdg.ausbc.utils.DeviceProfile
 import com.jiangdg.ausbc.utils.bus.BusKey
 import com.jiangdg.ausbc.utils.bus.EventBus
 import java.io.File
@@ -95,6 +96,10 @@ class RenderManager(
     private val mCameraDir by lazy {
         "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)}/Camera"
     }
+    // Throttle expensive preview callbacks (GPU readback + processing)
+    // so that they do not run at full camera FPS. This helps avoid
+    // backpressure when high‑FPS cameras (e.g. 60 FPS) are connected.
+    private var mLastPreviewCallbackTimeMs: Long = 0L
 
     init {
         this.mCameraRender = CameraRender(context)
@@ -216,23 +221,39 @@ class RenderManager(
     }
 
     private fun drawFrame2Capture(fboId: Int) {
+        // Always update mFBOBufferId for capture, even on tablets
+        // (preview data callbacks are skipped on tablets, but capture needs the FBO)
         mCaptureRender?.drawFrame(fboId)?.let {
             mCaptureRender!!.getFrameBufferId()
         }?.also { id ->
             mFBOBufferId = id
+            
+            // On tablets we skip preview data callbacks entirely to avoid
+            // expensive GPU→CPU readbacks. Screen rendering and capture
+            // pipelines are unaffected.
+            if (DeviceProfile.isTablet(mContext)) {
+                return@also
+            }
+            
             // opengl preview data, format is rgba
             val renderWidth = mCaptureRender?.getRenderWidth() ?: mWidth
             val renderHeight = mCaptureRender?.getRenderHeight() ?: mHeight
             val rgbaLen = renderWidth * renderHeight * 4
             mPreviewDataCbList?.forEach { callback ->
-                if (mPreviewByteBuffer==null || mPreviewByteBuffer?.remaining() != rgbaLen) {
-                    mPreviewByteBuffer = ByteBuffer.allocateDirect(rgbaLen)
-                    mPreviewByteBuffer?.order(ByteOrder.LITTLE_ENDIAN)
-                }
-                mPreviewByteBuffer?.let {
-                    it.clear()
-                    GLBitmapUtils.readPixelToByteBuffer(id,renderWidth, renderHeight, mPreviewByteBuffer)
-                    callback.onPreviewData(it.array(),renderWidth, renderHeight, IPreviewDataCallBack.DataFormat.RGBA)
+                // Throttle preview data callbacks to avoid excessive GPU→CPU
+                // readbacks. Rendering to screen still happens every frame.
+                val now = SystemClock.uptimeMillis()
+                if (now - mLastPreviewCallbackTimeMs >= MIN_PREVIEW_CALLBACK_INTERVAL_MS) {
+                    if (mPreviewByteBuffer == null || mPreviewByteBuffer?.remaining() != rgbaLen) {
+                        mPreviewByteBuffer = ByteBuffer.allocateDirect(rgbaLen)
+                        mPreviewByteBuffer?.order(ByteOrder.LITTLE_ENDIAN)
+                    }
+                    mPreviewByteBuffer?.let {
+                        it.clear()
+                        GLBitmapUtils.readPixelToByteBuffer(id, renderWidth, renderHeight, mPreviewByteBuffer)
+                        callback.onPreviewData(it.array(), renderWidth, renderHeight, IPreviewDataCallBack.DataFormat.RGBA)
+                    }
+                    mLastPreviewCallbackTimeMs = now
                 }
             }
         }
@@ -425,8 +446,17 @@ class RenderManager(
             return
         }
         mCaptureState.set(true)
-        mMainHandler.post {
-            mCaptureDataCb?.onBegin()
+        // Post callback safely - check if handler is still valid
+        try {
+            mMainHandler.post {
+                try {
+                    mCaptureDataCb?.onBegin()
+                } catch (e: Exception) {
+                    Logger.e(TAG, "Error in capture onBegin callback", e)
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e(TAG, "Failed to post capture onBegin callback", e)
         }
         val date = mDateFormat.format(System.currentTimeMillis())
         val title = savePath ?: "IMG_AUSBC_$date"
@@ -434,27 +464,63 @@ class RenderManager(
         val path = savePath ?: "$mCameraDir/$displayName"
         val width = mWidth
         val height = mHeight
+        
+        // Validate FBO buffer ID before capture
+        if (mFBOBufferId == 0) {
+            Logger.e(TAG, "saveImageInternal: mFBOBufferId is 0, FBO not initialized. Capture may fail.")
+            // Continue anyway - the FBO might be valid even if ID is 0 (unlikely but possible)
+            // Or we could wait, but that adds complexity. Let's try capturing and see what happens.
+        }
+        
+        Logger.d(TAG, "saveImageInternal: Capturing from FBO $mFBOBufferId, size=${width}x${height}")
+        
         // 写入文件
         // glReadPixels读取的是大端数据，但是我们保存的是小端
         // 故需要将图片上下颠倒为正
         var fos: FileOutputStream? = null
         try {
             fos = FileOutputStream(path)
-            GLBitmapUtils.transFrameBufferToBitmap(mFBOBufferId, width, height).apply {
-                compress(Bitmap.CompressFormat.JPEG, 100, fos)
-                recycle()
+            val bitmap = GLBitmapUtils.transFrameBufferToBitmap(mFBOBufferId, width, height)
+            if (bitmap != null) {
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos)
+                bitmap.recycle()
+                Logger.d(TAG, "saveImageInternal: Successfully saved image to $path")
+            } else {
+                throw IOException("Failed to create bitmap from FBO")
             }
         } catch (e: IOException) {
-            mMainHandler.post {
-                mCaptureDataCb?.onError(e.localizedMessage)
+            try {
+                mMainHandler.post {
+                    try {
+                        mCaptureDataCb?.onError(e.localizedMessage)
+                    } catch (cbException: Exception) {
+                        Logger.e(TAG, "Error in capture onError callback", cbException)
+                    }
+                }
+            } catch (postException: Exception) {
+                Logger.e(TAG, "Failed to post capture onError callback", postException)
             }
             Logger.e(TAG, "Failed to write file, err = ${e.localizedMessage}", e)
+        } catch (e: Exception) {
+            try {
+                mMainHandler.post {
+                    try {
+                        mCaptureDataCb?.onError("Capture failed: ${e.message}")
+                    } catch (cbException: Exception) {
+                        Logger.e(TAG, "Error in capture onError callback", cbException)
+                    }
+                }
+            } catch (postException: Exception) {
+                Logger.e(TAG, "Failed to post capture onError callback", postException)
+            }
+            Logger.e(TAG, "Failed to capture image, err = ${e.localizedMessage}", e)
         } finally {
             try {
                 fos?.close()
             } catch (e: IOException) {
                 Logger.e(TAG, "Failed to write file, err = ${e.localizedMessage}", e)
             }
+            mCaptureState.set(false)
         }
         //Judge whether it is saved successfully
         //Update gallery if successful
@@ -505,8 +571,17 @@ class RenderManager(
             Logger.e(TAG, "Failed to add image to MediaStore: ${e.localizedMessage}", e)
             // Continue execution even if MediaStore insertion fails
         }
-        mMainHandler.post {
-            mCaptureDataCb?.onComplete(path)
+        // Post callback safely - check if handler is still valid
+        try {
+            mMainHandler.post {
+                try {
+                    mCaptureDataCb?.onComplete(path)
+                } catch (e: Exception) {
+                    Logger.e(TAG, "Error in capture onComplete callback", e)
+                }
+            }
+        } catch (e: Exception) {
+            Logger.e(TAG, "Failed to post capture onComplete callback", e)
         }
         mCaptureState.set(false)
         if (Utils.debugCamera) {
@@ -545,6 +620,10 @@ class RenderManager(
         private const val TAG = "RenderManager"
         private const val RENDER_THREAD = "gl_render"
         private const val RENDER_CODEC_THREAD = "gl_render_codec"
+        // Minimum interval between preview data callbacks in milliseconds.
+        // 66ms ≈ 15 FPS. Screen rendering is not affected by this; only
+        // preview data delivery is throttled.
+        private const val MIN_PREVIEW_CALLBACK_INTERVAL_MS = 66L
         // render
         private const val MSG_GL_INIT = 0x00
         private const val MSG_GL_DRAW = 0x01

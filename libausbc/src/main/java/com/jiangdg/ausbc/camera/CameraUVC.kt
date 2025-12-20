@@ -31,6 +31,7 @@ import com.jiangdg.ausbc.callback.ICaptureCallBack
 import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.jiangdg.ausbc.camera.bean.PreviewSize
 import com.jiangdg.ausbc.utils.CameraUtils
+import com.jiangdg.ausbc.utils.DeviceProfile
 import com.jiangdg.ausbc.utils.Logger
 import com.jiangdg.ausbc.utils.MediaUtils
 import com.jiangdg.ausbc.utils.Utils
@@ -120,6 +121,7 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
         }
         // 1. create a UVCCamera
         val request = mCameraRequest!!
+        val isTablet = DeviceProfile.isTablet(ctx)
         try {
             mUvcCamera = UVCCamera().apply {
                 open(mCtrlBlock)
@@ -135,6 +137,27 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
             mCameraRequest!!.previewWidth = width
             mCameraRequest!!.previewHeight = height
         }
+
+        // Decide preview format & frame rate based on device profile.
+        // Use a UVC‑friendly FPS range (15–30fps) for all devices to
+        // avoid negotiation failures, and vary only the preferred frame
+        // format between phone and tablet.
+        val minFps = 15
+        val maxFps = 30
+        // Phones: favour MJPEG (higher temporal resolution, strong CPU).
+        // Tablets: try YUYV first to reduce MJPEG decode cost; fall back
+        // to MJPEG automatically if YUYV is not supported by the device.
+        val primaryFormat = if (isTablet) {
+            UVCCamera.FRAME_FORMAT_YUYV
+        } else {
+            UVCCamera.FRAME_FORMAT_MJPEG
+        }
+        val fallbackFormat = if (isTablet) {
+            UVCCamera.FRAME_FORMAT_MJPEG
+        } else {
+            UVCCamera.FRAME_FORMAT_YUYV
+        }
+
         try {
             Logger.i(TAG, "getSuitableSize: $previewSize")
             if (! isPreviewSizeSupported(previewSize)) {
@@ -149,9 +172,9 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
             mUvcCamera?.setPreviewSize(
                 previewSize.width,
                 previewSize.height,
-                MIN_FS,
-                MAX_FPS,
-                UVCCamera.FRAME_FORMAT_MJPEG,
+                minFps,
+                maxFps,
+                primaryFormat,
                 UVCCamera.DEFAULT_BANDWIDTH
             )
         } catch (e: Exception) {
@@ -166,19 +189,24 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
                     Logger.e(TAG, "open camera failed, preview size($previewSize) unsupported-> ${mUvcCamera?.supportedSizeList}")
                     return
                 }
-                Logger.e(TAG, " setPreviewSize failed, try to use yuv format...")
+                Logger.e(
+                    TAG,
+                    "setPreviewSize failed for primary format=$primaryFormat, " +
+                            "trying fallback format=$fallbackFormat at ${previewSize.width}x${previewSize.height}@$minFps-$maxFps"
+                )
                 mUvcCamera?.setPreviewSize(
                     previewSize.width,
                     previewSize.height,
-                    MIN_FS,
-                    MAX_FPS,
-                    UVCCamera.FRAME_FORMAT_YUYV,
+                    minFps,
+                    maxFps,
+                    fallbackFormat,
                     UVCCamera.DEFAULT_BANDWIDTH
                 )
             } catch (e: Exception) {
                 closeCamera()
-                postStateEvent(ICameraStateCallBack.State.ERROR, "err: ${e.localizedMessage}")
-                Logger.e(TAG, " setPreviewSize failed, even using yuv format", e)
+                val errMsg = "setPreviewSize failed for both primary=$primaryFormat and fallback=$fallbackFormat: ${e.localizedMessage}"
+                postStateEvent(ICameraStateCallBack.State.ERROR, errMsg)
+                Logger.e(TAG, errMsg, e)
                 return
             }
         }
@@ -904,7 +932,8 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
 
     companion object {
         private const val TAG = "CameraUVC"
-        private const val MIN_FS = 10
-        private const val MAX_FPS = 60
+        // Default phone-friendly FPS bounds; tablets override via DeviceProfile.
+        private const val MIN_FS = 15
+        private const val MAX_FPS = 30
     }
 }

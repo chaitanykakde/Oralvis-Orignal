@@ -90,6 +90,10 @@ dependencies {
     implementation 'com.amazonaws:aws-android-sdk-s3:2.75.0'
     implementation 'com.amazonaws:aws-android-sdk-core:2.75.0'
     
+    // OpenCV for motion analysis
+    // OpenCV 4.9.0+ is available via Maven Central
+    implementation 'org.opencv:opencv:4.9.0'
+    
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'

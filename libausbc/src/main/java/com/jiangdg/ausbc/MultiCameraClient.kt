@@ -23,6 +23,7 @@ import com.jiangdg.ausbc.render.env.RotateType
 import com.jiangdg.ausbc.utils.CameraUtils
 import com.jiangdg.ausbc.utils.CameraUtils.isFilterDevice
 import com.jiangdg.ausbc.utils.CameraUtils.isUsbCamera
+import com.jiangdg.ausbc.utils.DeviceProfile
 import com.jiangdg.ausbc.utils.Logger
 import com.jiangdg.ausbc.utils.OpenGLUtils
 import com.jiangdg.ausbc.utils.Utils
@@ -285,6 +286,19 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
         }
         protected val mCameraDir by lazy {
             "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)}/Camera"
+        }
+
+        init {
+            // Best-effort hint to the native UVC stack about tablet/phone profile.
+            // If the current libUVCCamera.so does not yet contain the JNI bridge,
+            // fail gracefully and log instead of crashing the app.
+            try {
+                UVCCamera.setTabletMode(DeviceProfile.isTablet(ctx))
+            } catch (e: UnsatisfiedLinkError) {
+                Logger.w(TAG, "nativeSetTabletMode not available in current libUVCCamera.so, skipping tablet hint", e)
+            } catch (t: Throwable) {
+                Logger.w(TAG, "Failed to propagate tablet mode to native UVC stack, continuing without it: ${t.message}")
+            }
         }
 
         override fun handleMessage(msg: Message): Boolean {
