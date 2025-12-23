@@ -39,6 +39,9 @@
 #include "libUVCCamera.h"
 #include "UVCCamera.h"
 
+// Tablet profile flag defined in UVCPreview.cpp
+extern bool gIsTablet;
+
 /**
  * set the value into the long field
  * @param env: this param should not be null
@@ -1744,6 +1747,15 @@ static jint nativeSendCommand(JNIEnv *env, jobject thiz,
 }
 
 //======================================================================
+// Device profile helpers
+//======================================================================
+static void nativeSetTabletMode(JNIEnv *env, jclass clazz, jboolean isTablet) {
+	ENTER();
+	gIsTablet = (isTablet == JNI_TRUE);
+	EXIT();
+}
+
+//======================================================================
 // Java mnethod correspond to this function should not be a static mathod
 static jint nativeUpdateZoomRelLimit(JNIEnv *env, jobject thiz,
 	ID_TYPE id_camera) {
@@ -2204,6 +2216,9 @@ static JNINativeMethod methods[] = {
 	{ "nativeUpdatePrivacyLimit",		"(J)I", (void *) nativeUpdatePrivacyLimit },
 	{ "nativeSetPrivacy",				"(JZ)I", (void *) nativeSetPrivacy },
 	{ "nativeGetPrivacy",				"(J)I", (void *) nativeGetPrivacy },
+
+	// device profile
+	{ "nativeSetTabletMode",            "(Z)V", (void *) nativeSetTabletMode },
 };
 
 int register_uvccamera(JNIEnv *env) {

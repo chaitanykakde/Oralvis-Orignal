@@ -5,10 +5,13 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import android.util.Log
 import com.oralvis.oralviscamera.api.ApiClient
 import com.oralvis.oralviscamera.api.ClinicRegistrationRequest
+import com.oralvis.oralviscamera.core.identity.ClinicIdentityManager
 import com.oralvis.oralviscamera.databinding.ActivityClinicRegistrationBinding
 import kotlinx.coroutines.launch
 
@@ -16,6 +19,32 @@ class ClinicRegistrationActivity : AppCompatActivity() {
     
     private lateinit var binding: ActivityClinicRegistrationBinding
     private lateinit var clinicManager: ClinicManager
+    private var pendingClinicIdToPersist: String? = null
+    private val folderPickerLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val uri = result.data?.data
+            if (result.resultCode == RESULT_OK && uri != null) {
+                Log.d("ClinicRegistration", "SAF folder selected: $uri")
+                ClinicIdentityManager.persistFolderSelection(this, uri)
+                pendingClinicIdToPersist?.let {
+                    ClinicIdentityManager.setClinicId(this, it)
+                    Toast.makeText(
+                        this,
+                        "Clinic ID stored securely for reinstall.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } else {
+                Log.w("ClinicRegistration", "Folder selection cancelled; clinicId may not persist.")
+                Toast.makeText(
+                    this,
+                    "Folder selection skipped. Clinic ID may not persist after reinstall.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            pendingClinicIdToPersist = null
+            goToMain()
+        }
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,14 +87,7 @@ class ClinicRegistrationActivity : AppCompatActivity() {
                     val clinicId = response.body()!!.clinicId
                     clinicManager.saveClinicId(clinicId)
                     clinicManager.saveClinicName(clinicName)
-
-                    // Navigate to Camera screen (MainActivity) after successful registration
-                    // and auto-open patient selection dialog
-                    val intent = Intent(this@ClinicRegistrationActivity, MainActivity::class.java).apply {
-                        putExtra("AUTO_OPEN_PATIENT_DIALOG", true)
-                    }
-                    startActivity(intent)
-                    finish()
+                    persistClinicIdWithSaf(clinicId)
                 } else {
                     Toast.makeText(
                         this@ClinicRegistrationActivity,
@@ -84,6 +106,30 @@ class ClinicRegistrationActivity : AppCompatActivity() {
                 binding.btnRegister.isEnabled = true
             }
         }
+    }
+
+    private fun persistClinicIdWithSaf(clinicId: String) {
+        if (ClinicIdentityManager.needsFolderSelection(this)) {
+            Log.d("ClinicRegistration", "Requesting SAF folder to persist clinicId.")
+            pendingClinicIdToPersist = clinicId
+            folderPickerLauncher.launch(ClinicIdentityManager.buildFolderSelectionIntent())
+        } else {
+            ClinicIdentityManager.setClinicId(this, clinicId)
+            Toast.makeText(
+                this,
+                "Clinic ID stored securely for reinstall.",
+                Toast.LENGTH_SHORT
+            ).show()
+            goToMain()
+        }
+    }
+
+    private fun goToMain() {
+        val intent = Intent(this@ClinicRegistrationActivity, MainActivity::class.java).apply {
+            putExtra("AUTO_OPEN_PATIENT_DIALOG", true)
+        }
+        startActivity(intent)
+        finish()
     }
 }
 

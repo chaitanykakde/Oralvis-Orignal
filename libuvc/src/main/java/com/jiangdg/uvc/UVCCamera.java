@@ -123,6 +123,15 @@ public class UVCCamera {
 		}
 	}
 
+	/**
+	 * Inform the native layer whether we are running on a tablet profile.
+	 * This allows UVCPreview to apply more aggressive frame dropping and
+	 * queue limits on tablets without changing behaviour on phones.
+	 */
+	public static void setTabletMode(boolean isTablet) {
+		nativeSetTabletMode(isTablet);
+	}
+
 	private UsbControlBlock mCtrlBlock;
     protected long mControlSupports;			// カメラコントロールでサポートしている機能フラグ
     protected long mProcSupports;				// プロセッシングユニットでサポートしている機能フラグ
@@ -1233,6 +1242,9 @@ public class UVCCamera {
 	private static final native int nativeGetPowerlineFrequency(final long id_camera);
 
 	private static final native int nativeSendCommand(final long id_camera, final int command);
+
+	// Device profile helpers
+	private static final native void nativeSetTabletMode(boolean isTablet);
 
 	private final native int nativeUpdateZoomLimit(final long id_camera);
 	private static final native int nativeSetZoom(final long id_camera, final int zoom);

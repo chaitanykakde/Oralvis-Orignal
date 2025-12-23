@@ -41,6 +41,10 @@
 #include "UVCPreview.h"
 #include "libuvc_internal.h"
 
+// Global flag indicating whether we are on a tablet profile.
+// This is set from Java via JNI in the UVCCamera wrapper.
+bool gIsTablet = false;
+
 #define	LOCAL_DEBUG 0
 #define MAX_FRAME 4
 #define PREVIEW_PIXEL_BYTES 4	// RGBA/RGBX
@@ -125,6 +129,12 @@ uvc_frame_t *UVCPreview::get_frame(size_t data_bytes) {
 	}
 	pthread_mutex_unlock(&pool_mutex);
 	if UNLIKELY(!frame) {
+		// When the frame pool is exhausted, avoid unbounded allocations.
+		// On tablets we drop the frame instead of allocating a new one
+		// to keep native memory usage stable under high FPS load.
+		if (gIsTablet) {
+			return NULL;
+		}
 		LOGW("allocate new frame");
 		frame = uvc_allocate_frame(data_bytes);
 	}
@@ -437,10 +447,13 @@ void UVCPreview::uvc_preview_frame_callback(uvc_frame_t *frame, void *vptr_args)
 void UVCPreview::addPreviewFrame(uvc_frame_t *frame) {
 
 	pthread_mutex_lock(&preview_mutex);
-	if (isRunning() && (previewFrames.size() < MAX_FRAME)) {
-		previewFrames.put(frame);
-		frame = NULL;
-		pthread_cond_signal(&preview_sync);
+	if (isRunning()) {
+		const int maxQueue = gIsTablet ? 2 : MAX_FRAME;
+		if (previewFrames.size() < maxQueue) {
+			previewFrames.put(frame);
+			frame = NULL;
+			pthread_cond_signal(&preview_sync);
+		}
 	}
 	pthread_mutex_unlock(&preview_mutex);
 	if (frame) {

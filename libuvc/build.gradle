@@ -34,10 +34,10 @@ android {
     }
 }
 
-// Disable NDK build since we have precompiled libraries
-// tasks.withType(JavaCompile) {
-//	compileTask -> compileTask.dependsOn ndkBuild
-// }
+// Use local native sources (UVCCamera.cpp, UVCPreview.cpp, etc.) via ndk-build
+tasks.withType(JavaCompile) { compileTask ->
+	compileTask.dependsOn ndkBuild
+}
 
 String getNdkBuildPath() {
 	def ndkBuildingDir = System.getenv("NDK_HOME")
@@ -58,20 +58,20 @@ String getNdkBuildPath() {
 	return ndkBuildPath
 }
 
-// Disable NDK tasks since we have precompiled libraries
-// task ndkBuild(type: Exec, description: 'Compile JNI source via NDK') {
-//	println('executing ndkBuild')
-//	def ndkBuildPath = getNdkBuildPath();
-//	commandLine ndkBuildPath, '-j8', '-C', file('src/main').absolutePath
-// }
+// NDK tasks: build and clean native libraries
+task ndkBuild(type: Exec, description: 'Compile JNI source via NDK') {
+	println('executing ndkBuild')
+	def ndkBuildPath = getNdkBuildPath();
+	commandLine ndkBuildPath, '-j8', '-C', file('src/main').absolutePath
+}
 
-// task ndkClean(type: Exec, description: 'clean JNI libraries') {
-//	println('executing ndkBuild clean')
-//	def ndkBuildPath = getNdkBuildPath();
-//	commandLine ndkBuildPath, 'clean', '-C', file('src/main').absolutePath
-// }
+task ndkClean(type: Exec, description: 'clean JNI libraries') {
+	println('executing ndkBuild clean')
+	def ndkBuildPath = getNdkBuildPath();
+	commandLine ndkBuildPath, 'clean', '-C', file('src/main').absolutePath
+}
 
-// clean.dependsOn 'ndkClean'
+clean.dependsOn 'ndkClean'
 
 dependencies {
     implementation fileTree(dir: new File(buildDir, 'libs'), include: '*.jar')
