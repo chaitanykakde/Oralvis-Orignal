@@ -193,15 +193,15 @@
 
             </LinearLayout>
 
-        <!-- Tabs: Media Gallery and Reports -->
+        <!-- Tabs: Upper Arch, Lower Arch, Other -->
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/tabLayout"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:background="#1E293B"
             app:tabTextColor="#94A3B8"
-            app:tabSelectedTextColor="#10B981"
-            app:tabIndicatorColor="#10B981"
+            app:tabSelectedTextColor="#8B5CF6"
+            app:tabIndicatorColor="#8B5CF6"
             app:tabMode="fixed"
             app:layout_constraintTop_toBottomOf="@id/patientInfoCard"
             app:layout_constraintStart_toStartOf="parent"
@@ -210,12 +210,17 @@
             <com.google.android.material.tabs.TabItem
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Media Gallery" />
+                android:text="Upper Arch" />
 
             <com.google.android.material.tabs.TabItem
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Reports" />
+                android:text="Lower Arch" />
+
+            <com.google.android.material.tabs.TabItem
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Other" />
 
         </com.google.android.material.tabs.TabLayout>
 
@@ -228,11 +233,45 @@
             android:clipToPadding="false"
             android:scrollbars="vertical"
             app:layout_constraintTop_toBottomOf="@id/tabLayout"
-            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/footerButtons"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
-        <!-- Reports Content (Empty for now) -->
+        <!-- Footer Buttons -->
+        <LinearLayout
+            android:id="@+id/footerButtons"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end"
+            android:padding="16dp"
+            android:layout_marginTop="16dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGetReport"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Get Report"
+                android:textColor="@color/white"
+                android:backgroundTint="#10B981"
+                android:layout_marginEnd="12dp"
+                app:cornerRadius="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSaveAndSync"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Save and Sync"
+                android:textColor="@color/white"
+                android:backgroundTint="#8B5CF6"
+                app:cornerRadius="8dp" />
+
+        </LinearLayout>
+
+        <!-- Reports Content (Hidden - tabs now show arch categories) -->
         <LinearLayout
             android:id="@+id/reportsContent"
             android:layout_width="0dp"
@@ -242,7 +281,7 @@
             android:visibility="gone"
             android:padding="32dp"
             app:layout_constraintTop_toBottomOf="@id/tabLayout"
-            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/footerButtons"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 
@@ -283,7 +322,7 @@
             android:visibility="gone"
             android:padding="32dp"
             app:layout_constraintTop_toBottomOf="@id/tabLayout"
-            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintBottom_toTopOf="@id/footerButtons"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 

@@ -4,30 +4,37 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.tabs.TabLayout
 import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.databinding.ActivityGalleryNewBinding
+import com.oralvis.oralviscamera.gallery.SequenceCard
+import com.oralvis.oralviscamera.gallery.SequenceCardAdapter
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import java.io.File
 
 class GalleryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityGalleryNewBinding
     private lateinit var mediaDao: com.oralvis.oralviscamera.database.MediaDao
-    private lateinit var galleryAdapter: SessionMediaGridAdapter
+    private lateinit var sequenceAdapter: SequenceCardAdapter
     private lateinit var themeManager: ThemeManager
     
-    private var currentTab = 0 // 0 = Media Gallery, 1 = Reports
+    // Tab indices: 0 = Upper Arch, 1 = Lower Arch, 2 = Other
+    private var currentArchTab = 1 // Default to Lower Arch
+    
+    // All media for current patient
+    private var allMedia: List<com.oralvis.oralviscamera.database.MediaRecord> = emptyList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,6 +60,7 @@ class GalleryActivity : AppCompatActivity() {
         setupRecycler()
         setupTabs()
         setupActions()
+        setupFooterButtons()
         observeCurrentPatient()
         applyTheme()
     }
@@ -64,17 +72,30 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private fun setupRecycler() {
-        galleryAdapter = SessionMediaGridAdapter(emptyList()) { media ->
-            openMediaPreview(media.filePath, media.mediaType == "Video")
-        }
-        binding.mediaRecyclerView.layoutManager = GridLayoutManager(this, 4)
-        binding.mediaRecyclerView.adapter = galleryAdapter
+        sequenceAdapter = SequenceCardAdapter(
+            sequenceCards = emptyList(),
+            onRgbImageClick = { card ->
+                card.rgbImage?.let { media ->
+                    openMediaPreview(media.filePath, media.mediaType == "Video")
+                }
+            },
+            onFluorescenceImageClick = { card ->
+                card.fluorescenceImage?.let { media ->
+                    openMediaPreview(media.filePath, media.mediaType == "Video")
+                }
+            },
+            onDiscardClick = { card ->
+                showDiscardConfirmation(card)
+            }
+        )
+        binding.mediaRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.mediaRecyclerView.adapter = sequenceAdapter
     }
     
     private fun setupTabs() {
         binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab?) {
-                currentTab = tab?.position ?: 0
+                currentArchTab = tab?.position ?: 1
                 updateTabContent()
             }
             
@@ -82,20 +103,25 @@ class GalleryActivity : AppCompatActivity() {
             override fun onTabReselected(tab: TabLayout.Tab?) {}
         })
         
-        // Set initial tab
+        // Set initial tab to Lower Arch
+        binding.tabLayout.getTabAt(1)?.select()
         updateTabContent()
     }
     
     private fun updateTabContent() {
-        if (currentTab == 0) {
-            // Media Gallery tab
-            binding.mediaRecyclerView.visibility = View.VISIBLE
-            binding.reportsContent.visibility = View.GONE
-            loadMediaForCurrentPatient()
-        } else {
-            // Reports tab
-            binding.mediaRecyclerView.visibility = View.GONE
-            binding.reportsContent.visibility = View.VISIBLE
+        binding.mediaRecyclerView.visibility = View.VISIBLE
+        binding.reportsContent.visibility = View.GONE
+        loadMediaForCurrentPatient()
+    }
+    
+    private fun setupFooterButtons() {
+        binding.btnGetReport.setOnClickListener {
+            Toast.makeText(this, "Get Report feature coming soon", Toast.LENGTH_SHORT).show()
+        }
+        
+        binding.btnSaveAndSync.setOnClickListener {
+            // Trigger cloud sync
+            Toast.makeText(this, "Save and Sync feature coming soon", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -117,7 +143,6 @@ class GalleryActivity : AppCompatActivity() {
         }
         
         binding.navPatient.setOnClickListener {
-            // Open patient selection dialog
             openPatientDialogForSelection()
         }
     }
@@ -126,9 +151,7 @@ class GalleryActivity : AppCompatActivity() {
         GlobalPatientManager.currentPatient.observe(this) { patient ->
             if (patient != null) {
                 updatePatientInfo(patient)
-                if (currentTab == 0) {
-                    loadMediaForCurrentPatient()
-                }
+                loadMediaForCurrentPatient()
             } else {
                 showNoPatientState()
             }
@@ -161,15 +184,15 @@ class GalleryActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 mediaDao.getMediaByPatient(patientId).collectLatest { mediaList ->
+                    allMedia = mediaList
                     withContext(Dispatchers.Main) {
-                        if (mediaList.isNotEmpty()) {
-                            galleryAdapter = SessionMediaGridAdapter(mediaList) { media ->
-                                openMediaPreview(media.filePath, media.mediaType == "Video")
-                            }
-                            binding.mediaRecyclerView.adapter = galleryAdapter
+                        val sequenceCards = groupMediaIntoSequences(mediaList)
+                        if (sequenceCards.isNotEmpty()) {
+                            sequenceAdapter.updateSequenceCards(sequenceCards)
                             binding.mediaRecyclerView.visibility = View.VISIBLE
                             binding.mediaEmptyState.visibility = View.GONE
                         } else {
+                            sequenceAdapter.updateSequenceCards(emptyList())
                             binding.mediaRecyclerView.visibility = View.GONE
                             binding.mediaEmptyState.visibility = View.VISIBLE
                         }
@@ -180,6 +203,103 @@ class GalleryActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     binding.mediaRecyclerView.visibility = View.GONE
                     binding.mediaEmptyState.visibility = View.VISIBLE
+                }
+            }
+        }
+    }
+    
+    /**
+     * Group media into sequence cards based on arch tab selection.
+     */
+    private fun groupMediaIntoSequences(mediaList: List<com.oralvis.oralviscamera.database.MediaRecord>): List<SequenceCard> {
+        // Filter by current arch tab
+        val filteredMedia = when (currentArchTab) {
+            0 -> mediaList.filter { it.dentalArch == "UPPER" }
+            1 -> mediaList.filter { it.dentalArch == "LOWER" }
+            2 -> mediaList.filter { it.dentalArch == null } // Other = no dental arch (legacy/manual)
+            else -> emptyList()
+        }
+        
+        if (filteredMedia.isEmpty()) {
+            return emptyList()
+        }
+        
+        // Group by guidedSessionId, dentalArch, and sequenceNumber
+        val sequenceMap = mutableMapOf<String, MutableMap<Int, SequenceCard>>()
+        
+        filteredMedia.forEach { media ->
+            val arch = media.dentalArch ?: "OTHER"
+            val sessionId = media.guidedSessionId ?: "legacy_${media.sessionId}"
+            val sequenceNum = media.sequenceNumber ?: 1
+            
+            val key = "$sessionId|$arch"
+            
+            if (!sequenceMap.containsKey(key)) {
+                sequenceMap[key] = mutableMapOf()
+            }
+            
+            val sequenceMapForSession = sequenceMap[key]!!
+            
+            if (!sequenceMapForSession.containsKey(sequenceNum)) {
+                sequenceMapForSession[sequenceNum] = SequenceCard(
+                    sequenceNumber = sequenceNum,
+                    dentalArch = arch,
+                    guidedSessionId = media.guidedSessionId,
+                    rgbImage = null,
+                    fluorescenceImage = null
+                )
+            }
+            
+            val card = sequenceMapForSession[sequenceNum]!!
+            when (media.mode) {
+                "Normal" -> {
+                    sequenceMapForSession[sequenceNum] = card.copy(rgbImage = media)
+                }
+                "Fluorescence" -> {
+                    sequenceMapForSession[sequenceNum] = card.copy(fluorescenceImage = media)
+                }
+            }
+        }
+        
+        // Flatten and sort by sequence number
+        val allSequences = sequenceMap.values.flatMap { it.values }
+        return allSequences.sortedBy { it.sequenceNumber }
+    }
+    
+    private fun showDiscardConfirmation(card: SequenceCard) {
+        AlertDialog.Builder(this)
+            .setTitle("Discard Pair")
+            .setMessage("Are you sure you want to discard this sequence pair? This action cannot be undone.")
+            .setPositiveButton("Discard") { _, _ ->
+                discardSequencePair(card)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun discardSequencePair(card: SequenceCard) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // Delete RGB image if exists
+                card.rgbImage?.let { media ->
+                    mediaDao.deleteMediaById(media.id)
+                    File(media.filePath).delete()
+                }
+                
+                // Delete Fluorescence image if exists
+                card.fluorescenceImage?.let { media ->
+                    mediaDao.deleteMediaById(media.id)
+                    File(media.filePath).delete()
+                }
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@GalleryActivity, "Sequence pair discarded", Toast.LENGTH_SHORT).show()
+                    // Reload media to refresh the list
+                    loadMediaForCurrentPatient()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@GalleryActivity, "Error discarding pair: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -198,9 +318,7 @@ class GalleryActivity : AppCompatActivity() {
                 val patient = database.patientDao().getPatientById(patientId)
                 if (patient != null) {
                     withContext(Dispatchers.Main) {
-                        // Use GlobalPatientManager to set patient (this auto-starts session)
                         GlobalPatientManager.setCurrentPatient(this@GalleryActivity, patient)
-                        // Update UI will happen automatically via observeCurrentPatient
                     }
                 }
             }
@@ -227,7 +345,6 @@ class GalleryActivity : AppCompatActivity() {
     private fun applyTheme() {
         val backgroundColor = themeManager.getBackgroundColor(this)
         val surfaceColor = themeManager.getSurfaceColor(this)
-        val cardColor = themeManager.getCardColor(this)
         val textPrimary = themeManager.getTextPrimaryColor(this)
         val textSecondary = themeManager.getTextSecondaryColor(this)
         
@@ -254,12 +371,8 @@ class GalleryActivity : AppCompatActivity() {
                 }
             }
             // Update selected label (Gallery)
-            val galleryLabel = layout.getChildAt(4) as? TextView // Gallery label position
+            val galleryLabel = layout.getChildAt(4) as? TextView
             galleryLabel?.setTextColor(textPrimary)
         }
-        
-        // Patient info card is now a LinearLayout with transparent background
-        // No need to set background color
     }
 }
-

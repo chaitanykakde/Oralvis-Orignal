@@ -9,7 +9,7 @@ import com.amazonaws.mobileconnectors.s3.transferutility.TransferUtility
 import com.amazonaws.regions.Region
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.s3.AmazonS3Client
-import com.oralvis.oralviscamera.ClinicManager
+import com.oralvis.oralviscamera.LoginManager
 import com.oralvis.oralviscamera.api.ApiClient
 import com.oralvis.oralviscamera.api.ApiClient.AWS_REGION
 import com.oralvis.oralviscamera.api.ApiClient.S3_BUCKET_NAME
@@ -49,11 +49,11 @@ object CloudSyncService {
     ): SyncResult = withContext(Dispatchers.IO) {
         val database = MediaDatabase.getDatabase(context)
         val mediaDao = database.mediaDao()
-        val clinicManager = ClinicManager(context)
-        val clinicId = clinicManager.getClinicId() ?: return@withContext SyncResult(
+        val loginManager = LoginManager(context)
+        val clientId = loginManager.getClientId() ?: return@withContext SyncResult(
             successCount = 0,
             errorCount = 0,
-            error = "Clinic ID not found"
+            error = "Client ID not found. Please login."
         )
 
         // Get all unsynced media for this patient
@@ -68,7 +68,7 @@ object CloudSyncService {
 
         unsyncedMedia.forEachIndexed { index, mediaRecord ->
             try {
-                val result = syncSingleMedia(context, patient, mediaRecord, clinicId)
+                val result = syncSingleMedia(context, patient, mediaRecord, clientId)
                 if (result.success) {
                     // Update local database
                     mediaDao.updateSyncStatus(mediaRecord.id, true, result.s3Url)
@@ -97,7 +97,7 @@ object CloudSyncService {
         context: Context,
         patient: Patient,
         mediaRecord: MediaRecord,
-        clinicId: String
+        clientId: String
     ): SingleMediaResult = withContext(Dispatchers.IO) {
         try {
             val file = File(mediaRecord.filePath)
@@ -110,8 +110,8 @@ object CloudSyncService {
             val newFileName = "${UUID.randomUUID()}.$originalExtension"
 
             // Step 1: Upload file to S3
-            // S3 path: s3://oralvis-media/{GlobalPatientId}/{ClinicId}/{FileName}
-            val s3Key = "${patient.code}/$clinicId/$newFileName"
+            // S3 path: s3://oralvis-media/{GlobalPatientId}/{ClientId}/{FileName}
+            val s3Key = "${patient.code}/$clientId/$newFileName"
             Log.d(TAG, "Uploading file to S3: bucket=$S3_BUCKET_NAME, key=$s3Key")
             
             val s3Url = uploadFileToS3(context, file, s3Key)
@@ -139,7 +139,7 @@ object CloudSyncService {
             // Create metadata DTO matching Lambda function expectations
             val metadata = MediaMetadataDto(
                 patientId = patient.code,
-                clinicId = clinicId,
+                clinicId = clientId, // Use Client ID from login
                 fileName = newFileName,
                 s3Url = s3Url,
                 mediaType = mediaTypeForApi,
@@ -156,7 +156,7 @@ object CloudSyncService {
             // Step 3: Call Lambda with JSON body
             val response = ApiClient.apiService.syncMediaMetadata(
                 url = ApiClient.API_MEDIA_SYNC_ENDPOINT,
-                clinicId = clinicId,
+                clinicId = clientId, // Use Client ID from login
                 request = metadata
             )
 
@@ -187,12 +187,28 @@ object CloudSyncService {
         file: File,
         s3Key: String
     ): String? = suspendCancellableCoroutine { continuation ->
+        // Validate AWS credentials before proceeding
+        val accessKey = ApiClient.AWS_ACCESS_KEY
+        val secretKey = ApiClient.AWS_SECRET_KEY
+        
+        if (accessKey.isBlank() || secretKey.isBlank()) {
+            Log.e(TAG, "AWS credentials are not configured. Please set aws.access.key and aws.secret.key in local.properties")
+            continuation.resume(null)
+            return@suspendCancellableCoroutine
+        }
+        
+        // Flag to ensure continuation is only resumed once
+        var isResumed = false
+        fun safeResume(value: String?) {
+            if (!isResumed && continuation.isActive) {
+                isResumed = true
+                continuation.resume(value)
+            }
+        }
+        
         try {
             // Initialize AWS credentials
-            val credentials = BasicAWSCredentials(
-                ApiClient.AWS_ACCESS_KEY,
-                ApiClient.AWS_SECRET_KEY
-            )
+            val credentials = BasicAWSCredentials(accessKey, secretKey)
             
             val s3Client = AmazonS3Client(credentials, Region.getRegion(Regions.AP_SOUTH_1))
             val transferUtility = TransferUtility.builder()
@@ -204,11 +220,18 @@ object CloudSyncService {
             
             uploadObserver.setTransferListener(object : TransferListener {
                 override fun onStateChanged(id: Int, state: TransferState) {
-                    if (state == TransferState.COMPLETED) {
-                        val s3Url = "https://$S3_BUCKET_NAME.s3.$AWS_REGION.amazonaws.com/$s3Key"
-                        continuation.resume(s3Url)
-                    } else if (state == TransferState.FAILED) {
-                        continuation.resume(null)
+                    when (state) {
+                        TransferState.COMPLETED -> {
+                            val s3Url = "https://$S3_BUCKET_NAME.s3.$AWS_REGION.amazonaws.com/$s3Key"
+                            safeResume(s3Url)
+                        }
+                        TransferState.FAILED -> {
+                            Log.e(TAG, "S3 upload failed (state: FAILED)")
+                            safeResume(null)
+                        }
+                        else -> {
+                            // Other states (IN_PROGRESS, WAITING, etc.) - do nothing
+                        }
                     }
                 }
 
@@ -219,12 +242,12 @@ object CloudSyncService {
 
                 override fun onError(id: Int, ex: Exception) {
                     Log.e(TAG, "S3 upload error", ex)
-                    continuation.resume(null)
+                    safeResume(null)
                 }
             })
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing S3 upload", e)
-            continuation.resume(null)
+            safeResume(null)
         }
     }
 

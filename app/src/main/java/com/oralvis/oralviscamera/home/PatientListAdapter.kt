@@ -33,10 +33,11 @@ class PatientListAdapter(
                 }
                 append(patient.age?.let { "$it yrs" } ?: "New")
             }
-            binding.patientProblem.text = patient.diagnosis ?: "Review"
-            binding.patientTime.text = patient.appointmentTime ?: "--"
-            binding.patientStatus.text = patient.checkInStatus ?: "IN"
-            binding.btnDetails.setOnClickListener { onPatientSelected(patient) }
+            // Removed unwanted fields: patientProblem, patientTime, patientStatus, btnDetails
+            binding.patientProblem.visibility = android.view.View.GONE
+            binding.patientTime.visibility = android.view.View.GONE
+            binding.patientStatus.visibility = android.view.View.GONE
+            binding.btnDetails.visibility = android.view.View.GONE
             binding.root.setOnClickListener { onPatientSelected(patient) }
         }
     }

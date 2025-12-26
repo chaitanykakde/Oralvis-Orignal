@@ -1,6 +1,8 @@
 package com.oralvis.oralviscamera.guidedcapture
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.view.ViewGroup
 import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.oralvis.oralviscamera.R
@@ -54,9 +56,9 @@ class GuidedCaptureManager(
             }
         }
 
-        // Arch icons can be replaced with specific lower/upper assets later.
-        overlayView.lowerArchIcon = null
-        overlayView.upperArchIcon = null
+        // Load arch icons from drawable resources
+        overlayView.lowerArchIcon = loadArchIcon(R.drawable.ic_lower_arch)
+        overlayView.upperArchIcon = loadArchIcon(R.drawable.ic_upper_arch)
     }
 
     fun enable() {
@@ -158,6 +160,18 @@ class GuidedCaptureManager(
     override fun onFlashRequested() {
         flashController.triggerFlash()
         overlayView.showFlash = true
+    }
+    
+    /**
+     * Load arch icon bitmap from drawable resource.
+     */
+    private fun loadArchIcon(resourceId: Int): Bitmap? {
+        return try {
+            BitmapFactory.decodeResource(context.resources, resourceId)
+        } catch (e: Exception) {
+            android.util.Log.e("GuidedCaptureManager", "Failed to load arch icon: ${e.message}")
+            null
+        }
     }
 }
 
