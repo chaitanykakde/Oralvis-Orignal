@@ -51,7 +51,7 @@ public class VideoConfig {
 	/**
 	 * エンコード時のFPS
 	 */
-	private static int captureFps = 15;
+	private static int captureFps = 30;
 	/**
 	 * 最大録画時間[ミリ秒], 負数=制限なし
 	 */

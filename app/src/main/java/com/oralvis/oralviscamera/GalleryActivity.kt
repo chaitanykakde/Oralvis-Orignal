@@ -88,7 +88,8 @@ class GalleryActivity : AppCompatActivity() {
                 showDiscardConfirmation(card)
             }
         )
-        binding.mediaRecyclerView.layoutManager = LinearLayoutManager(this)
+        // Use GridLayoutManager with 2 columns for compact display
+        binding.mediaRecyclerView.layoutManager = androidx.recyclerview.widget.GridLayoutManager(this, 2)
         binding.mediaRecyclerView.adapter = sequenceAdapter
     }
     
@@ -212,15 +213,33 @@ class GalleryActivity : AppCompatActivity() {
      * Group media into sequence cards based on arch tab selection.
      */
     private fun groupMediaIntoSequences(mediaList: List<com.oralvis.oralviscamera.database.MediaRecord>): List<SequenceCard> {
+        android.util.Log.d("GalleryActivity", "groupMediaIntoSequences: total media count = ${mediaList.size}, currentArchTab = $currentArchTab")
+        mediaList.forEach { media ->
+            android.util.Log.d("GalleryActivity", "Media: fileName=${media.fileName}, dentalArch=${media.dentalArch}, guidedSessionId=${media.guidedSessionId}, sequenceNumber=${media.sequenceNumber}")
+        }
+        
         // Filter by current arch tab
         val filteredMedia = when (currentArchTab) {
-            0 -> mediaList.filter { it.dentalArch == "UPPER" }
-            1 -> mediaList.filter { it.dentalArch == "LOWER" }
-            2 -> mediaList.filter { it.dentalArch == null } // Other = no dental arch (legacy/manual)
+            0 -> {
+                val filtered = mediaList.filter { it.dentalArch == "UPPER" }
+                android.util.Log.d("GalleryActivity", "Filtering for UPPER arch: found ${filtered.size} items")
+                filtered
+            }
+            1 -> {
+                val filtered = mediaList.filter { it.dentalArch == "LOWER" }
+                android.util.Log.d("GalleryActivity", "Filtering for LOWER arch: found ${filtered.size} items")
+                filtered
+            }
+            2 -> {
+                val filtered = mediaList.filter { it.dentalArch == null }
+                android.util.Log.d("GalleryActivity", "Filtering for OTHER (null dentalArch): found ${filtered.size} items")
+                filtered
+            }
             else -> emptyList()
         }
         
         if (filteredMedia.isEmpty()) {
+            android.util.Log.d("GalleryActivity", "No media found for current arch tab, returning empty list")
             return emptyList()
         }
         

@@ -139,11 +139,10 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
         }
 
         // Decide preview format & frame rate based on device profile.
-        // Use a UVC‑friendly FPS range (15–30fps) for all devices to
-        // avoid negotiation failures, and vary only the preferred frame
-        // format between phone and tablet.
+        // Use a UVC‑friendly FPS range (15–60fps) for all devices.
+        // Increased max FPS to allow higher quality if camera supports it.
         val minFps = 15
-        val maxFps = 30
+        val maxFps = 60
         // Phones: favour MJPEG (higher temporal resolution, strong CPU).
         // Tablets: try YUYV first to reduce MJPEG decode cost; fall back
         // to MJPEG automatically if YUYV is not supported by the device.
@@ -933,7 +932,8 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
     companion object {
         private const val TAG = "CameraUVC"
         // Default phone-friendly FPS bounds; tablets override via DeviceProfile.
+        // Increased MAX_FPS to allow higher quality if camera supports it.
         private const val MIN_FS = 15
-        private const val MAX_FPS = 30
+        private const val MAX_FPS = 60
     }
 }

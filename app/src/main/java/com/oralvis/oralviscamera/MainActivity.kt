@@ -197,10 +197,10 @@ class MainActivity : AppCompatActivity() {
         mediaDatabase = MediaDatabase.getDatabase(this)
         patientDao = mediaDatabase.patientDao()
         themeManager = ThemeManager(this)
-        // Derive clinic and patient context:
-        // - ClinicId always comes from ClinicManager (single clinic per device)
+        // Derive client and patient context:
+        // - ClientId comes from LoginManager (user-entered Client ID from login)
         // - GlobalPatientId is resolved from the currently selected Patient when saving/uploading
-        clinicId = ClinicManager(this).getClinicId()
+        clinicId = LoginManager(this).getClientId()
         globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
 
         if (isGuidedCaptureEnabled) {
@@ -257,10 +257,13 @@ class MainActivity : AppCompatActivity() {
                     dentalArch: String,
                     sequenceNumber: Int
                 ) {
+                    android.util.Log.d("GuidedCapture", "onGuidedCaptureRequested called - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
                     // Reuse the existing capture pipeline, then update the latest record with guided metadata.
                     if (mCurrentCamera != null) {
+                        android.util.Log.d("GuidedCapture", "Camera available, using capturePhotoWithGuidedMetadata")
                         capturePhotoWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
                     } else {
+                        android.util.Log.d("GuidedCapture", "Camera not available, using captureBlankImageWithGuidedMetadata")
                         captureBlankImageWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
                     }
                 }
@@ -339,6 +342,17 @@ class MainActivity : AppCompatActivity() {
                 openPatientDialogForSession()
                 return@setOnClickListener
             }
+            
+            // If guided capture is enabled, route through guided capture with proper metadata
+            if (guidedCaptureManager?.isEnabled == true) {
+                android.util.Log.d("MainActivity", "Manual capture during guided session - routing through guided capture")
+                if (guidedCaptureManager?.handleManualCapture() == true) {
+                    // Manual capture was handled by guided system with proper metadata
+                    return@setOnClickListener
+                }
+            }
+            
+            // Regular capture (not in guided mode or guided mode didn't handle it)
             if (mCurrentCamera != null) {
                 capturePhotoWithRetry()
             } else {
@@ -1395,8 +1409,8 @@ class MainActivity : AppCompatActivity() {
                         PreviewSize(1280, 720),
                         PreviewSize(640, 480)
                     ))
-                    currentResolution = PreviewSize(640, 480)
-                    android.util.Log.d("ResolutionManager", "Using default resolutions")
+                    currentResolution = PreviewSize(1280, 720)
+                    android.util.Log.d("ResolutionManager", "Using default resolutions with fallback: 1280x720")
                 }
             }
         } catch (e: Exception) {
@@ -2132,6 +2146,7 @@ class MainActivity : AppCompatActivity() {
                             runOnUiThread {
                                 if (!isFinishing && !isDestroyed) {
                                     val finalPath = path ?: imagePath
+                                    android.util.Log.d("GuidedCapture", "Guided photo captured - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
                                     Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
                                     logMediaToDatabase(
                                         filePath = finalPath,
@@ -2301,6 +2316,9 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.d("MediaDatabase", "File name: $fileName")
                 android.util.Log.d("MediaDatabase", "Mode: $currentMode")
                 android.util.Log.d("MediaDatabase", "Media type: $mediaType")
+                android.util.Log.d("MediaDatabase", "dentalArch: $dentalArch")
+                android.util.Log.d("MediaDatabase", "sequenceNumber: $sequenceNumber")
+                android.util.Log.d("MediaDatabase", "guidedSessionId: $guidedSessionId")
                 
                 val mediaRecord = MediaRecord(
                     sessionId = sessionId,
@@ -2772,6 +2790,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         try {
             android.util.Log.d("BlankCapture", "Capturing guided blank image (no camera connected)...")
+            android.util.Log.d("BlankCapture", "Guided metadata - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
             val imagePath = createImageFile()
             val imageFile = java.io.File(imagePath)
 
