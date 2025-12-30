@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    
+    <!-- Outer Circle -->
+    <path
+        android:fillColor="@color/white"
+        android:pathData="M60,10 C32.4,10 10,32.4 10,60 C10,87.6 32.4,110 60,110 C87.6,110 110,87.6 110,60 C110,32.4 87.6,10 60,10 Z" />
+    
+    <!-- Inner Circle with Green -->
+    <path
+        android:fillColor="@color/oralvis_green"
+        android:pathData="M60,20 C37.9,20 20,37.9 20,60 C20,82.1 37.9,100 60,100 C82.1,100 100,82.1 100,60 C100,37.9 82.1,20 60,20 Z" />
+    
+    <!-- Camera Lens Icon -->
+    <path
+        android:fillColor="@color/white"
+        android:pathData="M60,35 C47.3,35 37,45.3 37,58 C37,70.7 47.3,81 60,81 C72.7,81 83,70.7 83,58 C83,45.3 72.7,35 60,35 Z M60,73 C51.7,73 45,66.3 45,58 C45,49.7 51.7,43 60,43 C68.3,43 75,49.7 75,58 C75,66.3 68.3,73 60,73 Z" />
+    
+    <!-- Inner Lens -->
+    <path
+        android:fillColor="@color/oralvis_green_accent"
+        android:pathData="M60,50 C64.4,50 68,53.6 68,58 C68,62.4 64.4,66 60,66 C55.6,66 52,62.4 52,58 C52,53.6 55.6,50 60,50 Z" />
+</vector>

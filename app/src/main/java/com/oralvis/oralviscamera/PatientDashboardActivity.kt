@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 class PatientDashboardActivity : AppCompatActivity() {
     
     private lateinit var binding: ActivityPatientDashboardBinding
-    private lateinit var clinicManager: ClinicManager
+    private lateinit var loginManager: LoginManager
     private var selectedPatient: PatientDto? = null
     private lateinit var patientsAdapter: PatientsAdapter
     
@@ -39,7 +39,7 @@ class PatientDashboardActivity : AppCompatActivity() {
         setContentView(binding.root)
         
         LocalPatientIdManager.initialize(this)
-        clinicManager = ClinicManager(this)
+        loginManager = LoginManager(this)
         
         // Initialize adapter
         patientsAdapter = PatientsAdapter { patient ->
@@ -73,10 +73,10 @@ class PatientDashboardActivity : AppCompatActivity() {
             continueWithSelected()
         }
 
-        // Logout: clear ClinicId and go back to clinic registration
+        // Logout: clear login and go back to login screen
         binding.btnLogout.setOnClickListener {
-            clinicManager.clearClinicId()
-            val intent = Intent(this, ClinicRegistrationActivity::class.java).apply {
+            loginManager.clearLogin()
+            val intent = Intent(this, LoginActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             }
             startActivity(intent)
@@ -127,24 +127,24 @@ class PatientDashboardActivity : AppCompatActivity() {
         
         lifecycleScope.launch {
             try {
-                val clinicId = clinicManager.getClinicId()
-                if (clinicId == null) {
+                val clientId = loginManager.getClientId()
+                if (clientId == null) {
                     Toast.makeText(
                         this@PatientDashboardActivity,
-                        "Clinic ID not found. Please register again.",
+                        "Client ID not found. Please login again.",
                         Toast.LENGTH_LONG
                     ).show()
                     return@launch
                 }
                 val response = ApiClient.apiService.upsertPatient(
                     ApiClient.API_PATIENT_SYNC_ENDPOINT,
-                    clinicId,
+                    clientId,
                     patientDto
                 )
                 
                 if (response.isSuccessful && response.body() != null) {
                     // Navigate to Camera screen with patient data
-                    navigateToCamera(globalPatientId, clinicId)
+                    navigateToCamera(globalPatientId, clientId)
                 } else {
                     Toast.makeText(
                         this@PatientDashboardActivity,
@@ -168,14 +168,14 @@ class PatientDashboardActivity : AppCompatActivity() {
     private fun loadPatients() {
         lifecycleScope.launch {
             try {
-                val clinicId = clinicManager.getClinicId()
-                if (clinicId == null) {
+                val clientId = loginManager.getClientId()
+                if (clientId == null) {
                     return@launch
                 }
                 
                 val response = ApiClient.apiService.searchPatients(
                     ApiClient.API_PATIENT_SYNC_ENDPOINT,
-                    clinicId,
+                    clientId,
                     null
                 )
                 
@@ -191,8 +191,8 @@ class PatientDashboardActivity : AppCompatActivity() {
     private fun searchPatients(query: String) {
         lifecycleScope.launch {
             try {
-                val clinicId = clinicManager.getClinicId()
-                if (clinicId == null) {
+                val clientId = loginManager.getClientId()
+                if (clientId == null) {
                     return@launch
                 }
                 
@@ -201,7 +201,7 @@ class PatientDashboardActivity : AppCompatActivity() {
                 
                 val response = ApiClient.apiService.searchPatients(
                     ApiClient.API_PATIENT_SYNC_ENDPOINT,
-                    clinicId,
+                    clientId,
                     if (query.isBlank()) null else query
                 )
                 
@@ -221,19 +221,19 @@ class PatientDashboardActivity : AppCompatActivity() {
             return
         }
         
-        val clinicId = clinicManager.getClinicId()
-        if (clinicId == null) {
-            Toast.makeText(this, "Clinic ID not found", Toast.LENGTH_SHORT).show()
+        val clientId = loginManager.getClientId()
+        if (clientId == null) {
+            Toast.makeText(this, "Client ID not found. Please login.", Toast.LENGTH_SHORT).show()
             return
         }
         
-        navigateToCamera(patient.patientId, clinicId)
+        navigateToCamera(patient.patientId, clientId)
     }
     
-    private fun navigateToCamera(globalPatientId: String, clinicId: String) {
+    private fun navigateToCamera(globalPatientId: String, clientId: String) {
         val intent = Intent(this, MainActivity::class.java).apply {
             putExtra("GLOBAL_PATIENT_ID", globalPatientId)
-            putExtra("CLINIC_ID", clinicId)
+            putExtra("CLINIC_ID", clientId) // Using Client ID from login
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)

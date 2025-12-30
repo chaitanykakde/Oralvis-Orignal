@@ -101,6 +101,12 @@
             android:theme="@style/Theme.OralVisCamera" />
 
         <activity
+            android:name=".LoginActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+
+        <activity
             android:name=".PatientDashboardActivity"
             android:exported="false"
             android:screenOrientation="landscape"

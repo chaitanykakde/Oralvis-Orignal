@@ -22,6 +22,8 @@ class GuidedSessionController(
         )
 
         fun onFlashRequested()
+        
+        fun onSessionComplete()
     }
 
     var listener: Listener? = null
@@ -82,13 +84,10 @@ class GuidedSessionController(
             }
 
             ScanningState.COMPLETE -> {
-                // Full reset to beginning of lower scan for the SAME guidedSessionId.
-                // A brand new guidedSessionId will be allocated only when the user
-                // presses the global "Start Session" button again.
-                lowerSequence = 0
-                upperSequence = 0
-                state = ScanningState.READY_TO_SCAN_LOWER
-                autoCaptureController.isProcessingActive = false
+                // Session is complete - notify listener to stop the guided capture manager
+                // Session will only restart when user clicks "Start Session" button again
+                listener?.onSessionComplete()
+                return // Don't update UI or continue processing
             }
         }
         notifyUi()
@@ -122,22 +121,87 @@ class GuidedSessionController(
         notifyUi()
     }
 
+    /**
+     * Handle manual capture during guided session.
+     * This allows users to manually trigger captures during guided sessions,
+     * and they will be properly tagged with dentalArch, sequenceNumber, and guidedSessionId.
+     */
+    fun handleManualCapture(): Boolean {
+        val currentGuidedId = guidedSessionId ?: run {
+            android.util.Log.w("GuidedSessionController", "handleManualCapture: guidedSessionId is null, not in guided session")
+            return false
+        }
+
+        android.util.Log.d("GuidedSessionController", "handleManualCapture: state=$state, guidedSessionId=$currentGuidedId")
+
+        val (arch: String, sequence: Int) = when (state) {
+            ScanningState.SCANNING_LOWER -> {
+                lowerSequence += 1
+                android.util.Log.d("GuidedSessionController", "handleManualCapture: SCANNING_LOWER, sequence=$lowerSequence")
+                Pair(SessionBridge.DENTAL_ARCH_LOWER, lowerSequence)
+            }
+
+            ScanningState.SCANNING_UPPER -> {
+                upperSequence += 1
+                android.util.Log.d("GuidedSessionController", "handleManualCapture: SCANNING_UPPER, sequence=$upperSequence")
+                Pair(SessionBridge.DENTAL_ARCH_UPPER, upperSequence)
+            }
+
+            ScanningState.READY_TO_SCAN_LOWER -> {
+                // Allow manual capture in ready state, increment sequence for lower arch
+                lowerSequence += 1
+                android.util.Log.d("GuidedSessionController", "handleManualCapture: READY_TO_SCAN_LOWER, sequence=$lowerSequence")
+                Pair(SessionBridge.DENTAL_ARCH_LOWER, lowerSequence)
+            }
+
+            ScanningState.READY_TO_SCAN_UPPER -> {
+                // Allow manual capture in ready state, increment sequence for upper arch
+                upperSequence += 1
+                android.util.Log.d("GuidedSessionController", "handleManualCapture: READY_TO_SCAN_UPPER, sequence=$upperSequence")
+                Pair(SessionBridge.DENTAL_ARCH_UPPER, upperSequence)
+            }
+
+            else -> {
+                // Manual capture not allowed in COMPLETE state
+                android.util.Log.w("GuidedSessionController", "handleManualCapture: state=$state, manual capture not allowed")
+                return false
+            }
+        }
+
+        android.util.Log.d("GuidedSessionController", "handleManualCapture: calling onGuidedCaptureRequested with arch=$arch, sequence=$sequence")
+        listener?.onFlashRequested()
+        sessionBridge.onGuidedCaptureRequested(
+            guidedSessionId = currentGuidedId,
+            dentalArch = arch,
+            sequenceNumber = sequence
+        )
+        return true
+    }
+
     private fun handleAutoCapture() {
-        val currentGuidedId = guidedSessionId ?: return
+        val currentGuidedId = guidedSessionId ?: run {
+            android.util.Log.w("GuidedSessionController", "handleAutoCapture: guidedSessionId is null, returning")
+            return
+        }
+
+        android.util.Log.d("GuidedSessionController", "handleAutoCapture: state=$state, guidedSessionId=$currentGuidedId")
 
         val arch: String = when (state) {
             ScanningState.SCANNING_LOWER -> {
                 lowerSequence += 1
+                android.util.Log.d("GuidedSessionController", "handleAutoCapture: SCANNING_LOWER, sequence=$lowerSequence")
                 SessionBridge.DENTAL_ARCH_LOWER
             }
 
             ScanningState.SCANNING_UPPER -> {
                 upperSequence += 1
+                android.util.Log.d("GuidedSessionController", "handleAutoCapture: SCANNING_UPPER, sequence=$upperSequence")
                 SessionBridge.DENTAL_ARCH_UPPER
             }
 
             else -> {
                 // Auto capture should not fire in non-scanning states
+                android.util.Log.w("GuidedSessionController", "handleAutoCapture: state=$state is not a scanning state, returning")
                 return
             }
         }
@@ -148,6 +212,7 @@ class GuidedSessionController(
             upperSequence
         }
 
+        android.util.Log.d("GuidedSessionController", "handleAutoCapture: calling onGuidedCaptureRequested with arch=$arch, sequence=$sequence")
         listener?.onFlashRequested()
         sessionBridge.onGuidedCaptureRequested(
             guidedSessionId = currentGuidedId,
@@ -159,25 +224,25 @@ class GuidedSessionController(
     private fun notifyUi() {
         val (mainText, buttonText, progressText) = when (state) {
             ScanningState.READY_TO_SCAN_LOWER -> Triple(
-                "Place scanner at LEFT of LOWER arch.",
+                "Place the scanner at the leftmost tooth of your Lower arch and Start.",
                 "Start Lower Scan",
                 "1/2"
             )
 
             ScanningState.SCANNING_LOWER -> Triple(
-                "Move along LOWER arch to the right.",
+                "Move along the Lower arch and Complete the scan at the rightmost tooth.",
                 "Finish Lower Scan",
                 "1/2"
             )
 
             ScanningState.READY_TO_SCAN_UPPER -> Triple(
-                "Place scanner at LEFT of UPPER arch.",
+                "Excellent. Now, place the scanner at the leftmost tooth of your Upper arch and Start.",
                 "Start Upper Scan",
                 "2/2"
             )
 
             ScanningState.SCANNING_UPPER -> Triple(
-                "Move along UPPER arch to the right.",
+                "Move along the Upper arch and Complete the scan at the rightmost tooth.",
                 "Finish Upper Scan",
                 "2/2"
             )

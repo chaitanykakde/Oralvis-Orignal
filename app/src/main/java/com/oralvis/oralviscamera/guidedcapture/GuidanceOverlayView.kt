@@ -1,5 +1,6 @@
 package com.oralvis.oralviscamera.guidedcapture
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
 import android.util.AttributeSet
@@ -9,11 +10,12 @@ import androidx.annotation.ColorInt
 import com.oralvis.oralviscamera.R
 
 /**
- * Lightweight overlay view that mimics the Python AutoCapture UI:
- *  - Bottom guidance bar with prompt text and color
- *  - Center target box
+ * Lightweight overlay view that mimics the Windows app AutoCapture UI:
+ *  - Center target box (AssistiveMarker) with dynamic colors, border styles, and glow animation
+ *  - Top instruction text
  *  - Left-bottom panel with arch icon, progress text, main & recapture buttons
  *
+ * Updated to match Windows app: feedback moved from bottom bar to central marker.
  * This view is purely presentational; click handling is forwarded via listeners.
  */
 class GuidanceOverlayView @JvmOverloads constructor(
@@ -56,6 +58,7 @@ class GuidanceOverlayView @JvmOverloads constructor(
     var guidanceResult: GuidanceResult? = null
         set(value) {
             field = value
+            updateGlowAnimation(value)
             invalidate()
         }
 
@@ -93,13 +96,16 @@ class GuidanceOverlayView @JvmOverloads constructor(
     // Cached button hit-areas
     private val mainButtonRect = Rect()
     private val recaptureButtonRect = Rect()
+    
+    // Glow animation for "arming" state
+    private var glowAnimator: ValueAnimator? = null
+    private var glowAlpha: Float = 0f
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val w = width
         val h = height
 
-        drawGuidanceBar(canvas, w, h)
         drawTopInstruction(canvas, w)
         drawControlPanel(canvas, w, h)
         drawTargetBox(canvas, w, h)
@@ -108,20 +114,31 @@ class GuidanceOverlayView @JvmOverloads constructor(
         }
     }
 
-    private fun drawGuidanceBar(canvas: Canvas, w: Int, h: Int) {
-        val result = guidanceResult ?: return
-        val barHeight = (h * 0.07f).toInt()
-
-        @ColorInt val color = result.color
-        barPaint.color = color
-        canvas.drawRect(0f, (h - barHeight).toFloat(), w.toFloat(), h.toFloat(), barPaint)
-
-        val prompt = result.prompt
-        textPaint.textSize = 36f
-        val textWidth = textPaint.measureText(prompt)
-        val x = 30f
-        val y = h - barHeight / 2f + textPaint.textSize / 3f
-        canvas.drawText(prompt, x, y, textPaint)
+    /**
+     * Update glow animation based on guidance result.
+     * Glow pulses when prompt contains "Hold steady" (arming state).
+     */
+    private fun updateGlowAnimation(result: GuidanceResult?) {
+        val shouldGlow = result?.prompt?.contains("Hold steady", ignoreCase = true) == true
+        
+        if (shouldGlow && glowAnimator == null) {
+            // Start pulsing glow animation
+            glowAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 1000L // 1 second cycle
+                repeatCount = ValueAnimator.INFINITE
+                repeatMode = ValueAnimator.REVERSE
+                addUpdateListener { animator ->
+                    glowAlpha = animator.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+        } else if (!shouldGlow && glowAnimator != null) {
+            // Stop animation
+            glowAnimator?.cancel()
+            glowAnimator = null
+            glowAlpha = 0f
+        }
     }
 
     private fun drawTopInstruction(canvas: Canvas, w: Int) {
@@ -263,11 +280,7 @@ class GuidanceOverlayView @JvmOverloads constructor(
     }
 
     private fun drawTargetBox(canvas: Canvas, w: Int, h: Int) {
-        val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 3f
-            color = Color.rgb(255, 255, 180)
-        }
+        val result = guidanceResult
         val boxSize = (h * 0.3f).toInt()
         val cx = w / 2
         val cy = h / 2
@@ -275,13 +288,59 @@ class GuidanceOverlayView @JvmOverloads constructor(
         val top = cy - boxSize / 2
         val right = cx + boxSize / 2
         val bottom = cy + boxSize / 2
-        canvas.drawRect(
+        
+        // Determine border color from guidance result (default to amber/yellow)
+        val borderColor = result?.color ?: Color.rgb(255, 200, 80)
+        
+        // Determine border style based on prompt
+        val prompt = result?.prompt ?: ""
+        val isDashed = prompt.contains("Slow down", ignoreCase = true) || 
+                       prompt.contains("Keep steady", ignoreCase = true)
+        val isDotted = prompt.contains("Keep steady", ignoreCase = true) && 
+                       !prompt.contains("Slow down", ignoreCase = true)
+        
+        // Draw pulsing glow effect for "arming" state
+        if (glowAlpha > 0f && prompt.contains("Hold steady", ignoreCase = true)) {
+            val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = 8f
+                color = borderColor
+                alpha = (glowAlpha * 100).toInt() // 0-100 alpha for subtle glow
+            }
+            val glowRect = RectF(
+                left - 10f,
+                top - 10f,
+                right + 10f,
+                bottom + 10f
+            )
+            canvas.drawRoundRect(glowRect, 8f, 8f, glowPaint)
+        }
+        
+        // Draw border with appropriate style
+        val boxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+            color = borderColor
+        }
+        
+        if (isDotted) {
+            // Dotted border for "Keep steady" warnings
+            boxPaint.pathEffect = DashPathEffect(floatArrayOf(8f, 8f), 0f)
+        } else if (isDashed) {
+            // Dashed border for "Slow down" warnings
+            boxPaint.pathEffect = DashPathEffect(floatArrayOf(20f, 10f), 0f)
+        } else {
+            // Solid border for "Ready" and "Hold steady to capture..."
+            boxPaint.pathEffect = null
+        }
+        
+        val rect = RectF(
             left.toFloat(),
             top.toFloat(),
             right.toFloat(),
-            bottom.toFloat(),
-            boxPaint
+            bottom.toFloat()
         )
+        canvas.drawRoundRect(rect, 8f, 8f, boxPaint)
     }
 
     private fun drawFlashOverlay(canvas: Canvas, w: Int, h: Int) {
@@ -319,6 +378,12 @@ class GuidanceOverlayView @JvmOverloads constructor(
             }
         }
         return true
+    }
+    
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        glowAnimator?.cancel()
+        glowAnimator = null
     }
 }
 

@@ -9,7 +9,7 @@
         android:id="@+id/cardContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_margin="16dp"
+        android:layout_margin="8dp"
         app:cardCornerRadius="24dp"
         app:cardUseCompatPadding="true"
         app:cardElevation="16dp"
@@ -18,173 +18,190 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <LinearLayout
+        <ScrollView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:padding="24dp">
+            android:fillViewport="true"
+            android:scrollbars="none">
 
-            <!-- New Patient column -->
             <LinearLayout
-                android:id="@+id/newPatientColumn"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
 
-                <TextView
-                    android:id="@+id/titleNewPatient"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="New Patient"
-                    android:textSize="22sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Enter details to start a session"
-                    android:textSize="12sp"
-                    android:layout_marginBottom="16dp" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/layoutPatientName"
+                <!-- New Patient section -->
+                <LinearLayout
+                    android:id="@+id/newPatientColumn"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Patient Name"
-                    android:layout_marginBottom="12dp"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    android:orientation="vertical"
+                    android:layout_marginBottom="24dp">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/inputPatientName"
+                    <TextView
+                        android:id="@+id/titleNewPatient"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="New Patient"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="6dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Enter details to start a session"
+                        android:textSize="12sp"
+                        android:layout_marginBottom="16dp" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/layoutPatientName"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textPersonName" />
+                        android:hint="Patient Name"
+                        android:layout_marginBottom="12dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
-                </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/inputPatientName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textPersonName"
+                            android:minHeight="56dp" />
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/layoutAge"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="Age"
-                    android:layout_marginBottom="12dp"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/inputAge"
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/layoutAge"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="number" />
+                        android:hint="Age"
+                        android:layout_marginBottom="12dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
-                </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/inputAge"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:minHeight="56dp" />
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/layoutPhone"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="Phone Number"
-                    android:layout_marginBottom="16dp"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/inputPhone"
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/layoutPhone"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="phone" />
+                        android:hint="Phone Number"
+                        android:layout_marginBottom="12dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
-                </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/inputPhone"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="phone"
+                            android:minHeight="56dp" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="* All fields are required to generate a unique ID."
-                    android:textSize="11sp"
-                    android:layout_marginBottom="16dp" />
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnCreatePatient"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="* All fields are required to generate a unique ID."
+                        android:textSize="11sp"
+                        android:layout_marginBottom="12dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnCreatePatient"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="Create Patient"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:layout_marginTop="4dp"
+                        app:backgroundTint="@null"
+                        android:background="@drawable/button_gradient_purple" />
+
+                </LinearLayout>
+
+                <!-- Horizontal Divider -->
+                <View
                     android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="Create Patient"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:layout_marginTop="8dp"
-                    app:backgroundTint="@null"
-                    android:background="@drawable/button_gradient_purple" />
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="16dp"
+                    android:background="#334155" />
+
+                <!-- Existing Patients section -->
+                <LinearLayout
+                    android:id="@+id/existingPatientsColumn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:minHeight="300dp">
+
+                    <TextView
+                        android:id="@+id/titleExistingPatients"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Existing Patients"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="6dp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Search and continue"
+                        android:textSize="12sp"
+                        android:layout_marginBottom="16dp" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/layoutSearch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="Search by Name..."
+                        android:layout_marginBottom="12dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/inputSearch"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="text"
+                            android:minHeight="56dp" />
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/recyclerPatients"
+                        android:layout_width="match_parent"
+                        android:layout_height="300dp"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:nestedScrollingEnabled="false" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnContinueWithSelected"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="Continue with Selected"
+                        android:textStyle="bold"
+                        android:textAllCaps="false"
+                        android:layout_marginTop="12dp"
+                        app:backgroundTint="@null"
+                        android:background="@drawable/button_gradient_teal" />
+
+                </LinearLayout>
+
+                <!-- Extra space at bottom for scrolling -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="16dp" />
 
             </LinearLayout>
 
-            <!-- Divider -->
-            <View
-                android:layout_width="1dp"
-                android:layout_height="match_parent"
-                android:layout_marginHorizontal="16dp"
-                android:background="#334155" />
-
-            <!-- Existing Patients column -->
-            <LinearLayout
-                android:id="@+id/existingPatientsColumn"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/titleExistingPatients"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Existing Patients"
-                    android:textSize="22sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Search and continue"
-                    android:textSize="12sp"
-                    android:layout_marginBottom="16dp" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/layoutSearch"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="Search by Name..."
-                    android:layout_marginBottom="12dp"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/inputSearch"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="text" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/recyclerPatients"
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:paddingTop="4dp"
-                    android:paddingBottom="4dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnContinueWithSelected"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="Continue with Selected"
-                    android:textStyle="bold"
-                    android:textAllCaps="false"
-                    android:layout_marginTop="12dp"
-                    app:backgroundTint="@null"
-                    android:background="@drawable/button_gradient_teal" />
-
-            </LinearLayout>
-
-        </LinearLayout>
+        </ScrollView>
 
     </com.google.android.material.card.MaterialCardView>
 

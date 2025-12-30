@@ -125,9 +125,9 @@ class ClinicRegistrationActivity : AppCompatActivity() {
     }
 
     private fun goToMain() {
-        val intent = Intent(this@ClinicRegistrationActivity, MainActivity::class.java).apply {
-            putExtra("AUTO_OPEN_PATIENT_DIALOG", true)
-        }
+        // After successful clinic registration, navigate to login screen.
+        // Do NOT go directly to MainActivity.
+        val intent = Intent(this@ClinicRegistrationActivity, LoginActivity::class.java)
         startActivity(intent)
         finish()
     }

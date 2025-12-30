@@ -45,13 +45,67 @@ String getNdkBuildPath() {
 		// Try to get from gradle.properties first
 		ndkBuildingDir = project.findProperty("ndk.dir")
 		if (ndkBuildingDir==null || ndkBuildingDir.isEmpty()) {
-			// Fallback to default Android SDK location
-			ndkBuildingDir = "/Users/chaitanyskakde/Library/Android/sdk/ndk/26.3.11579264"
+			// Try to get from ANDROID_HOME or SDK path
+			def sdkDir = System.getenv("ANDROID_HOME")
+			if (sdkDir == null || sdkDir.isEmpty()) {
+				def localProps = new Properties()
+				def localPropsFile = rootProject.file('local.properties')
+				if (localPropsFile.exists()) {
+					localPropsFile.withReader('UTF-8') { reader -> localProps.load(reader) }
+					sdkDir = localProps.getProperty('sdk.dir')
+				}
+			}
+			if (sdkDir != null && !sdkDir.isEmpty()) {
+				// Try to find NDK in common locations
+				def ndkDir = new File(sdkDir, "ndk")
+				if (ndkDir.exists() && ndkDir.isDirectory()) {
+					// First try specific versions
+					def ndkVersions = ['26.3.11579264', '26.1.10909125', '25.2.9519653', '29.0.14206865']
+					boolean found = false
+					for (version in ndkVersions) {
+						def ndkPath = new File(ndkDir, version)
+						if (ndkPath.exists()) {
+							ndkBuildingDir = ndkPath.absolutePath
+							found = true
+							break
+						}
+					}
+					// If specific versions not found, use the first available version
+					if (!found) {
+						def availableVersions = ndkDir.listFiles({ file -> file.isDirectory() } as FileFilter)
+						if (availableVersions != null && availableVersions.length > 0) {
+							// Sort by name (version) and use the latest
+							availableVersions.sort { it.name }
+							ndkBuildingDir = availableVersions[availableVersions.length - 1].absolutePath
+							println("Using NDK version: ${availableVersions[availableVersions.length - 1].name}")
+						}
+					}
+				}
+			}
+			// Final fallback - will fail if NDK not installed
+			if (ndkBuildingDir==null || ndkBuildingDir.isEmpty()) {
+				throw new GradleException("NDK not found. Please install NDK via Android Studio SDK Manager or set NDK_HOME environment variable.")
+			}
 		}
 	}
 	def ndkBuildPath = ndkBuildingDir
 	if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-		ndkBuildPath = ndkBuildingDir + '/ndk-build.cmd'
+		// Convert to short path (8.3 format) to avoid spaces issue
+		def ndkDirFile = new File(ndkBuildingDir)
+		if (ndkDirFile.exists()) {
+			try {
+				def process = "cmd /c for %I in (\"${ndkBuildingDir}\") do @echo %~sI".execute()
+				process.waitFor()
+				def shortPath = process.text.trim()
+				if (shortPath && !shortPath.isEmpty()) {
+					ndkBuildingDir = shortPath
+					println("Using NDK short path: $ndkBuildingDir")
+				}
+			} catch (Exception e) {
+				println("Warning: Could not get short path, using original: ${e.message}")
+			}
+		}
+		ndkBuildPath = ndkBuildingDir + File.separator + 'ndk-build.cmd'
 	} else {
 		ndkBuildPath = ndkBuildingDir + '/ndk-build'
 	}
@@ -62,13 +116,28 @@ String getNdkBuildPath() {
 task ndkBuild(type: Exec, description: 'Compile JNI source via NDK') {
 	println('executing ndkBuild')
 	def ndkBuildPath = getNdkBuildPath();
-	commandLine ndkBuildPath, '-j8', '-C', file('src/main').absolutePath
+	def mainPath = file('src/main').absolutePath
+	workingDir = file('src/main')
+	if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+		executable = ndkBuildPath
+		args '-j8'
+	} else {
+		executable = ndkBuildPath
+		args '-j8'
+	}
 }
 
 task ndkClean(type: Exec, description: 'clean JNI libraries') {
 	println('executing ndkBuild clean')
 	def ndkBuildPath = getNdkBuildPath();
-	commandLine ndkBuildPath, 'clean', '-C', file('src/main').absolutePath
+	workingDir = file('src/main')
+	if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+		executable = ndkBuildPath
+		args 'clean'
+	} else {
+		executable = ndkBuildPath
+		args 'clean'
+	}
 }
 
 clean.dependsOn 'ndkClean'

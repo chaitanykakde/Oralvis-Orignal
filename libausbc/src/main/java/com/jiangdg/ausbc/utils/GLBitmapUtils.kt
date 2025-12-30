@@ -47,7 +47,7 @@ object GLBitmapUtils {
             byteBuffer
         )
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        bitmap?.copyPixelsFromBuffer(byteBuffer)
+        bitmap.copyPixelsFromBuffer(byteBuffer)
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
         return bitmap
     }
@@ -99,7 +99,7 @@ object GLBitmapUtils {
             byteBuffer
         )
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        bitmap?.copyPixelsFromBuffer(byteBuffer)
+        bitmap.copyPixelsFromBuffer(byteBuffer)
         return bitmap
     }
 }

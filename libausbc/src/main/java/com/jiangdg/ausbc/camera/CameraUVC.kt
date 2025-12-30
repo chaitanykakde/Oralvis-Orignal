@@ -219,39 +219,17 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
         }
 
         // 2. set preview size and register preview callback
-        // Check if requested resolution is directly supported first
-        val requestedSize = PreviewSize(request.previewWidth, request.previewHeight)
+        // Match reference app: Always call getSuitableSize() and update mCameraRequest
+        // This ensures we always use a supported resolution and update the request accordingly
         Logger.i(TAG, "========================================")
         Logger.i(TAG, "RESOLUTION NEGOTIATION START")
         Logger.i(TAG, "Requested resolution: ${request.previewWidth}x${request.previewHeight}")
         
-        Logger.d(TAG, "Querying available resolutions from camera...")
-        val availableSizes = getAllPreviewSizes()
-        Logger.d(TAG, "Available resolutions count: ${availableSizes.size}")
-        Logger.d(TAG, "Available resolutions: ${availableSizes.map { "${it.width}x${it.height}" }.joinToString(", ")}")
-        
-        Logger.d(TAG, "Checking if requested resolution is supported...")
-        val isSupported = isPreviewSizeSupported(requestedSize)
-        Logger.d(TAG, "isPreviewSizeSupported(${request.previewWidth}x${request.previewHeight}) = $isSupported")
-        
-        var previewSize = if (isSupported) {
-            // Requested resolution is supported - use it directly, DON'T overwrite mCameraRequest
-            Logger.i(TAG, "✓ Requested resolution ${request.previewWidth}x${request.previewHeight} IS SUPPORTED - using it directly")
-            requestedSize
-        } else {
-            // Requested resolution not supported - find suitable size and update request
-            Logger.w(TAG, "✗ Requested resolution ${request.previewWidth}x${request.previewHeight} NOT SUPPORTED")
-            Logger.d(TAG, "Finding suitable alternative size...")
-            val suitableSize = getSuitableSize(request.previewWidth, request.previewHeight)
-            Logger.w(TAG, "Found suitable size: ${suitableSize.width}x${suitableSize.height} (requested: ${request.previewWidth}x${request.previewHeight})")
-            Logger.d(TAG, "Updating mCameraRequest to suitable size...")
-            Logger.d(TAG, "  BEFORE: previewWidth=${mCameraRequest!!.previewWidth}, previewHeight=${mCameraRequest!!.previewHeight}")
-            suitableSize.apply {
-                mCameraRequest!!.previewWidth = width
-                mCameraRequest!!.previewHeight = height
-            }
-            Logger.d(TAG, "  AFTER: previewWidth=${mCameraRequest!!.previewWidth}, previewHeight=${mCameraRequest!!.previewHeight}")
-            suitableSize
+        var previewSize = getSuitableSize(request.previewWidth, request.previewHeight).apply {
+            Logger.d(TAG, "getSuitableSize returned: ${width}x${height}")
+            Logger.d(TAG, "Updating mCameraRequest: ${mCameraRequest!!.previewWidth}x${mCameraRequest!!.previewHeight} -> ${width}x${height}")
+            mCameraRequest!!.previewWidth = width
+            mCameraRequest!!.previewHeight = height
         }
         
         Logger.i(TAG, "Final preview size selected: ${previewSize.width}x${previewSize.height}")
@@ -315,26 +293,11 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
             
             try {
                 Logger.d(TAG, "Retrying with FALLBACK format...")
-                // Retry with fallback format - check if requested size is still supported
-                val retryRequestedSize = PreviewSize(request.previewWidth, request.previewHeight)
-                Logger.d(TAG, "Checking if requested size ${retryRequestedSize.width}x${retryRequestedSize.height} is supported for fallback format")
-                
-                previewSize = if (isPreviewSizeSupported(retryRequestedSize)) {
-                    // Requested resolution is supported - use it directly
-                    Logger.i(TAG, "✓ Retry: Requested resolution ${request.previewWidth}x${request.previewHeight} IS SUPPORTED - using it directly")
-                    retryRequestedSize
-                } else {
-                    // Requested resolution not supported - find suitable size
-                    Logger.w(TAG, "✗ Retry: Requested resolution ${request.previewWidth}x${request.previewHeight} NOT SUPPORTED")
-                    Logger.d(TAG, "Finding suitable size for fallback format...")
-                    val suitableSize = getSuitableSize(request.previewWidth, request.previewHeight)
-                    Logger.w(TAG, "Found suitable size: ${suitableSize.width}x${suitableSize.height}")
-                    Logger.d(TAG, "Updating mCameraRequest to suitable size...")
-                    suitableSize.apply {
-                        mCameraRequest!!.previewWidth = width
-                        mCameraRequest!!.previewHeight = height
-                    }
-                    suitableSize
+                // Retry with fallback format - always use getSuitableSize (matching reference app)
+                previewSize = getSuitableSize(request.previewWidth, request.previewHeight).apply {
+                    Logger.d(TAG, "Retry getSuitableSize returned: ${width}x${height}")
+                    mCameraRequest!!.previewWidth = width
+                    mCameraRequest!!.previewHeight = height
                 }
                 
                 if (! isPreviewSizeSupported(previewSize)) {
@@ -373,9 +336,12 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
             }
         }
         
+        Logger.i(TAG, "========================================")
         Logger.i(TAG, "RESOLUTION NEGOTIATION COMPLETE")
         Logger.i(TAG, "  Requested: ${request.previewWidth}x${request.previewHeight}")
-        Logger.i(TAG, "  Actual: ${previewSize.width}x${previewSize.height}")
+        Logger.i(TAG, "  getSuitableSize returned: ${previewSize.width}x${previewSize.height}")
+        Logger.i(TAG, "  Final camera resolution: ${previewSize.width}x${previewSize.height}")
+        Logger.i(TAG, "  mCameraRequest updated to: ${mCameraRequest!!.previewWidth}x${mCameraRequest!!.previewHeight}")
         Logger.i(TAG, "========================================")
         // if not opengl render or opengl render with preview callback
         // there should opened

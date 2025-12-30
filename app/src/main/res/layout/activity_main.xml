@@ -298,36 +298,25 @@
                 android:textStyle="bold"
                 android:visibility="gone" />
 
-            <!-- Resolution Selector -->
-            <LinearLayout
-                android:id="@+id/resolutionSelector"
+            <!-- Resolution Selector (Top Toolbar) - TextView that opens PopupMenu -->
+            <TextView
+                android:id="@+id/resolutionSelectorTop"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:minWidth="100dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
                 android:background="@drawable/status_background"
+                android:text="848x480"
+                android:textColor="@color/white"
+                android:textSize="14sp"
+                android:gravity="center"
                 android:clickable="true"
                 android:focusable="true"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingHorizontal="16dp"
-                android:paddingVertical="8dp">
-
-                <TextView
-                    android:id="@+id/resolutionText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="6dp"
-                    android:text="1920x1080"
-                    android:textColor="@color/white"
-                    android:textSize="12sp"
-                    android:textStyle="bold" />
-
-                <ImageView
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:src="@drawable/ic_arrow_drop_down"
-                    android:tint="@color/white" />
-
-            </LinearLayout>
+                android:drawableEnd="@drawable/ic_arrow_drop_down"
+                android:drawablePadding="4dp" />
 
             <!-- Settings Button -->
             <ImageView
@@ -1125,6 +1114,17 @@
                     android:backgroundTint="#FF9800"
                     app:cornerRadius="24dp"
                     android:layout_marginTop="8dp" />
+
+                <!-- Share Logs Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnShareLogs"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:text="Share Recent Logs (Last 2 min)"
+                    android:textSize="14sp"
+                    android:backgroundTint="#2196F3"
+                    app:cornerRadius="24dp"
+                    android:layout_marginTop="16dp" />
 
             </LinearLayout>
 

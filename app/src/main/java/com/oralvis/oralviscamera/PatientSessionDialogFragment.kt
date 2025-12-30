@@ -63,9 +63,10 @@ class PatientSessionDialogFragment : DialogFragment() {
             val metrics = DisplayMetrics()
             requireActivity().windowManager.defaultDisplay.getMetrics(metrics)
             
-            // Set dialog size to ~90% of screen (centered overlay)
-            val width = (metrics.widthPixels * 0.9).toInt()
-            val height = (metrics.heightPixels * 0.85).toInt()
+            // Adjust dialog size for mobile - use more screen space
+            // On mobile, use 95% width and 90% height for better visibility
+            val width = (metrics.widthPixels * 0.95).toInt()
+            val height = (metrics.heightPixels * 0.90).toInt()
             window.setLayout(width, height)
             
             // Make background semi-transparent (not blacked out)
@@ -76,6 +77,9 @@ class PatientSessionDialogFragment : DialogFragment() {
             
             // Center the dialog
             window.setGravity(android.view.Gravity.CENTER)
+            
+            // Adjust for keyboard - allow dialog to resize when keyboard appears
+            window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         
         // Allow dismissing with close button, but not by clicking outside or back button
@@ -315,8 +319,8 @@ class PatientSessionDialogFragment : DialogFragment() {
 
             // Cloud upsert, non-blocking for local save
             try {
-                val clinicId = ClinicManager(context).getClinicId()
-                if (clinicId != null) {
+                val clientId = LoginManager(context).getClientId()
+                if (clientId != null) {
                     val dto = PatientDto(
                         patientId = globalPatientId,
                         name = fullName,
@@ -325,7 +329,7 @@ class PatientSessionDialogFragment : DialogFragment() {
                     )
                     val response = ApiClient.apiService.upsertPatient(
                         ApiClient.API_PATIENT_SYNC_ENDPOINT,
-                        clinicId,
+                        clientId, // Use Client ID from login
                         dto
                     )
                     if (!response.isSuccessful) {

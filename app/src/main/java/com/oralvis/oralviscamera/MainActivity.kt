@@ -120,9 +120,14 @@ class MainActivity : AppCompatActivity() {
     
     // Resolution management
     private var availableResolutions = mutableListOf<PreviewSize>()
-    private var currentResolution: PreviewSize? = null
-    private var pendingResolution: PreviewSize? = null // Tracks resolution change in progress
+    private var currentResolution: PreviewSize? = null // UI display only - updated from camera's actual resolution
     private var resolutionAdapter: ArrayAdapter<String>? = null
+    private var isResolutionChanging = false // Flag to prevent concurrent resolution changes
+    private var resolutionChangeHandler: android.os.Handler? = null // Track handler for resolution change
+    private var resolutionChangeRunnable: Runnable? = null // Track delayed runnable
+    private var resolutionChangeSafetyTimeout: Runnable? = null // Track safety timeout runnable
+    private var topSpinnerInitialSetup = true // Track initial setup state for top toolbar spinner (persists across listener recreations)
+    private var isProgrammaticSelection = false // Flag to prevent listener from firing during programmatic selection
     
     // Exposure update throttling
     private var lastExposureUpdate = 0L
@@ -457,6 +462,10 @@ class MainActivity : AppCompatActivity() {
             resetCameraControls()
         }
         
+        binding.btnShareLogs.setOnClickListener {
+            shareRecentLogs()
+        }
+        
         // Auto control buttons
         binding.btnAutoFocus.setOnClickListener {
             toggleAutoFocus()
@@ -712,15 +721,8 @@ class MainActivity : AppCompatActivity() {
             hideSettingsPanel()
         }
         
-        // Resolution selector
-        binding.resolutionSelector.setOnClickListener {
-            // #region agent log
-            writeDebugLog("A", "MainActivity.kt:690", "resolutionSelector clicked", mapOf("timestamp" to System.currentTimeMillis()))
-            // #endregion
-            Toast.makeText(this, "Resolution selector clicked - opening settings", Toast.LENGTH_SHORT).show()
-            android.util.Log.d("ResolutionClick", "TOP TOOLBAR: Resolution selector clicked")
-            showResolutionDropdown()
-        }
+        // Top toolbar resolution spinner will be set up after camera is ready
+        // See setupTopToolbarResolutionSpinner() called from loadAvailableResolutions()
 
         // Edit patient button in top info bar - opens Find Patients screen
         binding.btnEditPatient.setOnClickListener {
@@ -1186,8 +1188,8 @@ class MainActivity : AppCompatActivity() {
                 setStroke(2, borderColor)
             }
         }
-        binding.resolutionSelector.background = resolutionBg
-        binding.resolutionText.setTextColor(textPrimary)
+        // Top toolbar resolution spinner uses spinner_background drawable which is theme-aware
+        // No additional theme changes needed for spinner
         
         // Settings button
         binding.btnSettings.setColorFilter(textPrimary)
@@ -1429,40 +1431,12 @@ class MainActivity : AppCompatActivity() {
                     val actualResolution = PreviewSize(cameraRequest.previewWidth, cameraRequest.previewHeight)
                     android.util.Log.d("ResolutionManager", "Camera actual resolution: ${actualResolution.width}x${actualResolution.height}")
                     android.util.Log.d("ResolutionManager", "App stored resolution: ${currentResolution?.width}x${currentResolution?.height}")
-                    android.util.Log.d("ResolutionManager", "Pending resolution: ${pendingResolution?.width}x${pendingResolution?.height}")
                     
-                    // Check if we have a pending resolution change
-                    val pending = pendingResolution
-                    if (pending != null) {
-                        // Verify that camera actually changed to the pending resolution
-                        if (actualResolution.width == pending.width && 
-                            actualResolution.height == pending.height) {
-                            // Success: camera changed to requested resolution
-                            currentResolution = pending
-                            pendingResolution = null
-                            android.util.Log.d("ResolutionManager", "Resolution change verified successfully: ${currentResolution?.width}x${currentResolution?.height}")
-                            Toast.makeText(this, "Resolution changed to ${currentResolution?.width}x${currentResolution?.height}", Toast.LENGTH_SHORT).show()
-                        } else {
-                            // Failure: camera didn't change to requested resolution
-                            android.util.Log.w("ResolutionManager", "Resolution change failed! Requested: ${pending.width}x${pending.height}, Actual: ${actualResolution.width}x${actualResolution.height}")
-                            // Keep currentResolution as pendingResolution (don't overwrite with actual) so UI shows requested resolution
-                            currentResolution = pending
-                            // Clear pendingResolution after showing error so user can try again
-                            pendingResolution = null
-                            Toast.makeText(this, "Failed to change resolution. Camera is using ${actualResolution.width}x${actualResolution.height}", Toast.LENGTH_LONG).show()
-                        }
-                    } else {
-                        // No pending change - update from camera's actual resolution (normal behavior)
-                        currentResolution = actualResolution
-                        android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
-                    }
+                    // Update currentResolution from camera's actual resolution (matching reference app approach)
+                    currentResolution = actualResolution
+                    android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
                 } else {
                     android.util.Log.w("ResolutionManager", "Could not get camera request to determine current resolution")
-                    // If we have a pending resolution but can't verify, clear it to avoid stuck state
-                    if (pendingResolution != null) {
-                        android.util.Log.w("ResolutionManager", "Cannot verify pending resolution, clearing it")
-                        pendingResolution = null
-                    }
                 }
                 
                 android.util.Log.d("ResolutionManager", "Available resolutions: ${availableResolutions.size}")
@@ -1470,13 +1444,16 @@ class MainActivity : AppCompatActivity() {
                     android.util.Log.d("ResolutionManager", "Resolution: ${res.width}x${res.height}")
                 }
                 
-                // Update resolution spinner
+                // Update resolution spinner (settings panel)
                 val resolutionAdapter = binding.resolutionSpinner.adapter as? ArrayAdapter<String>
                 resolutionAdapter?.clear()
                 resolutionAdapter?.addAll(availableResolutions.map { "${it.width}x${it.height}" })
                 resolutionAdapter?.notifyDataSetChanged()
                 
-                // Update resolution text (top toolbar)
+                // Setup top toolbar resolution selector
+                setupTopToolbarResolutionSelector()
+                
+                // Update resolution UI (top toolbar)
                 updateResolutionUI()
                 
                 // Update settings panel if it's open
@@ -1516,10 +1493,324 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
+    /**
+     * Reload resolutions with retry logic and exponential backoff
+     * @param maxRetries Maximum number of retry attempts
+     * @param initialDelayMs Initial delay before first retry (increases exponentially)
+     * @param onSuccess Callback when resolutions are successfully loaded
+     * @param onFailure Callback when all retries are exhausted
+     */
+    private fun reloadResolutionsWithRetry(
+        maxRetries: Int = 5,
+        initialDelayMs: Long = 500,
+        onSuccess: (() -> Unit)? = null,
+        onFailure: (() -> Unit)? = null
+    ) {
+        android.util.Log.d("ResolutionManager", "reloadResolutionsWithRetry: maxRetries=$maxRetries, initialDelay=$initialDelayMs")
+        
+        fun attemptLoad(attempt: Int, delayMs: Long) {
+            android.util.Log.d("ResolutionManager", "Reload attempt $attempt/$maxRetries (delay: ${delayMs}ms)")
+            
+            // Check if camera is available and opened
+            val camera = mCurrentCamera
+            val isCameraReady = camera != null && (camera as? CameraUVC)?.isCameraOpened() == true
+            
+            if (!isCameraReady) {
+                android.util.Log.w("ResolutionManager", "Camera not ready (attempt $attempt/$maxRetries)")
+                if (attempt < maxRetries) {
+                    // Retry with exponential backoff
+                    val nextDelay = delayMs * 2
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        attemptLoad(attempt + 1, nextDelay)
+                    }, delayMs)
+                } else {
+                    android.util.Log.e("ResolutionManager", "Failed to reload resolutions after $maxRetries attempts - camera not ready")
+                    onFailure?.invoke()
+                }
+                return
+            }
+            
+            // Camera is ready, store in local non-null variable for smart cast
+            val readyCamera = camera ?: run {
+                android.util.Log.e("ResolutionManager", "Camera became null after ready check")
+                onFailure?.invoke()
+                return
+            }
+            
+            // Try to load resolutions
+            try {
+                val resolutions = readyCamera.getAllPreviewSizes()
+                if (resolutions?.isNotEmpty() == true) {
+                    android.util.Log.d("ResolutionManager", "Successfully reloaded ${resolutions.size} resolutions")
+                    loadAvailableResolutions() // This will update UI and spinner
+                    onSuccess?.invoke()
+                } else {
+                    android.util.Log.w("ResolutionManager", "No resolutions available (attempt $attempt/$maxRetries)")
+                    if (attempt < maxRetries) {
+                        val nextDelay = delayMs * 2
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            attemptLoad(attempt + 1, nextDelay)
+                        }, delayMs)
+                    } else {
+                        android.util.Log.e("ResolutionManager", "Failed to reload resolutions after $maxRetries attempts - no resolutions")
+                        onFailure?.invoke()
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ResolutionManager", "Exception loading resolutions (attempt $attempt/$maxRetries): ${e.message}")
+                if (attempt < maxRetries) {
+                    val nextDelay = delayMs * 2
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        attemptLoad(attempt + 1, nextDelay)
+                    }, delayMs)
+                } else {
+                    android.util.Log.e("ResolutionManager", "Failed to reload resolutions after $maxRetries attempts - exception")
+                    onFailure?.invoke()
+                }
+            }
+        }
+        
+        // Start first attempt immediately
+        attemptLoad(1, initialDelayMs)
+    }
+    
     private fun updateResolutionUI() {
         currentResolution?.let { resolution ->
-            binding.resolutionText.text = "${resolution.width}x${resolution.height}"
+            // Update top toolbar resolution selector text
+            binding.resolutionSelectorTop.text = "${resolution.width}x${resolution.height}"
+            android.util.Log.d("ResolutionSelector", "Updated top toolbar resolution display: ${resolution.width}x${resolution.height}")
         }
+    }
+    
+    /**
+     * Check if a resolution change is currently pending (flag set or handler active)
+     */
+    private fun isResolutionChangePending(): Boolean {
+        val hasPendingHandler = resolutionChangeRunnable != null || resolutionChangeSafetyTimeout != null
+        val result = isResolutionChanging || hasPendingHandler
+        android.util.Log.d("ResolutionManager", "isResolutionChangePending: flag=$isResolutionChanging, handler=$hasPendingHandler, result=$result")
+        return result
+    }
+    
+    private fun setupTopToolbarResolutionSelector() {
+        android.util.Log.d("ResolutionSelector", "========================================")
+        android.util.Log.d("ResolutionSelector", "setupTopToolbarResolutionSelector() CALLED")
+        android.util.Log.d("ResolutionSelector", "Available resolutions: ${availableResolutions.size}")
+        
+        if (availableResolutions.isEmpty()) {
+            android.util.Log.w("ResolutionSelector", "No resolutions available")
+            binding.resolutionSelectorTop.text = "N/A"
+            binding.resolutionSelectorTop.isEnabled = false
+            return
+        }
+        
+        val selector = binding.resolutionSelectorTop
+        selector.isEnabled = true
+        
+        // Update current resolution display
+        currentResolution?.let { resolution ->
+            selector.text = "${resolution.width}x${resolution.height}"
+        } ?: run {
+            selector.text = availableResolutions.firstOrNull()?.let { "${it.width}x${it.height}" } ?: "N/A"
+        }
+        
+        // Setup click listener to show popup menu
+        selector.setOnClickListener {
+            showResolutionPopupMenu(selector)
+        }
+        
+        android.util.Log.d("ResolutionSelector", "Top toolbar resolution selector setup completed")
+        android.util.Log.d("ResolutionSelector", "========================================")
+    }
+    
+    private fun showResolutionPopupMenu(anchorView: View) {
+        android.util.Log.d("ResolutionSelector", "========================================")
+        android.util.Log.d("ResolutionSelector", "showResolutionPopupMenu() CALLED")
+        android.util.Log.d("ResolutionSelector", "mCurrentCamera: ${mCurrentCamera != null}")
+        android.util.Log.d("ResolutionSelector", "mCameraMap.size: ${mCameraMap.size}")
+        android.util.Log.d("ResolutionSelector", "availableResolutions.size: ${availableResolutions.size}")
+        android.util.Log.d("ResolutionSelector", "isRecording: $isRecording")
+        android.util.Log.d("ResolutionSelector", "isResolutionChanging: $isResolutionChanging")
+        
+        // Get camera reference - try mCurrentCamera first, then fallback to camera map
+        // This matches demo app behavior where camera instance is maintained even when closed
+        var camera = mCurrentCamera
+        if (camera == null && mCameraMap.isNotEmpty()) {
+            android.util.Log.w("ResolutionSelector", "mCurrentCamera is null, trying to get from camera map...")
+            camera = mCameraMap.values.firstOrNull()
+            if (camera != null) {
+                android.util.Log.d("ResolutionSelector", "Found camera in map, updating mCurrentCamera reference")
+                mCurrentCamera = camera
+            }
+        }
+        
+        // If resolutions list is empty, try to reload it first (fallback for edge cases)
+        if (availableResolutions.isEmpty()) {
+            android.util.Log.w("ResolutionSelector", "Resolutions list is empty, attempting to reload...")
+            camera?.let { cam ->
+                try {
+                    val resolutions = cam.getAllPreviewSizes()
+                    if (resolutions?.isNotEmpty() == true) {
+                        availableResolutions.clear()
+                        availableResolutions.addAll(resolutions)
+                        availableResolutions.sortByDescending { it.width * it.height }
+                        android.util.Log.d("ResolutionSelector", "Reloaded ${availableResolutions.size} resolutions")
+                    } else {
+                        android.util.Log.w("ResolutionSelector", "Camera returned no resolutions")
+                        Toast.makeText(this, "No resolutions available - camera may not be ready", Toast.LENGTH_SHORT).show()
+                        return
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("ResolutionSelector", "Failed to reload resolutions: ${e.message}", e)
+                    Toast.makeText(this, "Failed to load resolutions: ${e.message}", Toast.LENGTH_SHORT).show()
+                    return
+                }
+            } ?: run {
+                android.util.Log.w("ResolutionSelector", "Camera not available to reload resolutions (camera is null)")
+                Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+        
+        // Check if camera is available before showing menu
+        if (camera == null) {
+            android.util.Log.e("ResolutionSelector", "Camera not available (camera is null) - cannot change resolution")
+            Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        if (isRecording) {
+            Toast.makeText(this, "Cannot change resolution while recording", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        if (isResolutionChanging) {
+            Toast.makeText(this, "Resolution change in progress, please wait...", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        android.util.Log.d("ResolutionSelector", "All checks passed - showing popup menu")
+        
+        val popupMenu = android.widget.PopupMenu(this, anchorView)
+        val menu = popupMenu.menu
+        
+        // Add all available resolutions to menu
+        availableResolutions.forEachIndexed { index, resolution ->
+            val resolutionString = "${resolution.width}x${resolution.height}"
+            val menuItem = menu.add(0, index, 0, resolutionString)
+            
+            // Mark current resolution as checked
+            if (currentResolution?.width == resolution.width && 
+                currentResolution?.height == resolution.height) {
+                menuItem.isChecked = true
+            }
+        }
+        
+        popupMenu.setOnMenuItemClickListener { item ->
+            val selectedIndex = item.itemId
+            if (selectedIndex >= 0 && selectedIndex < availableResolutions.size) {
+                val selectedResolution = availableResolutions[selectedIndex]
+                
+                // Check if same resolution selected
+                if (currentResolution?.width == selectedResolution.width && 
+                    currentResolution?.height == selectedResolution.height) {
+                    android.util.Log.d("ResolutionSelector", "Same resolution selected - skipping")
+                    return@setOnMenuItemClickListener true
+                }
+                
+                // Change resolution (matching demo app - simple direct call)
+                android.util.Log.i("ResolutionSelector", "User selected resolution: ${selectedResolution.width}x${selectedResolution.height}")
+                changeResolutionSimple(selectedResolution)
+            }
+            true
+        }
+        
+        popupMenu.show()
+    }
+    
+    /**
+     * Simplified resolution change method matching demo app behavior
+     * Just calls updateResolution() directly - MultiCameraClient handles camera stop/start
+     * This matches the demo app's simple approach - no complex state management needed
+     */
+    private fun changeResolutionSimple(newResolution: PreviewSize) {
+        android.util.Log.d("ResolutionChange", "========================================")
+        android.util.Log.d("ResolutionChange", "changeResolutionSimple() CALLED")
+        android.util.Log.d("ResolutionChange", "Requested resolution: ${newResolution.width}x${newResolution.height}")
+        android.util.Log.d("ResolutionChange", "Current resolution: ${currentResolution?.width}x${currentResolution?.height}")
+        
+        // Check if same resolution
+        if (currentResolution?.width == newResolution.width && 
+            currentResolution?.height == newResolution.height) {
+            android.util.Log.d("ResolutionChange", "Same resolution - skipping")
+            return
+        }
+        
+        // Get camera reference - try mCurrentCamera first, then fallback to camera map
+        // This matches demo app behavior where camera instance is maintained even when closed
+        var camera = mCurrentCamera
+        if (camera == null && mCameraMap.isNotEmpty()) {
+            android.util.Log.w("ResolutionChange", "mCurrentCamera is null, trying to get from camera map...")
+            camera = mCameraMap.values.firstOrNull()
+            if (camera != null) {
+                android.util.Log.d("ResolutionChange", "Found camera in map, updating mCurrentCamera reference")
+                mCurrentCamera = camera
+            }
+        }
+        
+        if (camera == null) {
+            android.util.Log.e("ResolutionChange", "Camera not available (camera is null)")
+            android.util.Log.e("ResolutionChange", "mCameraMap.size: ${mCameraMap.size}")
+            android.util.Log.e("ResolutionChange", "Available resolutions count: ${availableResolutions.size}")
+            android.util.Log.e("ResolutionChange", "This might happen if camera was disconnected")
+            Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        // Log camera state for debugging
+        android.util.Log.d("ResolutionChange", "Camera available: ${camera.javaClass.simpleName}")
+        android.util.Log.d("ResolutionChange", "isResolutionChanging: $isResolutionChanging")
+        
+        try {
+            // Set flag to prevent concurrent changes and to prevent clearing resolutions list
+            isResolutionChanging = true
+            android.util.Log.d("ResolutionChange", "Set isResolutionChanging = true")
+            
+            // Update UI immediately (matching demo app - trust that updateResolution will work)
+            currentResolution = newResolution
+            binding.resolutionSelectorTop.text = "${newResolution.width}x${newResolution.height}"
+            
+            // Call updateResolution - MultiCameraClient handles:
+            // 1. Closing camera
+            // 2. Waiting for native thread cleanup (200ms)
+            // 3. Scheduling camera reopen with new resolution (1200ms delay)
+            // 4. Opening camera with updated CameraRequest
+            android.util.Log.d("ResolutionChange", "Calling camera.updateResolution(${newResolution.width}, ${newResolution.height})")
+            camera.updateResolution(newResolution.width, newResolution.height)
+            
+            Toast.makeText(this, "Changing resolution to ${newResolution.width}x${newResolution.height}...", Toast.LENGTH_SHORT).show()
+            
+            android.util.Log.d("ResolutionChange", "Resolution change initiated - camera will stop and restart automatically")
+            android.util.Log.d("ResolutionChange", "Camera state callbacks will handle resolution verification and flag reset")
+            android.util.Log.d("ResolutionChange", "========================================")
+            
+        } catch (e: Exception) {
+            android.util.Log.e("ResolutionChange", "EXCEPTION in changeResolutionSimple:", e)
+            Toast.makeText(this, "Failed to change resolution: ${e.message}", Toast.LENGTH_SHORT).show()
+            
+            // Reset flag on error
+            isResolutionChanging = false
+            
+            // Revert UI on error
+            currentResolution?.let { current ->
+                binding.resolutionSelectorTop.text = "${current.width}x${current.height}"
+            }
+        }
+    }
+    
+    // Keep old method name for backward compatibility but redirect to new method
+    private fun setupTopToolbarResolutionSpinner() {
+        setupTopToolbarResolutionSelector()
     }
     
     private fun setupResolutionSpinnerWithRetry(view: View, retryCount: Int) {
@@ -1813,7 +2104,6 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.d("ResolutionChange", "changeResolution() CALLED")
         android.util.Log.d("ResolutionChange", "Requested resolution: ${newResolution.width}x${newResolution.height}")
         android.util.Log.d("ResolutionChange", "Current resolution: ${currentResolution?.width}x${currentResolution?.height}")
-        android.util.Log.d("ResolutionChange", "Pending resolution: ${pendingResolution?.width}x${pendingResolution?.height}")
         android.util.Log.d("ResolutionChange", "Camera available: ${mCurrentCamera != null}")
         android.util.Log.d("ResolutionChange", "Is recording: $isRecording")
         Toast.makeText(this, "changeResolution() called for ${newResolution.width}x${newResolution.height}", Toast.LENGTH_SHORT).show()
@@ -1821,6 +2111,13 @@ class MainActivity : AppCompatActivity() {
         if (isRecording) {
             Toast.makeText(this, "Cannot change resolution while recording", Toast.LENGTH_SHORT).show()
             android.util.Log.w("ResolutionChange", "BLOCKED: Cannot change resolution while recording")
+            return
+        }
+        
+        // Check if resolution change is already in progress
+        if (isResolutionChanging) {
+            Toast.makeText(this, "Resolution change in progress, please wait...", Toast.LENGTH_SHORT).show()
+            android.util.Log.w("ResolutionChange", "BLOCKED: Resolution change already in progress")
             return
         }
         
@@ -1832,22 +2129,23 @@ class MainActivity : AppCompatActivity() {
         
         mCurrentCamera?.let { camera ->
             try {
+                // Set flag to prevent concurrent changes
+                isResolutionChanging = true
+                android.util.Log.d("ResolutionChange", "Set isResolutionChanging = true")
+                
                 Toast.makeText(this, "Changing resolution to ${newResolution.width}x${newResolution.height}...", Toast.LENGTH_SHORT).show()
                 
                 android.util.Log.d("ResolutionChange", "Starting resolution change")
                 android.util.Log.d("ResolutionChange", "  FROM: ${currentResolution?.width}x${currentResolution?.height}")
                 android.util.Log.d("ResolutionChange", "  TO: ${newResolution.width}x${newResolution.height}")
                 
-                // Store the new resolution before camera restart
-                val previousResolution = currentResolution
+                // Update UI immediately (matching reference app - trust that updateResolution will work)
                 currentResolution = newResolution
-                pendingResolution = newResolution // Track pending resolution change
                 updateCurrentResolutionDisplay(txtCurrentResolution)
                 updateResolutionUI() // Update top toolbar resolution display
                 
                 android.util.Log.d("ResolutionChange", "Updated UI state:")
                 android.util.Log.d("ResolutionChange", "  currentResolution: ${currentResolution?.width}x${currentResolution?.height}")
-                android.util.Log.d("ResolutionChange", "  pendingResolution: ${pendingResolution?.width}x${pendingResolution?.height}")
                 
                 // Get camera request before update to see current state
                 val cameraRequest = (camera as? CameraUVC)?.getCameraRequest()
@@ -1868,6 +2166,104 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Calling camera.updateResolution(${newResolution.width}, ${newResolution.height})", Toast.LENGTH_SHORT).show()
                 camera.updateResolution(newResolution.width, newResolution.height)
                 
+                // Cancel any existing handlers from previous resolution changes
+                resolutionChangeRunnable?.let { oldRunnable ->
+                    resolutionChangeHandler?.removeCallbacks(oldRunnable)
+                    android.util.Log.d("ResolutionChange", "Cancelled previous resolution change handler")
+                }
+                resolutionChangeSafetyTimeout?.let { oldTimeout ->
+                    resolutionChangeHandler?.removeCallbacks(oldTimeout)
+                    android.util.Log.d("ResolutionChange", "Cancelled previous safety timeout")
+                }
+                
+                // Store handler for tracking
+                resolutionChangeHandler = android.os.Handler(android.os.Looper.getMainLooper())
+                val handler = resolutionChangeHandler!!
+                
+                // Re-enable after delay (camera will reopen)
+                resolutionChangeRunnable = object : Runnable {
+                    override fun run() {
+                        android.util.Log.d("ResolutionChange", "Delayed handler executing - checking camera state")
+                        
+                        // Clear the runnable reference since we're executing
+                        resolutionChangeRunnable = null
+                        
+                        // Check if camera is actually opened before resetting flag
+                        val camera = mCurrentCamera
+                        val isCameraReady = camera != null && (camera as? CameraUVC)?.isCameraOpened() == true
+                        
+                        if (!isCameraReady) {
+                            android.util.Log.w("ResolutionChange", "Camera not ready yet, retrying in 1 second...")
+                            // Retry after 1 second - store new runnable
+                            resolutionChangeRunnable = this
+                            handler.postDelayed(this, 1000)
+                            return
+                        }
+                        
+                        // Camera is ready, reload resolutions and reset flag
+                        android.util.Log.d("ResolutionChange", "Camera is ready, reloading resolutions...")
+                        
+                        // Reload resolutions with retry before verifying
+                        reloadResolutionsWithRetry(
+                            maxRetries = 5,
+                            initialDelayMs = 500,
+                            onSuccess = {
+                                android.util.Log.d("ResolutionChange", "Resolutions reloaded successfully")
+                                isResolutionChanging = false
+                                
+                                // CRITICAL: Reset initial setup flag so next selection will work
+                                topSpinnerInitialSetup = false
+                                android.util.Log.d("ResolutionChange", "Set isResolutionChanging = false, topSpinnerInitialSetup = false")
+                                
+                                // Clear handler references
+                                resolutionChangeRunnable = null
+                                resolutionChangeSafetyTimeout = null
+                                
+                                // Verify resolution after camera reopens
+                                verifyCurrentResolution()
+                            },
+                            onFailure = {
+                                android.util.Log.e("ResolutionChange", "Failed to reload resolutions, resetting flag anyway")
+                                // Reset flag even on failure to prevent stuck state
+                                isResolutionChanging = false
+                                
+                                // CRITICAL: Reset initial setup flag so next selection will work
+                                topSpinnerInitialSetup = false
+                                
+                                // Clear handler references
+                                resolutionChangeRunnable = null
+                                resolutionChangeSafetyTimeout = null
+                                
+                                // Try to reload once more without retry
+                                loadAvailableResolutions()
+                                verifyCurrentResolution()
+                            }
+                        )
+                    }
+                }
+                
+                handler.postDelayed(resolutionChangeRunnable!!, 2500) // 2.5 seconds to allow camera to fully reopen
+                
+                // Safety timeout: Force reset flag after 10 seconds to prevent stuck state
+                resolutionChangeSafetyTimeout = Runnable {
+                    if (isResolutionChanging) {
+                        android.util.Log.w("ResolutionChange", "Safety timeout: Forcing isResolutionChanging = false after 10 seconds")
+                        isResolutionChanging = false
+                        
+                        // CRITICAL: Reset initial setup flag so next selection will work
+                        topSpinnerInitialSetup = false
+                        
+                        // Clear handler references
+                        resolutionChangeRunnable = null
+                        resolutionChangeSafetyTimeout = null
+                        
+                        // Try to reload resolutions one last time
+                        loadAvailableResolutions()
+                        verifyCurrentResolution()
+                    }
+                }
+                handler.postDelayed(resolutionChangeSafetyTimeout!!, 10000) // 10 second safety timeout
+                
                 // #region agent log
                 writeDebugLog("D", "MainActivity.kt:1711", "camera.updateResolution() returned", mapOf(
                     "width" to newResolution.width,
@@ -1881,11 +2277,32 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.e("ResolutionChange", "EXCEPTION in changeResolution:", e)
                 Toast.makeText(this, "Failed to change resolution: ${e.message}", Toast.LENGTH_SHORT).show()
                 
-                // Clear pending resolution and reset to previous resolution on error
-                pendingResolution = null
-                android.util.Log.d("ResolutionChange", "Cleared pendingResolution due to error")
-                loadAvailableResolutions()
-                updateCurrentResolutionDisplay(txtCurrentResolution)
+                // Reset flag on error
+                isResolutionChanging = false
+                
+                // CRITICAL: Reset initial setup flag so next selection will work
+                topSpinnerInitialSetup = false
+                android.util.Log.d("ResolutionChange", "Set isResolutionChanging = false (error), topSpinnerInitialSetup = false")
+                
+                // Clear handler references
+                resolutionChangeRunnable = null
+                resolutionChangeSafetyTimeout = null
+                
+                // Reload resolutions with retry to restore spinner state
+                reloadResolutionsWithRetry(
+                    maxRetries = 3,
+                    initialDelayMs = 500,
+                    onSuccess = {
+                        android.util.Log.d("ResolutionChange", "Resolutions reloaded after error")
+                        updateCurrentResolutionDisplay(txtCurrentResolution)
+                    },
+                    onFailure = {
+                        android.util.Log.e("ResolutionChange", "Failed to reload resolutions after error")
+                        // Still try to reload once more without retry
+                        loadAvailableResolutions()
+                        updateCurrentResolutionDisplay(txtCurrentResolution)
+                    }
+                )
             }
         } ?: run {
             android.util.Log.e("ResolutionChange", "FAILED: Camera not available (mCurrentCamera is null)")
@@ -1903,6 +2320,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun verifyCurrentResolution() {
+        android.util.Log.d("ResolutionManager", "========================================")
+        android.util.Log.d("ResolutionManager", "verifyCurrentResolution() CALLED")
         mCurrentCamera?.let { camera ->
             try {
                 val cameraRequest = (camera as? CameraUVC)?.getCameraRequest()
@@ -1910,37 +2329,33 @@ class MainActivity : AppCompatActivity() {
                     val actualResolution = PreviewSize(cameraRequest.previewWidth, cameraRequest.previewHeight)
                     android.util.Log.d("ResolutionManager", "Camera actual resolution: ${actualResolution.width}x${actualResolution.height}")
                     android.util.Log.d("ResolutionManager", "App current resolution: ${currentResolution?.width}x${currentResolution?.height}")
-                    android.util.Log.d("ResolutionManager", "Pending resolution: ${pendingResolution?.width}x${pendingResolution?.height}")
                     
-                    // Check if we have a pending resolution change
-                    val pending = pendingResolution
-                    if (pending != null) {
-                        // Verify that camera actually changed to the pending resolution
-                        if (actualResolution.width == pending.width && 
-                            actualResolution.height == pending.height) {
-                            // Success: camera changed to requested resolution
-                            currentResolution = pending
-                            pendingResolution = null
-                            android.util.Log.d("ResolutionManager", "Resolution change verified in verifyCurrentResolution: ${currentResolution?.width}x${currentResolution?.height}")
-                        } else {
-                            // Failure: camera didn't change to requested resolution
-                            android.util.Log.w("ResolutionManager", "Resolution change not verified! Requested: ${pending.width}x${pending.height}, Actual: ${actualResolution.width}x${actualResolution.height}")
-                            // Keep currentResolution as pendingResolution (don't overwrite with actual)
-                            currentResolution = pending
-                        }
+                    // Update currentResolution from camera's actual resolution (matching reference app approach)
+                    val previousResolution = currentResolution
+                    currentResolution = actualResolution
+                    android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
+                    
+                    // Update UI with verified resolution (updates top toolbar spinner)
+                    updateResolutionUI()
+                    
+                    // Log if resolution changed
+                    val widthChanged = previousResolution?.width != actualResolution.width
+                    val heightChanged = previousResolution?.height != actualResolution.height
+                    if (widthChanged || heightChanged) {
+                        android.util.Log.i("ResolutionManager", "Resolution changed: ${previousResolution?.width}x${previousResolution?.height} -> ${actualResolution.width}x${actualResolution.height}")
                     } else {
-                        // No pending change - update from camera's actual resolution (normal behavior)
-                        currentResolution = actualResolution
-                        android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
+                        // Resolution unchanged - no action needed
                     }
-                    updateResolutionUI() // Update UI with verified resolution
                 } else {
                     android.util.Log.w("ResolutionManager", "Could not get camera request to verify resolution")
                 }
             } catch (e: Exception) {
-                android.util.Log.e("ResolutionManager", "Failed to verify current resolution: ${e.message}")
+                android.util.Log.e("ResolutionManager", "Failed to verify current resolution: ${e.message}", e)
             }
+        } ?: run {
+            android.util.Log.w("ResolutionManager", "Camera not available for resolution verification")
         }
+        android.util.Log.d("ResolutionManager", "========================================")
     }
     
     private fun refreshResolutionSpinnerIfOpen() {
@@ -2034,6 +2449,16 @@ class MainActivity : AppCompatActivity() {
                 mCurrentCamera = null
                 binding.statusText.text = "USB Camera removed"
                 binding.statusText.visibility = View.VISIBLE
+                
+                // Reset resolution changing flag if camera detaches during resolution change
+                if (isResolutionChanging) {
+                    android.util.Log.w("ResolutionManager", "Camera detached during resolution change - resetting flag")
+                    isResolutionChanging = false
+                    // Clear resolutions since camera is gone
+                    availableResolutions.clear()
+                    // Refresh selector to show empty state
+                    setupTopToolbarResolutionSelector()
+                }
             }
             
             override fun onConnectDev(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
@@ -2069,6 +2494,12 @@ class MainActivity : AppCompatActivity() {
                                         
                         // Load available resolutions and set current resolution
                         loadAvailableResolutions()
+                        
+                        // Reset resolution changing flag after camera reopens and resolutions are loaded
+                        if (isResolutionChanging) {
+                            android.util.Log.d("ResolutionManager", "Camera opened after resolution change - resetting flag")
+                            isResolutionChanging = false
+                        }
                                         updateCameraControlValues()
                         
                         // Verify and log current resolution after camera restart
@@ -2088,9 +2519,21 @@ class MainActivity : AppCompatActivity() {
                                     ICameraStateCallBack.State.CLOSED -> {
                                         binding.statusText.text = "Camera closed"
                                         binding.statusText.visibility = View.VISIBLE
-                                        // Clear resolution data when camera is closed
-                                        availableResolutions.clear()
-                                        android.util.Log.d("ResolutionManager", "Camera closed - cleared resolution data")
+                                        
+                                        // Don't reset flag here - camera closing is expected during resolution change
+                                        // The delayed handler will manage the flag after camera reopens
+                                        // Only reset if this is an unexpected close (not during resolution change)
+                                        android.util.Log.d("ResolutionManager", "Camera closed - isResolutionChanging: $isResolutionChanging")
+                                        if (isResolutionChanging) {
+                                            android.util.Log.d("ResolutionManager", "Camera closed during resolution change - this is expected, delayed handler will manage flag")
+                                            // Don't clear resolutions during resolution change - camera will reopen soon
+                                            // The resolutions list will be refreshed when camera reopens
+                                        } else {
+                                            // Only clear resolutions if this is an unexpected close (camera disconnected)
+                                            // During normal resolution change, we keep the list so popup menu still works
+                                            android.util.Log.d("ResolutionManager", "Camera closed unexpectedly - clearing resolution data")
+                                            availableResolutions.clear()
+                                        }
                                         
                                         // Reset recording state when camera is closed
                                         if (isRecording) {
@@ -3183,6 +3626,159 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 android.util.Log.e("SessionManager", "Failed to cleanup empty session: ${e.message}")
             }
+        }
+    }
+    
+    /**
+     * Collects and shares recent logs from the last 2 minutes
+     */
+    private fun shareRecentLogs() {
+        try {
+            android.util.Log.d("LogSharing", "Starting to collect recent logs...")
+            Toast.makeText(this, "Collecting logs from last 2 minutes...", Toast.LENGTH_SHORT).show()
+            
+            val logBuilder = StringBuilder()
+            logBuilder.append("=== OralVis Camera Logs (Last 2 Minutes) ===\n")
+            logBuilder.append("Collected at: ${android.text.format.DateFormat.format("yyyy-MM-dd HH:mm:ss", System.currentTimeMillis())}\n")
+            logBuilder.append("Package: com.oralvis.oralviscamera\n")
+            logBuilder.append("App Version: ${packageManager.getPackageInfo(packageName, 0).versionName}\n")
+            logBuilder.append("=============================================\n\n")
+            
+            // Try to get logs using logcat -d (dump current buffer)
+            // Filter by our package name and important tags
+            val process = Runtime.getRuntime().exec("logcat -d")
+            val inputStream = process.inputStream
+            val reader = java.io.BufferedReader(java.io.InputStreamReader(inputStream))
+            
+            // Calculate cutoff time (2 minutes ago)
+            val cutoffTime = System.currentTimeMillis() - (2 * 60 * 1000)
+            
+            var line: String?
+            var lineCount = 0
+            val maxLines = 1000 // Limit to prevent huge files
+            
+            while (reader.readLine().also { line = it } != null && lineCount < maxLines) {
+                line?.let { logLine ->
+                    // Filter to only include our app's logs or important system logs
+                    val isRelevant = logLine.contains("com.oralvis.oralviscamera") || 
+                                     logLine.contains("Resolution") || 
+                                     logLine.contains("ResolutionManager") ||
+                                     logLine.contains("ResolutionTopSpinner") ||
+                                     logLine.contains("ResolutionChange") ||
+                                     logLine.contains("CameraUVC") || 
+                                     logLine.contains("MultiCamera") ||
+                                     logLine.contains("UVCCamera") ||
+                                     logLine.contains("libUVCCamera") ||
+                                     logLine.contains("libusb") ||
+                                     logLine.contains("libuvc") ||
+                                     logLine.contains("Camera") ||
+                                     logLine.contains("Guided") ||
+                                     logLine.contains("MotionAnalyzer") ||
+                                     logLine.contains("AutoCapture")
+                    
+                    if (isRelevant) {
+                        // Try to parse timestamp from log line (format: MM-DD HH:MM:SS.mmm)
+                        // If we can't parse, include it anyway (better to have more logs)
+                        try {
+                            val parts = logLine.split(" ")
+                            if (parts.size >= 2) {
+                                val datePart = parts[0]
+                                val timePart = parts[1]
+                                val dateTimeStr = "$datePart $timePart"
+                                
+                                // Parse date/time (format: MM-DD HH:MM:SS.mmm)
+                                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                                val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.getDefault())
+                                val logTime = sdf.parse("$dateTimeStr")
+                                
+                                if (logTime != null) {
+                                    val calendar = java.util.Calendar.getInstance()
+                                    calendar.time = logTime
+                                    calendar.set(java.util.Calendar.YEAR, currentYear)
+                                    
+                                    if (calendar.timeInMillis >= cutoffTime) {
+                                        logBuilder.append(logLine).append("\n")
+                                        lineCount++
+                                    }
+                                } else {
+                                    // Can't parse time, include it anyway if it's recent
+                                    logBuilder.append(logLine).append("\n")
+                                    lineCount++
+                                }
+                            } else {
+                                // No timestamp, include it
+                                logBuilder.append(logLine).append("\n")
+                                lineCount++
+                            }
+                        } catch (e: Exception) {
+                            // Parsing failed, include the line anyway
+                            logBuilder.append(logLine).append("\n")
+                            lineCount++
+                        }
+                    }
+                }
+            }
+            
+            reader.close()
+            inputStream.close()
+            process.destroy()
+            
+            // If we didn't get many logs, try getting last N lines without time filter
+            if (lineCount < 50) {
+                logBuilder.append("\n=== Additional Recent Logs (Last 300 lines, no time filter) ===\n\n")
+                
+                val process2 = Runtime.getRuntime().exec("logcat -d -t 300")
+                val inputStream2 = process2.inputStream
+                val reader2 = java.io.BufferedReader(java.io.InputStreamReader(inputStream2))
+                
+                var line2: String?
+                var lineCount2 = 0
+                while (reader2.readLine().also { line2 = it } != null && lineCount2 < 300) {
+                    line2?.let {
+                        if (it.contains("com.oralvis.oralviscamera") || 
+                            it.contains("Resolution") || 
+                            it.contains("Camera") || 
+                            it.contains("MultiCamera") ||
+                            it.contains("UVCCamera")) {
+                            logBuilder.append(it).append("\n")
+                            lineCount2++
+                        }
+                    }
+                }
+                reader2.close()
+                inputStream2.close()
+                process2.destroy()
+            }
+            
+            logBuilder.append("\n=== End of Logs ===\n")
+            logBuilder.append("Total lines collected: $lineCount\n")
+            
+            val logText = logBuilder.toString()
+            
+            if (logText.length < 200) {
+                Toast.makeText(this, "No recent logs found. Try again after using the app.", Toast.LENGTH_LONG).show()
+                android.util.Log.w("LogSharing", "No logs collected (length: ${logText.length})")
+                return
+            }
+            
+            // Share via Intent
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "OralVis Camera Logs - Last 2 Minutes")
+                putExtra(Intent.EXTRA_TEXT, logText)
+            }
+            
+            startActivity(Intent.createChooser(shareIntent, "Share Logs"))
+            
+            android.util.Log.d("LogSharing", "Logs shared successfully (${logText.length} characters, $lineCount lines)")
+            Toast.makeText(this, "Logs ready to share! ($lineCount lines)", Toast.LENGTH_SHORT).show()
+            
+        } catch (e: Exception) {
+            android.util.Log.e("LogSharing", "Failed to collect logs: ${e.message}", e)
+            Toast.makeText(this, "Failed to collect logs: ${e.message}", Toast.LENGTH_LONG).show()
+            
+            // Show error details
+            e.printStackTrace()
         }
     }
 }

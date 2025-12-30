@@ -9,25 +9,27 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
+import org.opencv.video.Video
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
 /**
- * MotionAnalyzer performs frame-difference motion analysis on camera preview frames.
+ * MotionAnalyzer performs dense optical flow motion analysis on camera preview frames.
  *
  * This class:
  * - Receives NV21 frames from the camera pipeline
  * - Samples frames at ~8-10 FPS (drops frames in between)
- * - Computes motion metrics using OpenCV frame difference
+ * - Computes motion metrics using OpenCV Farneback dense optical flow
  * - Only processes during SCANNING_LOWER or SCANNING_UPPER states
- * - Emits MotionState with mu (mean motion) and sigma (std dev)
+ * - Emits MotionState with motionScore (average pixel movement magnitude)
  * - Runs on a background thread (HandlerThread)
  *
  * Design:
- * - Uses frame difference (absdiff) for simplicity and speed
- * - Resizes frames to ≤160×120 for performance
+ * - Uses Farneback dense optical flow for robust, pixel-level motion detection
+ * - Resizes frames to 320px width for performance (matching Windows app)
  * - Reuses Mat objects to avoid allocation overhead
- * - Tracks recent motion values to compute mu and sigma
+ * - Applies exponential smoothing: motionScore = 0.8 * prevScore + 0.2 * rawScore
+ * - Uses hysteresis logic for stable warning signals
  */
 class MotionAnalyzer {
 
@@ -37,12 +39,24 @@ class MotionAnalyzer {
         // Frame sampling: target 8-10 FPS
         private const val SAMPLE_INTERVAL_MS = 100L // 10 FPS
         
-        // Motion analysis parameters
-        private const val TARGET_WIDTH = 160
-        private const val TARGET_HEIGHT = 120
+        // Motion analysis parameters (matching Windows app)
+        private const val MOTION_TARGET_WIDTH = 320
         
-        // History for mu/sigma computation
-        private const val MOTION_HISTORY_SIZE = 10
+        // Smoothing factor for motionScore
+        private const val SMOOTHING_ALPHA = 0.8 // 0.8 * prevScore + 0.2 * rawScore
+        
+        // Noise filtering: ignore very small motion values (likely noise when camera is still)
+        private const val NOISE_THRESHOLD = 0.1 // Motion scores below this are treated as noise/zero
+        
+        // Hysteresis thresholds (matching Windows app)
+        private const val STABILITY_ENTER_THRESH = 3.0
+        private const val STABILITY_CLEAR_THRESH = 2.0
+        private const val SPEED_ENTER_THRESH = 8.0
+        private const val SPEED_CLEAR_THRESH = 6.0
+        private const val HYSTERESIS_K_CONFIRM = 5
+        
+        // Frame initialization: skip first few frames which may have artifacts
+        private const val INITIALIZATION_FRAMES = 3
     }
 
     var onMotionStateUpdated: ((MotionState) -> Unit)? = null
@@ -57,11 +71,26 @@ class MotionAnalyzer {
     // OpenCV Mat objects (reused to avoid allocation)
     private var prevGrayMat: Mat? = null
     private var currGrayMat: Mat? = null
-    private var diffMat: Mat? = null
     private var resizedMat: Mat? = null
+    private var flowMat: Mat? = null // For Farneback optical flow
     
-    // Motion history for mu/sigma computation
-    private val motionHistory = mutableListOf<Double>()
+    // Motion score smoothing
+    private var smoothedMotionScore: Double? = null
+    
+    // Frame counter for initialization skip
+    private var frameCount: Int = 0
+    
+    // Hysteresis instances (both fed by motionScore)
+    private val stabilityHysteresis = HysteresisState(
+        enterThreshold = STABILITY_ENTER_THRESH,
+        clearThreshold = STABILITY_CLEAR_THRESH,
+        kConfirm = HYSTERESIS_K_CONFIRM
+    )
+    private val speedHysteresis = HysteresisState(
+        enterThreshold = SPEED_ENTER_THRESH,
+        clearThreshold = SPEED_CLEAR_THRESH,
+        kConfirm = HYSTERESIS_K_CONFIRM
+    )
     
     // Current scanning state (set externally)
     @Volatile
@@ -113,7 +142,7 @@ class MotionAnalyzer {
         releaseMats()
         
         // Clear state
-        motionHistory.clear()
+        smoothedMotionScore = null
         lastSampleTimeMs = 0
         
         Log.d(TAG, "MotionAnalyzer stopped")
@@ -156,7 +185,7 @@ class MotionAnalyzer {
     }
 
     /**
-     * Process a single frame using OpenCV frame difference.
+     * Process a single frame using Farneback dense optical flow.
      * Runs on background thread.
      */
     private fun processFrame(data: ByteArray, width: Int, height: Int) {
@@ -171,21 +200,43 @@ class MotionAnalyzer {
             val grayMat = Mat(height, width, CvType.CV_8UC1)
             grayMat.put(0, 0, yData)
             
-            // Resize to target size for performance
-            val targetSize = Size(TARGET_WIDTH.toDouble(), TARGET_HEIGHT.toDouble())
+            // Resize to target width (maintaining aspect ratio)
+            val scale = MOTION_TARGET_WIDTH.toDouble() / width
+            val targetHeight = (height * scale).toInt()
+            val targetSize = Size(MOTION_TARGET_WIDTH.toDouble(), targetHeight.toDouble())
             if (resizedMat == null) {
                 resizedMat = Mat()
             }
             Imgproc.resize(grayMat, resizedMat!!, targetSize)
             grayMat.release()
             
-            // Compute motion if we have a previous frame
-            val motionLevel = if (prevGrayMat != null) {
-                computeMotion(resizedMat!!)
+            // Increment frame counter
+            frameCount++
+            
+            // Compute motion using Farneback optical flow if we have a previous frame
+            val rawMotionScore = if (prevGrayMat != null && frameCount > INITIALIZATION_FRAMES) {
+                val computed = computeMotionFarneback(resizedMat!!)
+                // Apply noise filtering: treat very small values as zero (noise when camera is still)
+                if (computed < NOISE_THRESHOLD) {
+                    0.0
+                } else {
+                    computed
+                }
             } else {
-                // First frame: no motion
+                // First few frames or no previous frame: no motion
+                if (frameCount <= INITIALIZATION_FRAMES) {
+                    Log.d(TAG, "Skipping motion computation for initialization frame $frameCount/$INITIALIZATION_FRAMES")
+                }
                 0.0
             }
+            
+            // Apply exponential smoothing
+            val motionScore = if (smoothedMotionScore == null) {
+                rawMotionScore
+            } else {
+                SMOOTHING_ALPHA * smoothedMotionScore!! + (1.0 - SMOOTHING_ALPHA) * rawMotionScore
+            }
+            smoothedMotionScore = motionScore
             
             // Update previous frame
             if (prevGrayMat == null) {
@@ -193,23 +244,25 @@ class MotionAnalyzer {
             }
             resizedMat!!.copyTo(prevGrayMat!!)
             
-            // Update motion history and compute mu/sigma
-            updateMotionHistory(motionLevel)
-            val (mu, sigma) = computeMotionStats()
-            
-            // Determine warnings (thresholds match AutoCaptureController defaults)
-            val speedWarning = mu >= 4.0
-            val stabilityWarning = sigma >= 3.0
+            // Update hysteresis states (both fed by the same motionScore)
+            val speedWarning = speedHysteresis.update(motionScore)
+            val stabilityWarning = stabilityHysteresis.update(motionScore)
             
             // Emit MotionState
             val motionState = MotionState(
-                mu = mu,
-                sigma = sigma,
+                motionScore = motionScore,
                 speedWarning = speedWarning,
                 stabilityWarning = stabilityWarning
             )
             
-            Log.d(TAG, "motionLevel=$motionLevel, mu=$mu, sigma=$sigma, state=$scanningState")
+            // Enhanced logging for debugging auto-capture issues
+            val isStable = motionScore < 2.0 // Match AutoCaptureController threshold
+            Log.d(TAG, "Motion: raw=$rawMotionScore, smoothed=$motionScore, stable=$isStable, speedWarn=$speedWarning, stabilityWarn=$stabilityWarning, state=$scanningState")
+            
+            // Log when motionScore is above threshold to help diagnose why capture isn't triggering
+            if (!isStable && motionScore > 2.0) {
+                Log.w(TAG, "MotionScore above threshold: $motionScore > 2.0 (capture will not trigger)")
+            }
             
             // Emit on main thread to avoid threading issues
             android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -222,46 +275,89 @@ class MotionAnalyzer {
     }
 
     /**
-     * Compute motion level using frame difference.
+     * Compute motion score using Farneback dense optical flow.
+     * Returns the average pixel movement magnitude across the frame.
      */
-    private fun computeMotion(currentGray: Mat): Double {
-        if (diffMat == null) {
-            diffMat = Mat()
+    private fun computeMotionFarneback(currentGray: Mat): Double {
+        try {
+            // Ensure flowMat is initialized with correct size and type (CV_32FC2 for 2-channel float)
+            val rows = currentGray.rows()
+            val cols = currentGray.cols()
+            
+            if (flowMat == null || flowMat!!.rows() != rows || flowMat!!.cols() != cols || flowMat!!.type() != CvType.CV_32FC2) {
+                flowMat?.release()
+                flowMat = Mat(rows, cols, CvType.CV_32FC2)
+                Log.d(TAG, "Initialized flowMat: ${rows}x${cols}, type=CV_32FC2")
+            }
+            
+            // Verify input Mats are valid
+            if (prevGrayMat == null || prevGrayMat!!.empty()) {
+                Log.w(TAG, "computeMotionFarneback: prevGrayMat is null or empty")
+                return 0.0
+            }
+            
+            if (currentGray.empty()) {
+                Log.w(TAG, "computeMotionFarneback: currentGray is empty")
+                return 0.0
+            }
+            
+            // Verify sizes match
+            if (prevGrayMat!!.rows() != rows || prevGrayMat!!.cols() != cols) {
+                Log.w(TAG, "computeMotionFarneback: Size mismatch - prev: ${prevGrayMat!!.rows()}x${prevGrayMat!!.cols()}, curr: ${rows}x${cols}")
+                return 0.0
+            }
+            
+            // Compute Farneback dense optical flow
+            // Parameters matching typical usage: pyramid levels, window size, iterations, etc.
+            Video.calcOpticalFlowFarneback(
+                prevGrayMat!!,
+                currentGray,
+                flowMat!!,
+                0.5,      // pyr_scale: pyramid scale factor
+                3,        // levels: number of pyramid levels
+                15,       // winsize: averaging window size
+                3,        // iterations: number of iterations at each pyramid level
+                5,        // poly_n: size of pixel neighborhood for polynomial expansion
+                1.2,      // poly_sigma: standard deviation for Gaussian smoothing
+                0         // flags: operation flags
+            )
+            
+            // Compute magnitude of flow vectors: sqrt(flow_x² + flow_y²)
+            // Flow Mat has 2 channels: flow_x and flow_y
+            val flowChannels = mutableListOf<Mat>()
+            Core.split(flowMat!!, flowChannels)
+            
+            if (flowChannels.size < 2) {
+                Log.e(TAG, "computeMotionFarneback: Failed to split flow channels, got ${flowChannels.size} channels")
+                flowChannels.forEach { it.release() }
+                return 0.0
+            }
+            
+            val flowX = flowChannels[0]
+            val flowY = flowChannels[1]
+            
+            // Compute magnitude: sqrt(x² + y²)
+            val magnitudeMat = Mat()
+            Core.magnitude(flowX, flowY, magnitudeMat)
+            
+            // Compute mean magnitude across entire frame
+            val meanScalar = Core.mean(magnitudeMat)
+            val motionScore = meanScalar.`val`[0]
+            
+            // Release temporary Mats
+            flowChannels.forEach { it.release() }
+            magnitudeMat.release()
+            
+            // Log detailed motion score for debugging
+            if (motionScore > 5.0 || motionScore < 0.1) {
+                Log.d(TAG, "computeMotionFarneback: motionScore=$motionScore (unusual value)")
+            }
+            
+            return motionScore
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in computeMotionFarneback: ${e.message}", e)
+            return 0.0
         }
-        
-        // Compute absolute difference
-        Core.absdiff(prevGrayMat!!, currentGray, diffMat!!)
-        
-        // Compute mean of difference
-        val meanScalar = Core.mean(diffMat!!)
-        return meanScalar.`val`[0]
-    }
-
-    /**
-     * Update motion history and maintain fixed size.
-     */
-    private fun updateMotionHistory(motionLevel: Double) {
-        motionHistory.add(motionLevel)
-        if (motionHistory.size > MOTION_HISTORY_SIZE) {
-            motionHistory.removeAt(0)
-        }
-    }
-
-    /**
-     * Compute mu (mean) and sigma (std dev) from motion history.
-     */
-    private fun computeMotionStats(): Pair<Double, Double> {
-        if (motionHistory.isEmpty()) {
-            return 0.0 to 0.0
-        }
-        
-        val mean = motionHistory.average()
-        
-        // Compute standard deviation
-        val variance = motionHistory.map { (it - mean) * (it - mean) }.average()
-        val sigma = sqrt(variance)
-        
-        return mean to sigma
     }
 
     /**
@@ -271,7 +367,11 @@ class MotionAnalyzer {
         workerHandler?.post {
             prevGrayMat?.release()
             prevGrayMat = null
-            motionHistory.clear()
+            smoothedMotionScore = null
+            frameCount = 0 // Reset frame counter
+            // Reset hysteresis states immediately
+            stabilityHysteresis.reset()
+            speedHysteresis.reset()
             Log.d(TAG, "Cleared previous frame (not scanning)")
         }
     }
@@ -282,12 +382,12 @@ class MotionAnalyzer {
     private fun releaseMats() {
         prevGrayMat?.release()
         currGrayMat?.release()
-        diffMat?.release()
         resizedMat?.release()
+        flowMat?.release()
         
         prevGrayMat = null
         currGrayMat = null
-        diffMat = null
         resizedMat = null
+        flowMat = null
     }
 }

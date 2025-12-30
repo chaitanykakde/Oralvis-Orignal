@@ -11,14 +11,15 @@ import android.graphics.Color
  * - Produces high-level guidance (prompt + color) for the UI
  * - Emits capture events when all gates are satisfied
  *
+ * Updated to match Windows app: uses single motionScore instead of mu/sigma.
+ *
  * NOTE: This class is intentionally UI-framework agnostic and does not know about Android Views.
  */
 class AutoCaptureController(
-    private val captureSpeedThresh: Double = 4.0,
-    private val captureStabilityThresh: Double = 3.0,
+    private val captureStabilityThresh: Double = 2.0, // Single threshold for motionScore
     private val captureDelaySeconds: Double = 0.5,
     private val captureCooldownSeconds: Double = 1.5
-    // In the Python implementation, these are CAPTURE_SPEED_THRESH, CAPTURE_STAB_THRESH,
+    // In the Windows app implementation, these are CAPTURE_STABILITY_THRESH (2.0),
     // CAPTURE_DELAY_S, CAPTURE_COOLDOWN_S respectively.
 ) {
 
@@ -66,10 +67,11 @@ class AutoCaptureController(
 
         val nowMs = System.currentTimeMillis()
 
-        // --- Gate 1: Stability thresholds ---
-        val isStable =
-            motionState.mu < captureSpeedThresh &&
-                motionState.sigma < captureStabilityThresh
+        // --- Gate 1: Stability threshold (simplified to single motionScore check) ---
+        val isStable = motionState.motionScore < captureStabilityThresh
+        
+        // Enhanced logging for debugging
+        android.util.Log.d("AutoCaptureController", "onMotionStateUpdated: motionScore=${motionState.motionScore}, threshold=$captureStabilityThresh, isStable=$isStable, enableAutoCapture=$enableAutoCapture, isProcessingActive=$isProcessingActive")
 
         var isArming = false
 
@@ -77,21 +79,35 @@ class AutoCaptureController(
         if (isStable) {
             if (stableSince == null) {
                 stableSince = nowMs
+                android.util.Log.d("AutoCaptureController", "Motion is stable, starting hold-steady timer")
             }
             val elapsedMs = nowMs - (stableSince ?: nowMs)
             if (elapsedMs >= (captureDelaySeconds * 1000.0)) {
                 isArming = true
+                android.util.Log.d("AutoCaptureController", "Hold-steady timer complete (${elapsedMs}ms >= ${captureDelaySeconds * 1000.0}ms), arming capture")
 
                 // --- Gate 3: Cooldown timer ---
                 val sinceLastCaptureMs = nowMs - lastCaptureTime
                 if (enableAutoCapture && sinceLastCaptureMs >= (captureCooldownSeconds * 1000.0)) {
+                    android.util.Log.d("AutoCaptureController", "Auto-capture triggered! motionScore=${motionState.motionScore}, calling onCaptureTriggered callback")
                     onCaptureTriggered?.invoke()
                     lastCaptureTime = nowMs
                     stableSince = null
                     isArming = false
+                } else {
+                    if (!enableAutoCapture) {
+                        android.util.Log.d("AutoCaptureController", "Auto-capture disabled, not triggering (enableAutoCapture=false)")
+                    } else {
+                        android.util.Log.d("AutoCaptureController", "Cooldown active: ${sinceLastCaptureMs}ms < ${captureCooldownSeconds * 1000.0}ms")
+                    }
                 }
+            } else {
+                android.util.Log.d("AutoCaptureController", "Hold-steady timer: ${elapsedMs}ms / ${captureDelaySeconds * 1000.0}ms")
             }
         } else {
+            if (stableSince != null) {
+                android.util.Log.d("AutoCaptureController", "Motion no longer stable (motionScore=${motionState.motionScore} >= $captureStabilityThresh), resetting timer")
+            }
             stableSince = null
             isArming = false
         }

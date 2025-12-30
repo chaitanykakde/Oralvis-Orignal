@@ -162,6 +162,22 @@ class GuidedCaptureManager(
         overlayView.showFlash = true
     }
     
+    override fun onSessionComplete() {
+        android.util.Log.e("Guided", "Session complete - disabling GuidedCaptureManager")
+        disable()
+    }
+    
+    /**
+     * Handle manual capture during guided session.
+     * Returns true if the capture was handled by the guided system, false otherwise.
+     */
+    fun handleManualCapture(): Boolean {
+        if (!isEnabled) {
+            return false
+        }
+        return guidedSessionController.handleManualCapture()
+    }
+    
     /**
      * Load arch icon bitmap from drawable resource.
      */

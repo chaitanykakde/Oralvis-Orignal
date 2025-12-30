@@ -678,10 +678,36 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
          * Close camera
          */
         fun closeCamera() {
+            Logger.d(TAG, "closeCamera() called")
+            Logger.d(TAG, "  mCameraHandler is null: ${mCameraHandler == null}")
+            Logger.d(TAG, "  mCameraThread is null: ${mCameraThread == null}")
+            Logger.d(TAG, "  isPreviewed: $isPreviewed")
+            
+            // Stop preview first
             mCameraHandler?.obtainMessage(MSG_STOP_PREVIEW)?.sendToTarget()
+            
+            // Wait a bit for preview to stop before quitting thread
+            // This helps prevent race conditions with native preview thread
+            try {
+                Thread.sleep(100) // Small delay to let preview stop message process
+            } catch (e: InterruptedException) {
+                Logger.w(TAG, "Interrupted while waiting for preview to stop", e)
+            }
+            
+            // Quit thread safely
             mCameraThread?.quitSafely()
+            
+            // Wait for thread to finish
+            try {
+                mCameraThread?.join(500) // Wait up to 500ms for thread to finish
+            } catch (e: InterruptedException) {
+                Logger.w(TAG, "Interrupted while waiting for camera thread to finish", e)
+            }
+            
             mCameraThread = null
             mCameraHandler = null
+            
+            Logger.d(TAG, "closeCamera() completed")
         }
 
         /**
@@ -780,20 +806,46 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
                 
                 Logger.i(TAG, "updateResolution: Changing from ${previewWidth}x${previewHeight} to ${width}x${height}")
                 Logger.d(TAG, "Closing camera...")
+                
+                // Stop preview and wait for it to fully stop
                 closeCamera()
                 
-                Logger.d(TAG, "Scheduling camera reopen in 1000ms with new resolution")
+                // Wait additional time to ensure native preview thread has stopped
+                // This prevents crashes when reopening camera
+                Logger.d(TAG, "Waiting for camera to fully close...")
+                try {
+                    Thread.sleep(200) // Additional wait for native thread cleanup
+                } catch (e: InterruptedException) {
+                    Logger.w(TAG, "Interrupted while waiting for camera close", e)
+                }
+                
+                Logger.d(TAG, "Scheduling camera reopen in 1200ms with new resolution")
                 mMainHandler.postDelayed({
+                    Logger.d(TAG, "========================================")
                     Logger.d(TAG, "Delayed task executing - updating camera request")
                     Logger.d(TAG, "  OLD previewWidth: $previewWidth")
                     Logger.d(TAG, "  OLD previewHeight: $previewHeight")
+                    
+                    // Verify camera is closed before reopening
+                    if (isPreviewed) {
+                        Logger.w(TAG, "WARNING: Camera still marked as previewed, closing again...")
+                        closeCamera()
+                        // Wait a bit more
+                        try {
+                            Thread.sleep(200)
+                        } catch (e: InterruptedException) {
+                            Logger.w(TAG, "Interrupted while waiting", e)
+                        }
+                    }
+                    
                     previewWidth = width
                     previewHeight = height
                     Logger.d(TAG, "  NEW previewWidth: $previewWidth")
                     Logger.d(TAG, "  NEW previewHeight: $previewHeight")
                     Logger.d(TAG, "Calling openCamera() with updated request")
+                    Logger.d(TAG, "========================================")
                     openCamera(mCameraView, mCameraRequest)
-                }, 1000)
+                }, 1200) // Increased delay to 1200ms for better stability
             }
         }
 
@@ -885,17 +937,45 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
                 return it
             }
             
-            // 4. Find closest aspect ratio - prefer higher resolution
-            // Calculate aspect ratio difference and prefer higher resolution when similar
+            // 4. Find closest aspect ratio - prefer matching width when aspect ratios are similar
+            // First, find all sizes with similar aspect ratios (within tolerance)
+            val ASPECT_TOLERANCE = 0.1f // 10% tolerance for aspect ratio matching
+            val similarAspectSizes = sortedSizes.filter { size ->
+                val sizeRatio = size.width.toFloat() / size.height
+                abs(aspectRatio - sizeRatio) <= ASPECT_TOLERANCE
+            }
+            
+            if (similarAspectSizes.isNotEmpty()) {
+                Logger.d(TAG, "  Found ${similarAspectSizes.size} sizes with similar aspect ratio (within ${ASPECT_TOLERANCE})")
+                
+                // Prefer exact width match first
+                similarAspectSizes.find { it.width == maxWidth }?.let {
+                    Logger.d(TAG, "  ✓ Found matching width with similar aspect: ${it.width}x${it.height}")
+                    return it
+                }
+                
+                // If no exact width match, prefer highest resolution with similar aspect
+                val bestSimilar = similarAspectSizes.maxByOrNull { it.width * it.height }
+                bestSimilar?.let {
+                    Logger.d(TAG, "  → Selected highest resolution with similar aspect: ${it.width}x${it.height}")
+                    return it
+                }
+            }
+            
+            // 5. Fallback: Find closest aspect ratio overall (if no similar aspect ratios found)
             var bestSize = sortedSizes[0] // Start with highest resolution
             var minAspectDiff = Float.MAX_VALUE
             
             sortedSizes.forEach { size ->
                 val sizeRatio = size.width.toFloat() / size.height
                 val aspectDiff = abs(aspectRatio - sizeRatio)
-                // Prefer higher resolution if aspect ratio difference is similar
+                // Prefer matching width when aspect ratios are very close
+                val widthMatch = if (size.width == maxWidth) 1 else 0
+                val currentWidthMatch = if (bestSize.width == maxWidth) 1 else 0
+                
                 if (aspectDiff < minAspectDiff || 
-                    (aspectDiff == minAspectDiff && (size.width * size.height) > (bestSize.width * bestSize.height))) {
+                    (aspectDiff == minAspectDiff && widthMatch > currentWidthMatch) ||
+                    (aspectDiff == minAspectDiff && widthMatch == currentWidthMatch && (size.width * size.height) > (bestSize.width * bestSize.height))) {
                     minAspectDiff = aspectDiff
                     bestSize = size
                 }

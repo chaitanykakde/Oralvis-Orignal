@@ -47,6 +47,16 @@ class HysteresisState(
         }
         return isWarning
     }
+    
+    /**
+     * Immediately reset the hysteresis state to non-warning.
+     * Useful when clearing state (e.g., when scanning stops).
+     */
+    fun reset() {
+        isWarning = false
+        enterCounter = 0
+        clearCounter = 0
+    }
 }
 
 

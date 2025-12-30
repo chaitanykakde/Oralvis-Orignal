@@ -113,8 +113,8 @@ class AddPatientBottomSheet : BottomSheetDialogFragment() {
 
             // Then try to sync to cloud (non-blocking for local save)
             try {
-                val clinicId = ClinicManager(context).getClinicId()
-                if (clinicId != null) {
+                val clientId = LoginManager(context).getClientId()
+                if (clientId != null) {
                     val dto = PatientDto(
                         patientId = globalPatientId,
                         name = fullNameForId,
@@ -123,7 +123,7 @@ class AddPatientBottomSheet : BottomSheetDialogFragment() {
                     )
                     val response = ApiClient.apiService.upsertPatient(
                         ApiClient.API_PATIENT_SYNC_ENDPOINT,
-                        clinicId,
+                        clientId, // Use Client ID from login
                         dto
                     )
                     if (!response.isSuccessful) {
