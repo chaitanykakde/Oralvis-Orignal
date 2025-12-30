@@ -289,11 +289,13 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
         }
 
         init {
+            // DISABLED: Tablet mode was for debugging only and causes resolution issues.
+            // Always use phone mode (MJPEG first) which supports higher resolutions better.
             // Best-effort hint to the native UVC stack about tablet/phone profile.
             // If the current libUVCCamera.so does not yet contain the JNI bridge,
             // fail gracefully and log instead of crashing the app.
             try {
-                UVCCamera.setTabletMode(DeviceProfile.isTablet(ctx))
+                UVCCamera.setTabletMode(false)  // Always use phone mode for better resolution support
             } catch (e: UnsatisfiedLinkError) {
                 Logger.w(TAG, "nativeSetTabletMode not available in current libUVCCamera.so, skipping tablet hint", e)
             } catch (t: Throwable) {
@@ -751,23 +753,45 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
          * @return result of operation
          */
         fun updateResolution(width: Int, height: Int) {
+            Logger.d(TAG, "========================================")
+            Logger.d(TAG, "MultiCameraClient.updateResolution() CALLED")
+            Logger.d(TAG, "Requested: ${width}x${height}")
+            Logger.d(TAG, "mCameraRequest is null: ${mCameraRequest == null}")
+            Logger.d(TAG, "isStreaming: ${isStreaming()}")
+            Logger.d(TAG, "isRecording: ${isRecording()}")
+            
             if (mCameraRequest == null) {
-                Logger.w(TAG, "updateResolution failed, please open camera first.")
+                Logger.w(TAG, "updateResolution FAILED: mCameraRequest is null")
                 return
             }
             if (isStreaming() || isRecording()) {
-                Logger.e(TAG, "updateResolution failed, video recording...")
+                Logger.e(TAG, "updateResolution FAILED: video recording in progress")
                 return
             }
             mCameraRequest?.apply {
+                Logger.d(TAG, "Current camera request:")
+                Logger.d(TAG, "  previewWidth: $previewWidth")
+                Logger.d(TAG, "  previewHeight: $previewHeight")
+                
                 if (previewWidth == width && previewHeight == height) {
+                    Logger.d(TAG, "SKIPPED: Resolution already matches request")
                     return@apply
                 }
-                Logger.i(TAG, "updateResolution: width = $width, height = $height")
+                
+                Logger.i(TAG, "updateResolution: Changing from ${previewWidth}x${previewHeight} to ${width}x${height}")
+                Logger.d(TAG, "Closing camera...")
                 closeCamera()
+                
+                Logger.d(TAG, "Scheduling camera reopen in 1000ms with new resolution")
                 mMainHandler.postDelayed({
+                    Logger.d(TAG, "Delayed task executing - updating camera request")
+                    Logger.d(TAG, "  OLD previewWidth: $previewWidth")
+                    Logger.d(TAG, "  OLD previewHeight: $previewHeight")
                     previewWidth = width
                     previewHeight = height
+                    Logger.d(TAG, "  NEW previewWidth: $previewWidth")
+                    Logger.d(TAG, "  NEW previewHeight: $previewHeight")
+                    Logger.d(TAG, "Calling openCamera() with updated request")
                     openCamera(mCameraView, mCameraRequest)
                 }, 1000)
             }
@@ -815,51 +839,84 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
         }
 
         fun getSuitableSize(maxWidth: Int, maxHeight: Int): PreviewSize {
+            Logger.d(TAG, "getSuitableSize() called for ${maxWidth}x${maxHeight}")
             val sizeList = getAllPreviewSizes()
+            
             if (sizeList.isNullOrEmpty()) {
+                Logger.w(TAG, "  No sizes available, using default: ${DEFAULT_PREVIEW_WIDTH}x${DEFAULT_PREVIEW_HEIGHT}")
                 return PreviewSize(DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT)
             }
-            // find it
-            sizeList.find {
+            
+            Logger.d(TAG, "  Available sizes: ${sizeList.size}")
+            
+            // Sort sizes by total pixels (descending) to prefer higher resolutions
+            val sortedSizes = sizeList.sortedByDescending { it.width * it.height }
+            Logger.d(TAG, "  Sorted sizes (top 5): ${sortedSizes.take(5).map { "${it.width}x${it.height} (${it.width * it.height}px)" }.joinToString(", ")}")
+            
+            // 1. Find exact match
+            sortedSizes.find {
                 (it.width == maxWidth && it.height == maxHeight)
-            }.also { size ->
-                size ?: return@also
-                return size
+            }?.let {
+                Logger.d(TAG, "  ✓ Found exact match: ${it.width}x${it.height}")
+                return it
             }
-            // find the same aspectRatio
+            
+            // 2. Find highest resolution with same aspect ratio that fits within requested bounds
             val aspectRatio = maxWidth.toFloat() / maxHeight
-            sizeList.find {
+            Logger.d(TAG, "  Requested aspect ratio: ${String.format("%.2f", aspectRatio)}")
+            sortedSizes.find {
                 val w = it.width
                 val h = it.height
                 val ratio = w.toFloat() / h
                 ratio == aspectRatio && w <= maxWidth && h <= maxHeight
-            }.also { size ->
-                size ?: return@also
-                return size
+            }?.let {
+                Logger.d(TAG, "  ✓ Found same aspect ratio within bounds: ${it.width}x${it.height}")
+                return it
             }
-            // find the closest aspectRatio
-            var minDistance: Int = maxWidth
-            var closetSize = sizeList[0]
-            sizeList.forEach { size ->
-                if (minDistance >= abs((maxWidth - size.width))) {
-                    minDistance = abs(maxWidth - size.width)
-                    closetSize = size
+            
+            // 3. Find highest resolution with same aspect ratio (may exceed requested bounds)
+            sortedSizes.find {
+                val w = it.width
+                val h = it.height
+                val ratio = w.toFloat() / h
+                ratio == aspectRatio
+            }?.let {
+                Logger.d(TAG, "  ✓ Found same aspect ratio (may exceed bounds): ${it.width}x${it.height}")
+                return it
+            }
+            
+            // 4. Find closest aspect ratio - prefer higher resolution
+            // Calculate aspect ratio difference and prefer higher resolution when similar
+            var bestSize = sortedSizes[0] // Start with highest resolution
+            var minAspectDiff = Float.MAX_VALUE
+            
+            sortedSizes.forEach { size ->
+                val sizeRatio = size.width.toFloat() / size.height
+                val aspectDiff = abs(aspectRatio - sizeRatio)
+                // Prefer higher resolution if aspect ratio difference is similar
+                if (aspectDiff < minAspectDiff || 
+                    (aspectDiff == minAspectDiff && (size.width * size.height) > (bestSize.width * bestSize.height))) {
+                    minAspectDiff = aspectDiff
+                    bestSize = size
                 }
             }
-            // use default
-            sizeList.find {
-                (it.width == DEFAULT_PREVIEW_WIDTH || it.height == DEFAULT_PREVIEW_HEIGHT)
-            }.also { size ->
-                size ?: return@also
-                return size
-            }
-            return closetSize
+            
+            Logger.d(TAG, "  → Selected closest aspect ratio: ${bestSize.width}x${bestSize.height} (aspect diff: ${String.format("%.3f", minAspectDiff)})")
+            return bestSize
         }
 
         fun isPreviewSizeSupported(previewSize: PreviewSize): Boolean {
-            return getAllPreviewSizes().find {
+            val allSizes = getAllPreviewSizes()
+            val found = allSizes.find {
                 it.width == previewSize.width && it.height == previewSize.height
-            } != null
+            }
+            val isSupported = found != null
+            Logger.d(TAG, "isPreviewSizeSupported(${previewSize.width}x${previewSize.height}) = $isSupported")
+            Logger.d(TAG, "  Total available sizes: ${allSizes.size}")
+            if (!isSupported && allSizes.isNotEmpty()) {
+                Logger.d(TAG, "  Available sizes: ${allSizes.take(5).map { "${it.width}x${it.height}" }.joinToString(", ")}${if (allSizes.size > 5) "..." else ""}")
+            }
+            return isSupported
         }
 
         fun isRecording() = mMediaMuxer?.isMuxerStarter() == true
@@ -959,8 +1016,10 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
         private const val MSG_CAPTURE_VIDEO_STOP = 0x05
         private const val MSG_CAPTURE_STREAM_START = 0x06
         private const val MSG_CAPTURE_STREAM_STOP = 0x07
-        private const val DEFAULT_PREVIEW_WIDTH = 640
-        private const val DEFAULT_PREVIEW_HEIGHT = 480
+        // Use higher default resolution - only as absolute last resort if camera reports no sizes
+        // Prefer to use highest available resolution from camera instead
+        private const val DEFAULT_PREVIEW_WIDTH = 1920
+        private const val DEFAULT_PREVIEW_HEIGHT = 1080
         const val MAX_NV21_DATA = 5
         const val CAPTURE_TIMES_OUT_SEC = 3L
     }

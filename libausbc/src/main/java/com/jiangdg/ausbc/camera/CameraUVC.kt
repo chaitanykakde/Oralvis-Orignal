@@ -77,19 +77,80 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
     }
 
     override fun getAllPreviewSizes(aspectRatio: Double?): MutableList<PreviewSize> {
+        Logger.d(TAG, "getAllPreviewSizes() called")
+        Logger.d(TAG, "  aspectRatio filter: $aspectRatio")
+        Logger.d(TAG, "  mUvcCamera is null: ${mUvcCamera == null}")
+        
         val previewSizeList = arrayListOf<PreviewSize>()
-        if (mUvcCamera?.supportedSizeList?.isNotEmpty() == true) {
-            mUvcCamera?.supportedSizeList
-        }  else {
-            mUvcCamera?.getSupportedSizeList(UVCCamera.FRAME_FORMAT_YUYV)
-        }?.let { sizeList ->
+        
+        // Since tablet mode is disabled, we use MJPEG format primarily
+        // Check MJPEG first, then YUYV to get all possible sizes
+        // This ensures we check against the format we're actually using
+        Logger.d(TAG, "Querying MJPEG format sizes...")
+        val mjpegSizes = mUvcCamera?.getSupportedSizeList(UVCCamera.FRAME_FORMAT_MJPEG)
+        Logger.d(TAG, "  MJPEG sizes returned: ${mjpegSizes?.size ?: 0}")
+        if (mjpegSizes != null && mjpegSizes.isNotEmpty()) {
+            Logger.d(TAG, "  MJPEG sizes: ${mjpegSizes.take(10).map { "${it.width}x${it.height}" }.joinToString(", ")}${if (mjpegSizes.size > 10) "..." else ""}")
+        }
+        
+        Logger.d(TAG, "Querying YUYV format sizes...")
+        val yuyvSizes = mUvcCamera?.getSupportedSizeList(UVCCamera.FRAME_FORMAT_YUYV)
+        Logger.d(TAG, "  YUYV sizes returned: ${yuyvSizes?.size ?: 0}")
+        if (yuyvSizes != null && yuyvSizes.isNotEmpty()) {
+            Logger.d(TAG, "  YUYV sizes: ${yuyvSizes.take(10).map { "${it.width}x${it.height}" }.joinToString(", ")}${if (yuyvSizes.size > 10) "..." else ""}")
+        }
+        
+        // Merge both format sizes to get complete list (deduplicate by width x height)
+        val uniqueSizes = mutableSetOf<Pair<Int, Int>>()
+        val mergedPreviewSizes = mutableListOf<PreviewSize>()
+        
+        // Add MJPEG sizes first (primary format)
+        mjpegSizes?.forEach { size ->
+            val key = Pair(size.width, size.height)
+            if (uniqueSizes.add(key)) {
+                mergedPreviewSizes.add(PreviewSize(size.width, size.height))
+            }
+        }
+        // Add YUYV sizes (fallback format)
+        yuyvSizes?.forEach { size ->
+            val key = Pair(size.width, size.height)
+            if (uniqueSizes.add(key)) {
+                mergedPreviewSizes.add(PreviewSize(size.width, size.height))
+            }
+        }
+        
+        Logger.d(TAG, "After merging: ${mergedPreviewSizes.size} unique sizes")
+        if (mergedPreviewSizes.isNotEmpty()) {
+            Logger.d(TAG, "  Merged sizes: ${mergedPreviewSizes.take(10).map { "${it.width}x${it.height}" }.joinToString(", ")}${if (mergedPreviewSizes.size > 10) "..." else ""}")
+        }
+        
+        // If no sizes found from format queries, try using cached supportedSizeList
+        val sizeList = if (mergedPreviewSizes.isNotEmpty()) {
+            Logger.d(TAG, "Using merged sizes from format queries")
+            mergedPreviewSizes
+        } else if (mUvcCamera?.supportedSizeList?.isNotEmpty() == true) {
+            Logger.d(TAG, "Using cached supportedSizeList (${mUvcCamera?.supportedSizeList?.size} sizes)")
+            // Convert cached sizes to PreviewSize
+            val cachedSizes = mutableListOf<PreviewSize>()
+            mUvcCamera?.supportedSizeList?.forEach { size ->
+                cachedSizes.add(PreviewSize(size.width, size.height))
+            }
+            Logger.d(TAG, "  Cached sizes: ${cachedSizes.take(10).map { "${it.width}x${it.height}" }.joinToString(", ")}${if (cachedSizes.size > 10) "..." else ""}")
+            cachedSizes
+        } else {
+            Logger.w(TAG, "WARNING: No sizes found from any source!")
+            Logger.w(TAG, "  mergedPreviewSizes.isEmpty: ${mergedPreviewSizes.isEmpty()}")
+            Logger.w(TAG, "  mUvcCamera?.supportedSizeList: ${mUvcCamera?.supportedSizeList?.size ?: "null or empty"}")
+            null
+        }
+        
+        sizeList?.let { sizes ->
             if (mCameraPreviewSize.isEmpty()) {
+                Logger.d(TAG, "Updating mCameraPreviewSize cache with ${sizes.size} sizes")
                 mCameraPreviewSize.clear()
-                sizeList.forEach { size->
-                    val width = size.width
-                    val height = size.height
-                    mCameraPreviewSize.add(PreviewSize(width, height))
-                }
+                mCameraPreviewSize.addAll(sizes)
+            } else {
+                Logger.d(TAG, "Using cached mCameraPreviewSize (${mCameraPreviewSize.size} sizes)")
             }
             mCameraPreviewSize
         }?.onEach { size ->
@@ -100,14 +161,27 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
                 previewSizeList.add(PreviewSize(width, height))
             }
         }
+        
         if (Utils.debugCamera) {
             Logger.i(TAG, "aspect ratio = $aspectRatio, getAllPreviewSizes = $previewSizeList, ")
+        }
+        
+        Logger.d(TAG, "getAllPreviewSizes() result:")
+        Logger.d(TAG, "  MJPEG sizes: ${mjpegSizes?.size ?: 0}")
+        Logger.d(TAG, "  YUYV sizes: ${yuyvSizes?.size ?: 0}")
+        Logger.d(TAG, "  Merged unique: ${sizeList?.size ?: 0}")
+        Logger.d(TAG, "  After aspect filter: ${previewSizeList.size}")
+        if (previewSizeList.isNotEmpty()) {
+            Logger.d(TAG, "  Final sizes: ${previewSizeList.map { "${it.width}x${it.height}" }.joinToString(", ")}")
         }
 
         return previewSizeList
     }
 
     override fun <T> openCameraInternal(cameraView: T) {
+        Logger.d(TAG, "========================================")
+        Logger.d(TAG, "CameraUVC.openCameraInternal() CALLED")
+        
         if (Utils.isTargetSdkOverP(ctx) && !CameraUtils.hasCameraPermission(ctx)) {
             closeCamera()
             postStateEvent(ICameraStateCallBack.State.ERROR, "Has no CAMERA permission.")
@@ -117,26 +191,70 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
         if (mCtrlBlock == null) {
             closeCamera()
             postStateEvent(ICameraStateCallBack.State.ERROR, "Usb control block can not be null ")
+            Logger.e(TAG, "openCameraInternal FAILED: mCtrlBlock is null")
             return
         }
+        
         // 1. create a UVCCamera
         val request = mCameraRequest!!
         val isTablet = DeviceProfile.isTablet(ctx)
+        
+        Logger.d(TAG, "Camera request details:")
+        Logger.d(TAG, "  previewWidth: ${request.previewWidth}")
+        Logger.d(TAG, "  previewHeight: ${request.previewHeight}")
+        Logger.d(TAG, "  isTablet: $isTablet")
+        Logger.d(TAG, "  mCtrlBlock: ${mCtrlBlock != null}")
+        
         try {
+            Logger.d(TAG, "Opening UVCCamera...")
             mUvcCamera = UVCCamera().apply {
                 open(mCtrlBlock)
             }
+            Logger.d(TAG, "UVCCamera opened successfully")
         } catch (e: Exception) {
             closeCamera()
             postStateEvent(ICameraStateCallBack.State.ERROR, "open camera failed ${e.localizedMessage}")
             Logger.e(TAG, "open camera failed.", e)
+            return
         }
 
         // 2. set preview size and register preview callback
-        var previewSize = getSuitableSize(request.previewWidth, request.previewHeight).apply {
-            mCameraRequest!!.previewWidth = width
-            mCameraRequest!!.previewHeight = height
+        // Check if requested resolution is directly supported first
+        val requestedSize = PreviewSize(request.previewWidth, request.previewHeight)
+        Logger.i(TAG, "========================================")
+        Logger.i(TAG, "RESOLUTION NEGOTIATION START")
+        Logger.i(TAG, "Requested resolution: ${request.previewWidth}x${request.previewHeight}")
+        
+        Logger.d(TAG, "Querying available resolutions from camera...")
+        val availableSizes = getAllPreviewSizes()
+        Logger.d(TAG, "Available resolutions count: ${availableSizes.size}")
+        Logger.d(TAG, "Available resolutions: ${availableSizes.map { "${it.width}x${it.height}" }.joinToString(", ")}")
+        
+        Logger.d(TAG, "Checking if requested resolution is supported...")
+        val isSupported = isPreviewSizeSupported(requestedSize)
+        Logger.d(TAG, "isPreviewSizeSupported(${request.previewWidth}x${request.previewHeight}) = $isSupported")
+        
+        var previewSize = if (isSupported) {
+            // Requested resolution is supported - use it directly, DON'T overwrite mCameraRequest
+            Logger.i(TAG, "✓ Requested resolution ${request.previewWidth}x${request.previewHeight} IS SUPPORTED - using it directly")
+            requestedSize
+        } else {
+            // Requested resolution not supported - find suitable size and update request
+            Logger.w(TAG, "✗ Requested resolution ${request.previewWidth}x${request.previewHeight} NOT SUPPORTED")
+            Logger.d(TAG, "Finding suitable alternative size...")
+            val suitableSize = getSuitableSize(request.previewWidth, request.previewHeight)
+            Logger.w(TAG, "Found suitable size: ${suitableSize.width}x${suitableSize.height} (requested: ${request.previewWidth}x${request.previewHeight})")
+            Logger.d(TAG, "Updating mCameraRequest to suitable size...")
+            Logger.d(TAG, "  BEFORE: previewWidth=${mCameraRequest!!.previewWidth}, previewHeight=${mCameraRequest!!.previewHeight}")
+            suitableSize.apply {
+                mCameraRequest!!.previewWidth = width
+                mCameraRequest!!.previewHeight = height
+            }
+            Logger.d(TAG, "  AFTER: previewWidth=${mCameraRequest!!.previewWidth}, previewHeight=${mCameraRequest!!.previewHeight}")
+            suitableSize
         }
+        
+        Logger.i(TAG, "Final preview size selected: ${previewSize.width}x${previewSize.height}")
 
         // Decide preview format & frame rate based on device profile.
         // Use a UVC‑friendly FPS range (15–60fps) for all devices.
@@ -157,17 +275,29 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
             UVCCamera.FRAME_FORMAT_YUYV
         }
 
+        Logger.d(TAG, "Format selection:")
+        Logger.d(TAG, "  primaryFormat: ${if (primaryFormat == UVCCamera.FRAME_FORMAT_MJPEG) "MJPEG" else "YUYV"}")
+        Logger.d(TAG, "  fallbackFormat: ${if (fallbackFormat == UVCCamera.FRAME_FORMAT_MJPEG) "MJPEG" else "YUYV"}")
+        Logger.d(TAG, "  FPS range: $minFps-$maxFps")
+
         try {
-            Logger.i(TAG, "getSuitableSize: $previewSize")
+            Logger.i(TAG, "Attempting to set preview size with PRIMARY format")
+            Logger.i(TAG, "  Size: ${previewSize.width}x${previewSize.height}")
+            Logger.i(TAG, "  Format: ${if (primaryFormat == UVCCamera.FRAME_FORMAT_MJPEG) "MJPEG" else "YUYV"}")
+            Logger.i(TAG, "  Requested was: ${request.previewWidth}x${request.previewHeight}")
+            
             if (! isPreviewSizeSupported(previewSize)) {
                 closeCamera()
                 postStateEvent(ICameraStateCallBack.State.ERROR, "unsupported preview size")
-                Logger.e(TAG, "open camera failed, preview size($previewSize) unsupported-> ${mUvcCamera?.supportedSizeList}")
+                Logger.e(TAG, "FAILED: preview size($previewSize) is not supported")
+                Logger.e(TAG, "  mUvcCamera?.supportedSizeList: ${mUvcCamera?.supportedSizeList}")
                 return
             }
+            
+            Logger.d(TAG, "Initializing encode processor for ${previewSize.width}x${previewSize.height}")
             initEncodeProcessor(previewSize.width, previewSize.height)
-            // if give custom minFps or maxFps or unsupported preview size
-            // this method will fail
+            
+            Logger.d(TAG, "Calling mUvcCamera.setPreviewSize(${previewSize.width}, ${previewSize.height}, $minFps, $maxFps, $primaryFormat, ${UVCCamera.DEFAULT_BANDWIDTH})")
             mUvcCamera?.setPreviewSize(
                 previewSize.width,
                 previewSize.height,
@@ -176,23 +306,50 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
                 primaryFormat,
                 UVCCamera.DEFAULT_BANDWIDTH
             )
+            Logger.i(TAG, "✓ setPreviewSize() succeeded with PRIMARY format")
+            Logger.d(TAG, "  Actual size set: ${previewSize.width}x${previewSize.height}")
         } catch (e: Exception) {
+            Logger.w(TAG, "✗ setPreviewSize() FAILED with PRIMARY format")
+            Logger.w(TAG, "  Exception: ${e.javaClass.simpleName}: ${e.message}")
+            Logger.w(TAG, "  Stack trace:", e)
+            
             try {
-                previewSize = getSuitableSize(request.previewWidth, request.previewHeight).apply {
-                    mCameraRequest!!.previewWidth = width
-                    mCameraRequest!!.previewHeight = height
+                Logger.d(TAG, "Retrying with FALLBACK format...")
+                // Retry with fallback format - check if requested size is still supported
+                val retryRequestedSize = PreviewSize(request.previewWidth, request.previewHeight)
+                Logger.d(TAG, "Checking if requested size ${retryRequestedSize.width}x${retryRequestedSize.height} is supported for fallback format")
+                
+                previewSize = if (isPreviewSizeSupported(retryRequestedSize)) {
+                    // Requested resolution is supported - use it directly
+                    Logger.i(TAG, "✓ Retry: Requested resolution ${request.previewWidth}x${request.previewHeight} IS SUPPORTED - using it directly")
+                    retryRequestedSize
+                } else {
+                    // Requested resolution not supported - find suitable size
+                    Logger.w(TAG, "✗ Retry: Requested resolution ${request.previewWidth}x${request.previewHeight} NOT SUPPORTED")
+                    Logger.d(TAG, "Finding suitable size for fallback format...")
+                    val suitableSize = getSuitableSize(request.previewWidth, request.previewHeight)
+                    Logger.w(TAG, "Found suitable size: ${suitableSize.width}x${suitableSize.height}")
+                    Logger.d(TAG, "Updating mCameraRequest to suitable size...")
+                    suitableSize.apply {
+                        mCameraRequest!!.previewWidth = width
+                        mCameraRequest!!.previewHeight = height
+                    }
+                    suitableSize
                 }
+                
                 if (! isPreviewSizeSupported(previewSize)) {
                     postStateEvent(ICameraStateCallBack.State.ERROR, "unsupported preview size")
                     closeCamera()
-                    Logger.e(TAG, "open camera failed, preview size($previewSize) unsupported-> ${mUvcCamera?.supportedSizeList}")
+                    Logger.e(TAG, "FAILED: preview size($previewSize) is not supported even for fallback format")
+                    Logger.e(TAG, "  mUvcCamera?.supportedSizeList: ${mUvcCamera?.supportedSizeList}")
                     return
                 }
-                Logger.e(
-                    TAG,
-                    "setPreviewSize failed for primary format=$primaryFormat, " +
-                            "trying fallback format=$fallbackFormat at ${previewSize.width}x${previewSize.height}@$minFps-$maxFps"
-                )
+                
+                Logger.w(TAG, "Attempting setPreviewSize() with FALLBACK format")
+                Logger.w(TAG, "  Size: ${previewSize.width}x${previewSize.height}")
+                Logger.w(TAG, "  Format: ${if (fallbackFormat == UVCCamera.FRAME_FORMAT_MJPEG) "MJPEG" else "YUYV"}")
+                Logger.w(TAG, "  Original request was: ${request.previewWidth}x${request.previewHeight}")
+                
                 mUvcCamera?.setPreviewSize(
                     previewSize.width,
                     previewSize.height,
@@ -201,14 +358,25 @@ class CameraUVC(ctx: Context, device: UsbDevice) : MultiCameraClient.ICamera(ctx
                     fallbackFormat,
                     UVCCamera.DEFAULT_BANDWIDTH
                 )
-            } catch (e: Exception) {
+                Logger.i(TAG, "✓ setPreviewSize() succeeded with FALLBACK format")
+                Logger.d(TAG, "  Actual size set: ${previewSize.width}x${previewSize.height}")
+            } catch (e2: Exception) {
                 closeCamera()
-                val errMsg = "setPreviewSize failed for both primary=$primaryFormat and fallback=$fallbackFormat: ${e.localizedMessage}"
+                val errMsg = "setPreviewSize failed for both primary=$primaryFormat and fallback=$fallbackFormat: ${e2.localizedMessage}"
                 postStateEvent(ICameraStateCallBack.State.ERROR, errMsg)
-                Logger.e(TAG, errMsg, e)
+                Logger.e(TAG, "✗✗ FAILED: Both primary and fallback formats failed")
+                Logger.e(TAG, "  Primary format exception: ${e.javaClass.simpleName}: ${e.message}")
+                Logger.e(TAG, "  Fallback format exception: ${e2.javaClass.simpleName}: ${e2.message}")
+                Logger.e(TAG, "  Final preview size attempted: ${previewSize.width}x${previewSize.height}")
+                Logger.e(TAG, errMsg, e2)
                 return
             }
         }
+        
+        Logger.i(TAG, "RESOLUTION NEGOTIATION COMPLETE")
+        Logger.i(TAG, "  Requested: ${request.previewWidth}x${request.previewHeight}")
+        Logger.i(TAG, "  Actual: ${previewSize.width}x${previewSize.height}")
+        Logger.i(TAG, "========================================")
         // if not opengl render or opengl render with preview callback
         // there should opened
         if (! isNeedGLESRender || mCameraRequest!!.isRawPreviewData || mCameraRequest!!.isCaptureRawImage) {

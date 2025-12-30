@@ -78,6 +78,32 @@ import com.oralvis.oralviscamera.guidedcapture.SessionBridge
 
 class MainActivity : AppCompatActivity() {
     
+    // #region agent log
+    private fun writeDebugLog(hypothesisId: String, location: String, message: String, data: Map<String, Any> = emptyMap()) {
+        try {
+            // Try workspace path first (for development), fallback to app files directory
+            val workspaceLog = File("c:\\Users\\Chaitany Kakde\\StudioProjects\\Oralvis-Orignal\\.cursor\\debug.log")
+            val appLog = File(getExternalFilesDir(null), "debug.log")
+            val logFile = if (workspaceLog.parentFile?.exists() == true) workspaceLog else appLog
+            
+            val logEntry = org.json.JSONObject().apply {
+                put("sessionId", "debug-session")
+                put("runId", "run1")
+                put("hypothesisId", hypothesisId)
+                put("location", location)
+                put("message", message)
+                put("timestamp", System.currentTimeMillis())
+                put("data", org.json.JSONObject(data))
+            }
+            logFile.parentFile?.mkdirs()
+            logFile.appendText(logEntry.toString() + "\n")
+            android.util.Log.d("DebugLog", "[$hypothesisId] $location: $message")
+        } catch (e: Exception) {
+            android.util.Log.e("DebugLog", "Failed to write debug log", e)
+        }
+    }
+    // #endregion
+    
     private lateinit var binding: ActivityMainBinding
     private var mCameraClient: MultiCameraClient? = null
     private var mCurrentCamera: MultiCameraClient.ICamera? = null
@@ -688,6 +714,11 @@ class MainActivity : AppCompatActivity() {
         
         // Resolution selector
         binding.resolutionSelector.setOnClickListener {
+            // #region agent log
+            writeDebugLog("A", "MainActivity.kt:690", "resolutionSelector clicked", mapOf("timestamp" to System.currentTimeMillis()))
+            // #endregion
+            Toast.makeText(this, "Resolution selector clicked - opening settings", Toast.LENGTH_SHORT).show()
+            android.util.Log.d("ResolutionClick", "TOP TOOLBAR: Resolution selector clicked")
             showResolutionDropdown()
         }
 
@@ -797,6 +828,10 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showSettingsPanel() {
+        // #region agent log
+        writeDebugLog("A", "MainActivity.kt:800", "showSettingsPanel() called", mapOf("timestamp" to System.currentTimeMillis()))
+        // #endregion
+        android.util.Log.d("ResolutionClick", "showSettingsPanel() called")
         // Show scrim (dim background)
         binding.settingsScrim.visibility = View.VISIBLE
         binding.settingsScrim.alpha = 0f
@@ -813,6 +848,16 @@ class MainActivity : AppCompatActivity() {
             .alpha(1f)
             .translationX(0f)
             .setDuration(300)
+            .withEndAction {
+                // #region agent log
+                writeDebugLog("A", "MainActivity.kt:851", "settingsPanel animation complete - setting up spinner", mapOf("timestamp" to System.currentTimeMillis()))
+                // #endregion
+                android.util.Log.d("ResolutionClick", "Settings panel animation complete - setting up resolution spinner")
+                Toast.makeText(this, "Setting up resolution spinner in side panel...", Toast.LENGTH_SHORT).show()
+                // CRITICAL FIX: Setup resolution spinner when side panel is shown
+                // The spinner exists in the side panel but listener was never attached
+                setupResolutionSpinnerWithRetry(binding.settingsPanel, 0)
+            }
             .start()
     }
     
@@ -838,6 +883,10 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showResolutionDropdown() {
+        // #region agent log
+        writeDebugLog("A", "MainActivity.kt:840", "showResolutionDropdown() called", mapOf("timestamp" to System.currentTimeMillis()))
+        // #endregion
+        android.util.Log.d("ResolutionClick", "showResolutionDropdown() called")
         // This will be handled by the spinner in the settings panel
         showSettingsPanel()
     }
@@ -1586,13 +1635,39 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupResolutionSpinner(view: View) {
+        // #region agent log
+        writeDebugLog("E", "MainActivity.kt:1636", "setupResolutionSpinner() ENTRY", mapOf(
+            "viewType" to view.javaClass.simpleName,
+            "viewId" to (view.id?.let { resources.getResourceEntryName(it) } ?: "unknown"),
+            "timestamp" to System.currentTimeMillis()
+        ))
+        // #endregion
+        android.util.Log.d("ResolutionClick", "setupResolutionSpinner() called for view: ${view.javaClass.simpleName}")
+        Toast.makeText(this, "Setting up resolution spinner...", Toast.LENGTH_SHORT).show()
+        
         val spinner = view.findViewById<Spinner>(R.id.spinnerResolution)
         val txtCurrentResolution = view.findViewById<TextView>(R.id.txtCurrentResolution)
         
+        // #region agent log
+        writeDebugLog("E", "MainActivity.kt:1640", "spinner and textview found", mapOf(
+            "spinnerFound" to (spinner != null),
+            "txtCurrentResolutionFound" to (txtCurrentResolution != null)
+        ))
+        // #endregion
+        
+        if (spinner == null) {
+            android.util.Log.e("ResolutionClick", "CRITICAL: Spinner not found in view!")
+            Toast.makeText(this, "ERROR: Resolution spinner not found!", Toast.LENGTH_LONG).show()
+            return
+        }
+        
         // Ensure we have current camera and resolutions loaded
         if (!isCameraReadyForResolutionChange()) {
-            txtCurrentResolution.text = "Camera not ready"
+            txtCurrentResolution?.text = "Camera not ready"
             android.util.Log.w("ResolutionManager", "Camera not ready for resolution setup")
+            // #region agent log
+            writeDebugLog("E", "MainActivity.kt:1641", "camera not ready - aborting setup", mapOf())
+            // #endregion
             return
         }
         
@@ -1621,34 +1696,86 @@ class MainActivity : AppCompatActivity() {
         
         spinner.adapter = resolutionAdapter
         
+        // Store in local variable to allow smart cast
+        val adapter = resolutionAdapter
+        
+        // #region agent log
+        writeDebugLog("E", "MainActivity.kt:1661", "adapter set on spinner", mapOf(
+            "adapterItemCount" to (adapter?.count ?: 0),
+            "availableResolutionsSize" to availableResolutions.size
+        ))
+        // #endregion
+        android.util.Log.d("ResolutionClick", "Adapter set on spinner with ${adapter?.count ?: 0} items")
+        
         // Update current resolution display
         updateCurrentResolutionDisplay(txtCurrentResolution)
         
         // Handle selection changes
+        // #region agent log
+        writeDebugLog("E", "MainActivity.kt:1667", "attaching onItemSelectedListener to spinner", mapOf())
+        // #endregion
+        android.util.Log.d("ResolutionClick", "Attaching onItemSelectedListener to spinner")
         spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             private var isInitialSetup = true
             
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                android.util.Log.d("ResolutionManager", "Spinner selection changed to position: $position, isInitialSetup: $isInitialSetup")
+                // #region agent log
+                writeDebugLog("B", "MainActivity.kt:1631", "spinner onItemSelected fired", mapOf(
+                    "position" to position,
+                    "isInitialSetup" to isInitialSetup,
+                    "availableResolutionsSize" to availableResolutions.size,
+                    "timestamp" to System.currentTimeMillis()
+                ))
+                // #endregion
+                android.util.Log.d("ResolutionClick", "SETTINGS PANEL: Spinner onItemSelected - position: $position, isInitialSetup: $isInitialSetup")
+                Toast.makeText(this@MainActivity, "Resolution spinner selected: position $position", Toast.LENGTH_SHORT).show()
                 
                 if (position >= 0 && position < availableResolutions.size) {
                     val selectedResolution = availableResolutions[position]
                     android.util.Log.d("ResolutionManager", "Selected resolution: ${selectedResolution.width}x${selectedResolution.height}")
                     
+                    // #region agent log
+                    writeDebugLog("B", "MainActivity.kt:1635", "resolution selected from spinner", mapOf(
+                        "selectedWidth" to selectedResolution.width,
+                        "selectedHeight" to selectedResolution.height,
+                        "currentWidth" to (currentResolution?.width ?: -1),
+                        "currentHeight" to (currentResolution?.height ?: -1),
+                        "isInitialSetup" to isInitialSetup
+                    ))
+                    // #endregion
+                    
                     // Always allow resolution changes, but log if it's initial setup
                     if (isInitialSetup) {
+                        // #region agent log
+                        writeDebugLog("C", "MainActivity.kt:1639", "isInitialSetup=true - checking if should skip", mapOf(
+                            "selectedWidth" to selectedResolution.width,
+                            "selectedHeight" to selectedResolution.height,
+                            "currentWidth" to (currentResolution?.width ?: -1),
+                            "currentHeight" to (currentResolution?.height ?: -1)
+                        ))
+                        // #endregion
                         android.util.Log.d("ResolutionManager", "Initial setup - setting current resolution display")
                         isInitialSetup = false
                         // Update display but don't change resolution if it's already the current one
                         if (currentResolution?.width == selectedResolution.width && 
                             currentResolution?.height == selectedResolution.height) {
                             android.util.Log.d("ResolutionManager", "Resolution already matches current, skipping change")
+                            Toast.makeText(this@MainActivity, "Resolution already set - skipping change", Toast.LENGTH_SHORT).show()
                             return
                         }
                     }
                     
                     android.util.Log.d("ResolutionManager", "User selected resolution: ${selectedResolution.width}x${selectedResolution.height}")
+                    Toast.makeText(this@MainActivity, "Changing resolution to ${selectedResolution.width}x${selectedResolution.height}...", Toast.LENGTH_SHORT).show()
                     changeResolution(selectedResolution, txtCurrentResolution)
+                } else {
+                    // #region agent log
+                    writeDebugLog("B", "MainActivity.kt:1654", "invalid position in onItemSelected", mapOf(
+                        "position" to position,
+                        "availableResolutionsSize" to availableResolutions.size
+                    ))
+                    // #endregion
+                    android.util.Log.w("ResolutionClick", "Invalid position: $position (available: ${availableResolutions.size})")
                 }
             }
             
@@ -1672,17 +1799,33 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun changeResolution(newResolution: PreviewSize, txtCurrentResolution: TextView) {
-        android.util.Log.d("ResolutionManager", "changeResolution called with: ${newResolution.width}x${newResolution.height}")
-        android.util.Log.d("ResolutionManager", "Current resolution: ${currentResolution?.width}x${currentResolution?.height}")
+        // #region agent log
+        writeDebugLog("D", "MainActivity.kt:1674", "changeResolution() ENTRY", mapOf(
+            "requestedWidth" to newResolution.width,
+            "requestedHeight" to newResolution.height,
+            "currentWidth" to (currentResolution?.width ?: -1),
+            "currentHeight" to (currentResolution?.height ?: -1),
+            "cameraAvailable" to (mCurrentCamera != null),
+            "isRecording" to isRecording
+        ))
+        // #endregion
+        android.util.Log.d("ResolutionChange", "========================================")
+        android.util.Log.d("ResolutionChange", "changeResolution() CALLED")
+        android.util.Log.d("ResolutionChange", "Requested resolution: ${newResolution.width}x${newResolution.height}")
+        android.util.Log.d("ResolutionChange", "Current resolution: ${currentResolution?.width}x${currentResolution?.height}")
+        android.util.Log.d("ResolutionChange", "Pending resolution: ${pendingResolution?.width}x${pendingResolution?.height}")
+        android.util.Log.d("ResolutionChange", "Camera available: ${mCurrentCamera != null}")
+        android.util.Log.d("ResolutionChange", "Is recording: $isRecording")
+        Toast.makeText(this, "changeResolution() called for ${newResolution.width}x${newResolution.height}", Toast.LENGTH_SHORT).show()
         
         if (isRecording) {
             Toast.makeText(this, "Cannot change resolution while recording", Toast.LENGTH_SHORT).show()
-            android.util.Log.w("ResolutionManager", "Cannot change resolution while recording")
+            android.util.Log.w("ResolutionChange", "BLOCKED: Cannot change resolution while recording")
             return
         }
         
         if (currentResolution?.width == newResolution.width && currentResolution?.height == newResolution.height) {
-            android.util.Log.d("ResolutionManager", "Same resolution selected, no change needed")
+            android.util.Log.d("ResolutionChange", "SKIPPED: Same resolution selected, no change needed")
             Toast.makeText(this, "Resolution already set to ${newResolution.width}x${newResolution.height}", Toast.LENGTH_SHORT).show()
             return
         }
@@ -1691,7 +1834,9 @@ class MainActivity : AppCompatActivity() {
             try {
                 Toast.makeText(this, "Changing resolution to ${newResolution.width}x${newResolution.height}...", Toast.LENGTH_SHORT).show()
                 
-                android.util.Log.d("ResolutionManager", "Starting resolution change from ${currentResolution?.width}x${currentResolution?.height} to: ${newResolution.width}x${newResolution.height}")
+                android.util.Log.d("ResolutionChange", "Starting resolution change")
+                android.util.Log.d("ResolutionChange", "  FROM: ${currentResolution?.width}x${currentResolution?.height}")
+                android.util.Log.d("ResolutionChange", "  TO: ${newResolution.width}x${newResolution.height}")
                 
                 // Store the new resolution before camera restart
                 val previousResolution = currentResolution
@@ -1700,26 +1845,50 @@ class MainActivity : AppCompatActivity() {
                 updateCurrentResolutionDisplay(txtCurrentResolution)
                 updateResolutionUI() // Update top toolbar resolution display
                 
-                android.util.Log.d("ResolutionManager", "Set pendingResolution to: ${newResolution.width}x${newResolution.height}")
+                android.util.Log.d("ResolutionChange", "Updated UI state:")
+                android.util.Log.d("ResolutionChange", "  currentResolution: ${currentResolution?.width}x${currentResolution?.height}")
+                android.util.Log.d("ResolutionChange", "  pendingResolution: ${pendingResolution?.width}x${pendingResolution?.height}")
                 
-                // Don't close settings dialog immediately - let user see the change
+                // Get camera request before update to see current state
+                val cameraRequest = (camera as? CameraUVC)?.getCameraRequest()
+                android.util.Log.d("ResolutionChange", "Camera request BEFORE update:")
+                android.util.Log.d("ResolutionChange", "  previewWidth: ${cameraRequest?.previewWidth}")
+                android.util.Log.d("ResolutionChange", "  previewHeight: ${cameraRequest?.previewHeight}")
                 
                 // Update resolution using the camera's updateResolution method
                 // This will close and reopen the camera automatically
+                android.util.Log.d("ResolutionChange", "Calling camera.updateResolution(${newResolution.width}, ${newResolution.height})")
+                // #region agent log
+                writeDebugLog("D", "MainActivity.kt:1709", "calling camera.updateResolution()", mapOf(
+                    "width" to newResolution.width,
+                    "height" to newResolution.height,
+                    "cameraType" to camera.javaClass.simpleName
+                ))
+                // #endregion
+                Toast.makeText(this, "Calling camera.updateResolution(${newResolution.width}, ${newResolution.height})", Toast.LENGTH_SHORT).show()
                 camera.updateResolution(newResolution.width, newResolution.height)
                 
-                android.util.Log.d("ResolutionManager", "Resolution change initiated successfully")
+                // #region agent log
+                writeDebugLog("D", "MainActivity.kt:1711", "camera.updateResolution() returned", mapOf(
+                    "width" to newResolution.width,
+                    "height" to newResolution.height
+                ))
+                // #endregion
+                android.util.Log.d("ResolutionChange", "Resolution change initiated - camera will restart in 1 second")
+                Toast.makeText(this, "Resolution change initiated - camera restarting...", Toast.LENGTH_SHORT).show()
                 
             } catch (e: Exception) {
+                android.util.Log.e("ResolutionChange", "EXCEPTION in changeResolution:", e)
                 Toast.makeText(this, "Failed to change resolution: ${e.message}", Toast.LENGTH_SHORT).show()
-                android.util.Log.e("ResolutionManager", "Failed to change resolution", e)
                 
                 // Clear pending resolution and reset to previous resolution on error
                 pendingResolution = null
+                android.util.Log.d("ResolutionChange", "Cleared pendingResolution due to error")
                 loadAvailableResolutions()
                 updateCurrentResolutionDisplay(txtCurrentResolution)
             }
         } ?: run {
+            android.util.Log.e("ResolutionChange", "FAILED: Camera not available (mCurrentCamera is null)")
             Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show()
             android.util.Log.w("ResolutionManager", "Camera not available for resolution change")
         }

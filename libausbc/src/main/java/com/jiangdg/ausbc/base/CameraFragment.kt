@@ -923,9 +923,11 @@ abstract class CameraFragment : BaseFragment(), ICameraStateCallBack {
     protected open fun getGravity() = Gravity.CENTER
 
     protected open fun getCameraRequest(): CameraRequest {
+        // Don't hardcode resolution - let camera use its highest available resolution
+        // The actual resolution will be determined by the camera's supported sizes
         return CameraRequest.Builder()
-            .setPreviewWidth(640)
-            .setPreviewHeight(480)
+            .setPreviewWidth(1920)  // Higher default, will be adjusted to camera's actual capabilities
+            .setPreviewHeight(1080)
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
             .setDefaultRotateType(RotateType.ANGLE_0)
             .setAudioSource(CameraRequest.AudioSource.SOURCE_SYS_MIC)

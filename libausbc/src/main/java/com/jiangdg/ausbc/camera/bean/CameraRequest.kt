@@ -214,7 +214,9 @@ class CameraRequest private constructor() {
     }
 
     companion object {
-        private const val DEFAULT_WIDTH = 640
-        private const val DEFAULT_HEIGHT = 480
+        // Use higher default resolution to avoid limiting camera capabilities
+        // Actual resolution will be determined by camera's supported sizes
+        private const val DEFAULT_WIDTH = 1920
+        private const val DEFAULT_HEIGHT = 1080
     }
 }
