@@ -95,6 +95,7 @@ class MainActivity : AppCompatActivity() {
     // Resolution management
     private var availableResolutions = mutableListOf<PreviewSize>()
     private var currentResolution: PreviewSize? = null
+    private var pendingResolution: PreviewSize? = null // Tracks resolution change in progress
     private var resolutionAdapter: ArrayAdapter<String>? = null
     
     // Exposure update throttling
@@ -1373,18 +1374,46 @@ class MainActivity : AppCompatActivity() {
                 // Sort resolutions by total pixels (descending)
                 availableResolutions.sortByDescending { it.width * it.height }
                 
-                // Always update current resolution from camera request to ensure accuracy
+                // Get camera's actual resolution
                 val cameraRequest = (camera as? CameraUVC)?.getCameraRequest()
                 if (cameraRequest != null) {
                     val actualResolution = PreviewSize(cameraRequest.previewWidth, cameraRequest.previewHeight)
                     android.util.Log.d("ResolutionManager", "Camera actual resolution: ${actualResolution.width}x${actualResolution.height}")
                     android.util.Log.d("ResolutionManager", "App stored resolution: ${currentResolution?.width}x${currentResolution?.height}")
+                    android.util.Log.d("ResolutionManager", "Pending resolution: ${pendingResolution?.width}x${pendingResolution?.height}")
                     
-                    // Update current resolution to match camera's actual resolution
-                    currentResolution = actualResolution
-                    android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
+                    // Check if we have a pending resolution change
+                    val pending = pendingResolution
+                    if (pending != null) {
+                        // Verify that camera actually changed to the pending resolution
+                        if (actualResolution.width == pending.width && 
+                            actualResolution.height == pending.height) {
+                            // Success: camera changed to requested resolution
+                            currentResolution = pending
+                            pendingResolution = null
+                            android.util.Log.d("ResolutionManager", "Resolution change verified successfully: ${currentResolution?.width}x${currentResolution?.height}")
+                            Toast.makeText(this, "Resolution changed to ${currentResolution?.width}x${currentResolution?.height}", Toast.LENGTH_SHORT).show()
+                        } else {
+                            // Failure: camera didn't change to requested resolution
+                            android.util.Log.w("ResolutionManager", "Resolution change failed! Requested: ${pending.width}x${pending.height}, Actual: ${actualResolution.width}x${actualResolution.height}")
+                            // Keep currentResolution as pendingResolution (don't overwrite with actual) so UI shows requested resolution
+                            currentResolution = pending
+                            // Clear pendingResolution after showing error so user can try again
+                            pendingResolution = null
+                            Toast.makeText(this, "Failed to change resolution. Camera is using ${actualResolution.width}x${actualResolution.height}", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        // No pending change - update from camera's actual resolution (normal behavior)
+                        currentResolution = actualResolution
+                        android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
+                    }
                 } else {
                     android.util.Log.w("ResolutionManager", "Could not get camera request to determine current resolution")
+                    // If we have a pending resolution but can't verify, clear it to avoid stuck state
+                    if (pendingResolution != null) {
+                        android.util.Log.w("ResolutionManager", "Cannot verify pending resolution, clearing it")
+                        pendingResolution = null
+                    }
                 }
                 
                 android.util.Log.d("ResolutionManager", "Available resolutions: ${availableResolutions.size}")
@@ -1398,23 +1427,43 @@ class MainActivity : AppCompatActivity() {
                 resolutionAdapter?.addAll(availableResolutions.map { "${it.width}x${it.height}" })
                 resolutionAdapter?.notifyDataSetChanged()
                 
-                // Update resolution text
+                // Update resolution text (top toolbar)
                 updateResolutionUI()
+                
+                // Update settings panel if it's open
+                settingsBottomSheet?.let { dialog ->
+                    if (dialog.isShowing) {
+                        try {
+                            val txtCurrentResolution = dialog.findViewById<TextView>(R.id.txtCurrentResolution)
+                            txtCurrentResolution?.let {
+                                updateCurrentResolutionDisplay(it)
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.w("ResolutionManager", "Failed to update settings panel resolution display: ${e.message}")
+                        }
+                    }
+                }
             } else {
                 android.util.Log.w("ResolutionManager", "No resolutions available from camera")
                 // Set some common default resolutions if camera doesn't provide any
+                // Prioritize higher resolutions - only include 640x480 as absolute last resort
                 if (availableResolutions.isEmpty()) {
                     availableResolutions.addAll(listOf(
-                        PreviewSize(1920, 1080),
-                        PreviewSize(1280, 720),
-                        PreviewSize(640, 480)
+                        PreviewSize(3840, 2160),  // 4K if supported
+                        PreviewSize(1920, 1080),  // Full HD
+                        PreviewSize(1280, 720),   // HD
+                        PreviewSize(640, 480)     // VGA - only as last resort
                     ))
-                    currentResolution = PreviewSize(1280, 720)
-                    android.util.Log.d("ResolutionManager", "Using default resolutions with fallback: 1280x720")
+                    // Use highest resolution as default
+                    currentResolution = PreviewSize(1920, 1080)
+                    android.util.Log.d("ResolutionManager", "Using default resolutions with fallback: 1920x1080")
+                    updateResolutionUI() // Update UI with default resolution
                 }
             }
         } catch (e: Exception) {
             android.util.Log.e("ResolutionManager", "Failed to load resolutions: ${e.message}")
+            // Update UI even on error to show current resolution if available
+            updateResolutionUI()
         }
     }
     
@@ -1647,7 +1696,11 @@ class MainActivity : AppCompatActivity() {
                 // Store the new resolution before camera restart
                 val previousResolution = currentResolution
                 currentResolution = newResolution
+                pendingResolution = newResolution // Track pending resolution change
                 updateCurrentResolutionDisplay(txtCurrentResolution)
+                updateResolutionUI() // Update top toolbar resolution display
+                
+                android.util.Log.d("ResolutionManager", "Set pendingResolution to: ${newResolution.width}x${newResolution.height}")
                 
                 // Don't close settings dialog immediately - let user see the change
                 
@@ -1657,20 +1710,12 @@ class MainActivity : AppCompatActivity() {
                 
                 android.util.Log.d("ResolutionManager", "Resolution change initiated successfully")
                 
-                // Show success message after a delay to let the camera restart
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    runOnUiThread {
-                        Toast.makeText(this, "Resolution changed to ${newResolution.width}x${newResolution.height}", Toast.LENGTH_SHORT).show()
-                        // Don't close settings dialog automatically - let user close it manually
-                        // This allows them to make multiple resolution changes if needed
-                    }
-                }, 2000)
-                
             } catch (e: Exception) {
                 Toast.makeText(this, "Failed to change resolution: ${e.message}", Toast.LENGTH_SHORT).show()
                 android.util.Log.e("ResolutionManager", "Failed to change resolution", e)
                 
-                // Reset to previous resolution on error
+                // Clear pending resolution and reset to previous resolution on error
+                pendingResolution = null
                 loadAvailableResolutions()
                 updateCurrentResolutionDisplay(txtCurrentResolution)
             }
@@ -1696,9 +1741,30 @@ class MainActivity : AppCompatActivity() {
                     val actualResolution = PreviewSize(cameraRequest.previewWidth, cameraRequest.previewHeight)
                     android.util.Log.d("ResolutionManager", "Camera actual resolution: ${actualResolution.width}x${actualResolution.height}")
                     android.util.Log.d("ResolutionManager", "App current resolution: ${currentResolution?.width}x${currentResolution?.height}")
+                    android.util.Log.d("ResolutionManager", "Pending resolution: ${pendingResolution?.width}x${pendingResolution?.height}")
                     
-                    // Update current resolution to match actual camera resolution
-                    currentResolution = actualResolution
+                    // Check if we have a pending resolution change
+                    val pending = pendingResolution
+                    if (pending != null) {
+                        // Verify that camera actually changed to the pending resolution
+                        if (actualResolution.width == pending.width && 
+                            actualResolution.height == pending.height) {
+                            // Success: camera changed to requested resolution
+                            currentResolution = pending
+                            pendingResolution = null
+                            android.util.Log.d("ResolutionManager", "Resolution change verified in verifyCurrentResolution: ${currentResolution?.width}x${currentResolution?.height}")
+                        } else {
+                            // Failure: camera didn't change to requested resolution
+                            android.util.Log.w("ResolutionManager", "Resolution change not verified! Requested: ${pending.width}x${pending.height}, Actual: ${actualResolution.width}x${actualResolution.height}")
+                            // Keep currentResolution as pendingResolution (don't overwrite with actual)
+                            currentResolution = pending
+                        }
+                    } else {
+                        // No pending change - update from camera's actual resolution (normal behavior)
+                        currentResolution = actualResolution
+                        android.util.Log.d("ResolutionManager", "Updated current resolution to: ${currentResolution?.width}x${currentResolution?.height}")
+                    }
+                    updateResolutionUI() // Update UI with verified resolution
                 } else {
                     android.util.Log.w("ResolutionManager", "Could not get camera request to verify resolution")
                 }
