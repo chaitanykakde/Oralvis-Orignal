@@ -3,7 +3,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000"
+    android:background="#0F172A"
     android:fitsSystemWindows="true">
 
     <ScrollView
@@ -28,12 +28,13 @@
                 android:id="@+id/titleText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Login"
+                android:text="Welcome Back"
                 android:textColor="#FFFFFF"
-                android:textSize="28sp"
+                android:textSize="32sp"
                 android:textStyle="bold"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginTop="16dp" />
+                android:layout_marginTop="24dp"
+                android:letterSpacing="0.02" />
 
             <TextView
                 android:id="@+id/subtitleText"
@@ -41,18 +42,32 @@
                 android:layout_height="wrap_content"
                 android:text="Enter your credentials to continue"
                 android:textColor="#94A3B8"
-                android:textSize="14sp"
+                android:textSize="16sp"
                 android:layout_gravity="center_horizontal"
-                android:layout_marginTop="12dp" />
+                android:layout_marginTop="8dp"
+                android:letterSpacing="0.01" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/inputClientIdLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Client ID"
+                android:hint="Enter Clinic ID"
                 android:layout_marginTop="32dp"
-                app:boxStrokeColor="#FFFFFF"
-                app:hintTextColor="#FFFFFF"
+                app:boxStrokeColor="#E2E8F0"
+                app:boxStrokeWidth="2dp"
+                app:boxStrokeWidthFocused="2dp"
+                app:hintTextColor="#E2E8F0"
+                app:hintEnabled="true"
+                app:startIconDrawable="@android:drawable/ic_menu_myplaces"
+                app:startIconTint="#E2E8F0"
+                app:boxBackgroundColor="#1E293B"
+                app:boxBackgroundMode="filled"
+                app:boxCornerRadiusTopStart="12dp"
+                app:boxCornerRadiusTopEnd="12dp"
+                app:boxCornerRadiusBottomStart="12dp"
+                app:boxCornerRadiusBottomEnd="12dp"
+                app:errorTextColor="#FF6B6B"
+                app:errorEnabled="true"
                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
                 <com.google.android.material.textfield.TextInputEditText
@@ -63,7 +78,9 @@
                     android:textColor="#FFFFFF"
                     android:textColorHint="#94A3B8"
                     android:textSize="16sp"
-                    android:minHeight="56dp" />
+                    android:minHeight="56dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp" />
 
             </com.google.android.material.textfield.TextInputLayout>
 
@@ -71,10 +88,25 @@
                 android:id="@+id/inputPasswordLayout"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Password"
+                android:hint="Enter Password"
                 android:layout_marginTop="16dp"
-                app:boxStrokeColor="#FFFFFF"
-                app:hintTextColor="#FFFFFF"
+                app:boxStrokeColor="#E2E8F0"
+                app:boxStrokeWidth="2dp"
+                app:boxStrokeWidthFocused="2dp"
+                app:hintTextColor="#E2E8F0"
+                app:hintEnabled="true"
+                app:startIconDrawable="@android:drawable/ic_lock_lock"
+                app:startIconTint="#E2E8F0"
+                app:boxBackgroundColor="#1E293B"
+                app:boxBackgroundMode="filled"
+                app:boxCornerRadiusTopStart="12dp"
+                app:boxCornerRadiusTopEnd="12dp"
+                app:boxCornerRadiusBottomStart="12dp"
+                app:boxCornerRadiusBottomEnd="12dp"
+                app:errorTextColor="#FF6B6B"
+                app:errorEnabled="true"
+                app:passwordToggleEnabled="true"
+                app:passwordToggleTint="#E2E8F0"
                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
 
                 <com.google.android.material.textfield.TextInputEditText
@@ -85,7 +117,9 @@
                     android:textColor="#FFFFFF"
                     android:textColorHint="#94A3B8"
                     android:textSize="16sp"
-                    android:minHeight="56dp" />
+                    android:minHeight="56dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp" />
 
             </com.google.android.material.textfield.TextInputLayout>
 
@@ -104,15 +138,18 @@
                 android:id="@+id/btnLogin"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
-                android:text="Login"
+                android:text="Sign In"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 android:textColor="#FFFFFF"
                 android:background="@drawable/button_gradient_blue"
-                app:cornerRadius="28dp"
-                app:elevation="8dp"
-                android:layout_marginTop="24dp"
-                app:backgroundTint="@null" />
+                app:cornerRadius="12dp"
+                app:elevation="4dp"
+                android:layout_marginTop="32dp"
+                android:paddingStart="24dp"
+                android:paddingEnd="24dp"
+                app:backgroundTint="@null"
+                android:stateListAnimator="@null" />
 
             <ProgressBar
                 android:id="@+id/progressBar"

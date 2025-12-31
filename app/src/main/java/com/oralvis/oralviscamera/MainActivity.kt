@@ -107,6 +107,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private var mCameraClient: MultiCameraClient? = null
     private var mCurrentCamera: MultiCameraClient.ICamera? = null
+    private var fluorescenceEffect: com.oralvis.oralviscamera.camera.FluorescenceEffect? = null
     private val mCameraMap = hashMapOf<Int, MultiCameraClient.ICamera>()
     private var isRecording = false
     
@@ -926,6 +927,7 @@ class MainActivity : AppCompatActivity() {
         mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
+                    // Apply camera parameters
                     camera.setAutoExposure(preset.autoExposure)
                     camera.setAutoWhiteBalance(preset.autoWhiteBalance)
                     camera.setContrast(preset.contrast)
@@ -937,11 +939,29 @@ class MainActivity : AppCompatActivity() {
                     camera.setGain(preset.gain)
                     camera.setExposure(preset.exposure)
                     
+                    // Apply/remove visual fluorescence effect
+                    if (mode == "Fluorescence") {
+                        // Create effect if it doesn't exist
+                        if (fluorescenceEffect == null) {
+                            fluorescenceEffect = com.oralvis.oralviscamera.camera.FluorescenceEffect(this)
+                        }
+                        // Add the effect to camera render pipeline
+                        camera.addRenderEffect(fluorescenceEffect!!)
+                        android.util.Log.d("FluorescenceMode", "Fluorescence effect applied")
+                    } else {
+                        // Remove effect when switching to Normal mode
+                        fluorescenceEffect?.let { effect ->
+                            camera.removeRenderEffect(effect)
+                            android.util.Log.d("FluorescenceMode", "Fluorescence effect removed")
+                        }
+                    }
+                    
                     // Update UI controls
                     updateCameraControlValues()
                     
                     Toast.makeText(this, "Switched to $mode mode", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
+                    android.util.Log.e("FluorescenceMode", "Failed to apply $mode preset: ${e.message}", e)
                     Toast.makeText(this, "Failed to apply $mode preset: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
@@ -955,9 +975,6 @@ class MainActivity : AppCompatActivity() {
         
         // Setup settings controls
         setupSettingsControls(bottomSheetView)
-        
-        // Setup resolution spinner with retry logic to ensure camera is ready
-        setupResolutionSpinnerWithRetry(bottomSheetView, 0)
         
         settingsBottomSheet?.show()
     }
@@ -1327,14 +1344,32 @@ class MainActivity : AppCompatActivity() {
         
         binding.modeSpinner.adapter = modeAdapter
         
+        // Explicitly set selection to 0 (Normal) to ensure default mode
+        binding.modeSpinner.setSelection(0, false) // false = don't trigger listener
+        
         // Mode selection listener
+        var isInitialSetup = true
         binding.modeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                // Skip initial trigger during setup to prevent applying wrong mode
+                if (isInitialSetup) {
+                    isInitialSetup = false
+                    // Ensure Normal mode is set during initial setup
+                    if (position == 0) {
+                        currentMode = "Normal"
+                        // Don't apply preset here as camera might not be ready yet
+                        // It will be applied when camera opens
+                    }
+                    return
+                }
                 val mode = parent?.getItemAtPosition(position).toString() ?: "Normal"
                 switchToMode(mode)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
+        
+        // Ensure currentMode is set to Normal
+        currentMode = "Normal"
     }
     
     /**
@@ -1456,19 +1491,7 @@ class MainActivity : AppCompatActivity() {
                 // Update resolution UI (top toolbar)
                 updateResolutionUI()
                 
-                // Update settings panel if it's open
-                settingsBottomSheet?.let { dialog ->
-                    if (dialog.isShowing) {
-                        try {
-                            val txtCurrentResolution = dialog.findViewById<TextView>(R.id.txtCurrentResolution)
-                            txtCurrentResolution?.let {
-                                updateCurrentResolutionDisplay(it)
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.w("ResolutionManager", "Failed to update settings panel resolution display: ${e.message}")
-                        }
-                    }
-                }
+                // Settings panel resolution display removed - no longer needed
             } else {
                 android.util.Log.w("ResolutionManager", "No resolutions available from camera")
                 // Set some common default resolutions if camera doesn't provide any
@@ -1834,8 +1857,7 @@ class MainActivity : AppCompatActivity() {
                 return
             } else {
                 android.util.Log.e("ResolutionManager", "Camera not ready after $maxRetries attempts")
-                val txtCurrentResolution = view.findViewById<TextView>(R.id.txtCurrentResolution)
-                txtCurrentResolution?.text = "Camera not ready - please try again"
+                // Settings panel resolution display removed - no longer needed
                 return
             }
         }
@@ -1926,167 +1948,10 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupResolutionSpinner(view: View) {
-        // #region agent log
-        writeDebugLog("E", "MainActivity.kt:1636", "setupResolutionSpinner() ENTRY", mapOf(
-            "viewType" to view.javaClass.simpleName,
-            "viewId" to (view.id?.let { resources.getResourceEntryName(it) } ?: "unknown"),
-            "timestamp" to System.currentTimeMillis()
-        ))
-        // #endregion
-        android.util.Log.d("ResolutionClick", "setupResolutionSpinner() called for view: ${view.javaClass.simpleName}")
-        Toast.makeText(this, "Setting up resolution spinner...", Toast.LENGTH_SHORT).show()
-        
-        val spinner = view.findViewById<Spinner>(R.id.spinnerResolution)
-        val txtCurrentResolution = view.findViewById<TextView>(R.id.txtCurrentResolution)
-        
-        // #region agent log
-        writeDebugLog("E", "MainActivity.kt:1640", "spinner and textview found", mapOf(
-            "spinnerFound" to (spinner != null),
-            "txtCurrentResolutionFound" to (txtCurrentResolution != null)
-        ))
-        // #endregion
-        
-        if (spinner == null) {
-            android.util.Log.e("ResolutionClick", "CRITICAL: Spinner not found in view!")
-            Toast.makeText(this, "ERROR: Resolution spinner not found!", Toast.LENGTH_LONG).show()
-            return
-        }
-        
-        // Ensure we have current camera and resolutions loaded
-        if (!isCameraReadyForResolutionChange()) {
-            txtCurrentResolution?.text = "Camera not ready"
-            android.util.Log.w("ResolutionManager", "Camera not ready for resolution setup")
-            // #region agent log
-            writeDebugLog("E", "MainActivity.kt:1641", "camera not ready - aborting setup", mapOf())
-            // #endregion
-            return
-        }
-        
-        // Reload resolutions to ensure we have the latest data
-        loadAvailableResolutions()
-        
-        if (availableResolutions.isEmpty()) {
-            txtCurrentResolution.text = "No resolutions available"
-            android.util.Log.w("ResolutionManager", "No resolutions available")
-            return
-        }
-        
-        // Create resolution strings for spinner
-        val resolutionStrings = availableResolutions.map { resolution ->
-            "${resolution.width}x${resolution.height}"
-        }
-        
-        // Setup adapter
-        resolutionAdapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_spinner_item,
-            resolutionStrings
-        ).apply {
-            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        }
-        
-        spinner.adapter = resolutionAdapter
-        
-        // Store in local variable to allow smart cast
-        val adapter = resolutionAdapter
-        
-        // #region agent log
-        writeDebugLog("E", "MainActivity.kt:1661", "adapter set on spinner", mapOf(
-            "adapterItemCount" to (adapter?.count ?: 0),
-            "availableResolutionsSize" to availableResolutions.size
-        ))
-        // #endregion
-        android.util.Log.d("ResolutionClick", "Adapter set on spinner with ${adapter?.count ?: 0} items")
-        
-        // Update current resolution display
-        updateCurrentResolutionDisplay(txtCurrentResolution)
-        
-        // Handle selection changes
-        // #region agent log
-        writeDebugLog("E", "MainActivity.kt:1667", "attaching onItemSelectedListener to spinner", mapOf())
-        // #endregion
-        android.util.Log.d("ResolutionClick", "Attaching onItemSelectedListener to spinner")
-        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            private var isInitialSetup = true
-            
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                // #region agent log
-                writeDebugLog("B", "MainActivity.kt:1631", "spinner onItemSelected fired", mapOf(
-                    "position" to position,
-                    "isInitialSetup" to isInitialSetup,
-                    "availableResolutionsSize" to availableResolutions.size,
-                    "timestamp" to System.currentTimeMillis()
-                ))
-                // #endregion
-                android.util.Log.d("ResolutionClick", "SETTINGS PANEL: Spinner onItemSelected - position: $position, isInitialSetup: $isInitialSetup")
-                Toast.makeText(this@MainActivity, "Resolution spinner selected: position $position", Toast.LENGTH_SHORT).show()
-                
-                if (position >= 0 && position < availableResolutions.size) {
-                    val selectedResolution = availableResolutions[position]
-                    android.util.Log.d("ResolutionManager", "Selected resolution: ${selectedResolution.width}x${selectedResolution.height}")
-                    
-                    // #region agent log
-                    writeDebugLog("B", "MainActivity.kt:1635", "resolution selected from spinner", mapOf(
-                        "selectedWidth" to selectedResolution.width,
-                        "selectedHeight" to selectedResolution.height,
-                        "currentWidth" to (currentResolution?.width ?: -1),
-                        "currentHeight" to (currentResolution?.height ?: -1),
-                        "isInitialSetup" to isInitialSetup
-                    ))
-                    // #endregion
-                    
-                    // Always allow resolution changes, but log if it's initial setup
-                    if (isInitialSetup) {
-                        // #region agent log
-                        writeDebugLog("C", "MainActivity.kt:1639", "isInitialSetup=true - checking if should skip", mapOf(
-                            "selectedWidth" to selectedResolution.width,
-                            "selectedHeight" to selectedResolution.height,
-                            "currentWidth" to (currentResolution?.width ?: -1),
-                            "currentHeight" to (currentResolution?.height ?: -1)
-                        ))
-                        // #endregion
-                        android.util.Log.d("ResolutionManager", "Initial setup - setting current resolution display")
-                        isInitialSetup = false
-                        // Update display but don't change resolution if it's already the current one
-                        if (currentResolution?.width == selectedResolution.width && 
-                            currentResolution?.height == selectedResolution.height) {
-                            android.util.Log.d("ResolutionManager", "Resolution already matches current, skipping change")
-                            Toast.makeText(this@MainActivity, "Resolution already set - skipping change", Toast.LENGTH_SHORT).show()
-                            return
-                        }
-                    }
-                    
-                    android.util.Log.d("ResolutionManager", "User selected resolution: ${selectedResolution.width}x${selectedResolution.height}")
-                    Toast.makeText(this@MainActivity, "Changing resolution to ${selectedResolution.width}x${selectedResolution.height}...", Toast.LENGTH_SHORT).show()
-                    changeResolution(selectedResolution, txtCurrentResolution)
-                } else {
-                    // #region agent log
-                    writeDebugLog("B", "MainActivity.kt:1654", "invalid position in onItemSelected", mapOf(
-                        "position" to position,
-                        "availableResolutionsSize" to availableResolutions.size
-                    ))
-                    // #endregion
-                    android.util.Log.w("ResolutionClick", "Invalid position: $position (available: ${availableResolutions.size})")
-                }
-            }
-            
-            override fun onNothingSelected(parent: AdapterView<*>?) {
-                // Do nothing
-            }
-        }
-        
-        // Set current selection after setting up the listener
-        currentResolution?.let { current ->
-            val currentIndex = availableResolutions.indexOfFirst { 
-                it.width == current.width && it.height == current.height 
-            }
-            if (currentIndex >= 0) {
-                android.util.Log.d("ResolutionManager", "Setting spinner to current resolution index: $currentIndex")
-                spinner.setSelection(currentIndex)
-            }
-        }
-        
-        android.util.Log.d("ResolutionManager", "Resolution spinner setup completed with ${availableResolutions.size} resolutions")
+        // Resolution spinner was removed from settings panel
+        // This method is kept for compatibility but no longer sets up the spinner
+        android.util.Log.d("ResolutionClick", "setupResolutionSpinner() called but spinner was removed from settings panel - returning early")
+        return
     }
     
     private fun changeResolution(newResolution: PreviewSize, txtCurrentResolution: TextView) {
@@ -2294,13 +2159,13 @@ class MainActivity : AppCompatActivity() {
                     initialDelayMs = 500,
                     onSuccess = {
                         android.util.Log.d("ResolutionChange", "Resolutions reloaded after error")
-                        updateCurrentResolutionDisplay(txtCurrentResolution)
+                        txtCurrentResolution?.let { updateCurrentResolutionDisplay(it) }
                     },
                     onFailure = {
                         android.util.Log.e("ResolutionChange", "Failed to reload resolutions after error")
                         // Still try to reload once more without retry
                         loadAvailableResolutions()
-                        updateCurrentResolutionDisplay(txtCurrentResolution)
+                        txtCurrentResolution?.let { updateCurrentResolutionDisplay(it) }
                     }
                 )
             }
@@ -2501,6 +2366,12 @@ class MainActivity : AppCompatActivity() {
                             isResolutionChanging = false
                         }
                                         updateCameraControlValues()
+                        
+                        // Ensure Normal mode is applied when camera opens (default mode)
+                        // This prevents fluorescence mode from being active by default
+                        currentMode = "Normal"
+                        applyModePreset("Normal")
+                        android.util.Log.d("CameraMode", "Applied Normal mode on camera open")
                         
                         // Verify and log current resolution after camera restart
                         verifyCurrentResolution()
@@ -3630,15 +3501,15 @@ class MainActivity : AppCompatActivity() {
     }
     
     /**
-     * Collects and shares recent logs from the last 2 minutes
+     * Collects and shares recent logs from the last 1 hour
      */
     private fun shareRecentLogs() {
         try {
             android.util.Log.d("LogSharing", "Starting to collect recent logs...")
-            Toast.makeText(this, "Collecting logs from last 2 minutes...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Collecting logs from last 1 hour...", Toast.LENGTH_SHORT).show()
             
             val logBuilder = StringBuilder()
-            logBuilder.append("=== OralVis Camera Logs (Last 2 Minutes) ===\n")
+            logBuilder.append("=== OralVis Camera Logs (Last 1 Hour) ===\n")
             logBuilder.append("Collected at: ${android.text.format.DateFormat.format("yyyy-MM-dd HH:mm:ss", System.currentTimeMillis())}\n")
             logBuilder.append("Package: com.oralvis.oralviscamera\n")
             logBuilder.append("App Version: ${packageManager.getPackageInfo(packageName, 0).versionName}\n")
@@ -3650,8 +3521,8 @@ class MainActivity : AppCompatActivity() {
             val inputStream = process.inputStream
             val reader = java.io.BufferedReader(java.io.InputStreamReader(inputStream))
             
-            // Calculate cutoff time (2 minutes ago)
-            val cutoffTime = System.currentTimeMillis() - (2 * 60 * 1000)
+            // Calculate cutoff time (1 hour ago)
+            val cutoffTime = System.currentTimeMillis() - (60 * 60 * 1000)
             
             var line: String?
             var lineCount = 0
@@ -3764,7 +3635,7 @@ class MainActivity : AppCompatActivity() {
             // Share via Intent
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "OralVis Camera Logs - Last 2 Minutes")
+                putExtra(Intent.EXTRA_SUBJECT, "OralVis Camera Logs - Last 1 Hour")
                 putExtra(Intent.EXTRA_TEXT, logText)
             }
             
