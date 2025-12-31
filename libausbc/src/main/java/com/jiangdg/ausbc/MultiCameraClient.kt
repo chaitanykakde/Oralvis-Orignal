@@ -28,6 +28,7 @@ import com.jiangdg.ausbc.utils.Logger
 import com.jiangdg.ausbc.utils.OpenGLUtils
 import com.jiangdg.ausbc.utils.Utils
 import com.jiangdg.ausbc.widget.IAspectRatio
+import java.io.File
 import com.jiangdg.usb.*
 import com.jiangdg.usb.DeviceFilter
 import com.jiangdg.uvc.UVCCamera
@@ -285,7 +286,13 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
             SimpleDateFormat("yyyyMMddHHmmssSSS", Locale.getDefault())
         }
         protected val mCameraDir by lazy {
-            "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)}/Camera"
+            val dir = File(mContext.getExternalFilesDir(null), "Camera")
+            if (!dir.exists()) {
+                dir.mkdirs()
+                // Create .nomedia file to prevent media scanner from indexing this directory
+                File(dir, ".nomedia").createNewFile()
+            }
+            dir.absolutePath
         }
 
         init {

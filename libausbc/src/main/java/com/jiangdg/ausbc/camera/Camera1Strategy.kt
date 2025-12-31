@@ -97,18 +97,7 @@ class Camera1Strategy(ctx: Context) : ICameraStrategy(ctx), Camera.PreviewCallba
                 val location = Utils.getGpsLocation(getContext())
                 // 写入文件
                 File(path).writeBytes(data)
-                // 更新
-                val values = ContentValues()
-                values.put(MediaStore.Images.ImageColumns.TITLE, title)
-                values.put(MediaStore.Images.ImageColumns.DISPLAY_NAME, displayName)
-                values.put(MediaStore.Images.ImageColumns.DATA, path)
-                values.put(MediaStore.Images.ImageColumns.DATE_TAKEN, date)
-                values.put(MediaStore.Images.ImageColumns.WIDTH, width)
-                values.put(MediaStore.Images.ImageColumns.HEIGHT, height)
-                values.put(MediaStore.Images.ImageColumns.ORIENTATION, orientation)
-                values.put(MediaStore.Images.ImageColumns.LONGITUDE, location?.longitude)
-                values.put(MediaStore.Images.ImageColumns.LATITUDE, location?.latitude)
-                getContext()?.contentResolver?.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                // MediaStore insertion removed - images are saved to private directory and hidden from gallery
                 mMainHandler.post {
                     mCaptureDataCb?.onComplete(path)
                 }

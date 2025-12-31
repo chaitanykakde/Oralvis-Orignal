@@ -61,6 +61,11 @@ class AutoCaptureController(
         if (!isProcessingActive) {
             // When not actively scanning, we do not attempt capture, but we still
             // allow callers to clear any stale guidance display.
+            // Log occasionally to help debug why auto-capture isn't working
+            val now = System.currentTimeMillis()
+            if (now % 2000 < 100) {
+                android.util.Log.d("AutoCaptureController", "onMotionStateUpdated: isProcessingActive=false, skipping (this is normal when not scanning)")
+            }
             guidanceCallback?.invoke(null)
             return
         }
@@ -70,8 +75,8 @@ class AutoCaptureController(
         // --- Gate 1: Stability threshold (simplified to single motionScore check) ---
         val isStable = motionState.motionScore < captureStabilityThresh
         
-        // Enhanced logging for debugging
-        android.util.Log.d("AutoCaptureController", "onMotionStateUpdated: motionScore=${motionState.motionScore}, threshold=$captureStabilityThresh, isStable=$isStable, enableAutoCapture=$enableAutoCapture, isProcessingActive=$isProcessingActive")
+        // Enhanced logging for debugging - especially for upper scan
+        android.util.Log.d("AutoCaptureController", "onMotionStateUpdated: motionScore=${motionState.motionScore}, threshold=$captureStabilityThresh, isStable=$isStable, enableAutoCapture=$enableAutoCapture, isProcessingActive=$isProcessingActive, stableSince=$stableSince, lastCaptureTime=$lastCaptureTime")
 
         var isArming = false
 

@@ -94,7 +94,13 @@ class RenderManager(
         SimpleDateFormat("yyyyMMddHHmmssSSS", Locale.getDefault())
     }
     private val mCameraDir by lazy {
-        "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)}/Camera"
+        val dir = File(mContext.getExternalFilesDir(null), "Camera")
+        if (!dir.exists()) {
+            dir.mkdirs()
+            // Create .nomedia file to prevent media scanner from indexing this directory
+            File(dir, ".nomedia").createNewFile()
+        }
+        dir.absolutePath
     }
     // Throttle expensive preview callbacks (GPU readback + processing)
     // so that they do not run at full camera FPS. This helps avoid
@@ -532,45 +538,8 @@ class RenderManager(
             return
         }
         
-        // Use modern MediaStore API - don't set DATA field directly
-        try {
-            val values = ContentValues()
-            values.put(MediaStore.Images.ImageColumns.TITLE, title)
-            values.put(MediaStore.Images.ImageColumns.DISPLAY_NAME, displayName)
-            values.put(MediaStore.Images.ImageColumns.DATE_TAKEN, date)
-            values.put(MediaStore.Images.ImageColumns.WIDTH, width)
-            values.put(MediaStore.Images.ImageColumns.HEIGHT, height)
-            values.put(MediaStore.Images.ImageColumns.MIME_TYPE, "image/jpeg")
-            
-            // For Android 10+ (API 29+), use scoped storage approach
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                values.put(MediaStore.Images.ImageColumns.RELATIVE_PATH, "Pictures/Oralvis")
-                values.put(MediaStore.Images.ImageColumns.IS_PENDING, 1)
-                
-                val uri = mContext.contentResolver?.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                uri?.let { imageUri ->
-                    mContext.contentResolver?.openOutputStream(imageUri)?.use { outputStream ->
-                        file.inputStream().use { inputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-                    }
-                    // Mark as not pending
-                    values.clear()
-                    values.put(MediaStore.Images.ImageColumns.IS_PENDING, 0)
-                    mContext.contentResolver?.update(imageUri, values, null, null)
-                }
-            } else {
-                // For older Android versions, use the traditional approach but without DATA field
-                mContext.contentResolver?.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                // Trigger media scan to make it visible in gallery
-                val mediaScanIntent = android.content.Intent(android.content.Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-                mediaScanIntent.data = android.net.Uri.fromFile(file)
-                mContext.sendBroadcast(mediaScanIntent)
-            }
-        } catch (e: Exception) {
-            Logger.e(TAG, "Failed to add image to MediaStore: ${e.localizedMessage}", e)
-            // Continue execution even if MediaStore insertion fails
-        }
+        // MediaStore insertion removed - images are saved to private directory and hidden from gallery
+        // Images are only accessible within the app
         // Post callback safely - check if handler is still valid
         try {
             mMainHandler.post {

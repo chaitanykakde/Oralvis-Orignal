@@ -147,14 +147,22 @@ class GuidedCaptureManager(
         buttonText: String,
         progressText: String
     ) {
+        android.util.Log.d("GuidedCaptureManager", "onUiStateUpdated: state=$state, mainText='$mainText'")
+        
         overlayView.scanningState = state
         overlayView.mainText = mainText
         overlayView.buttonText = buttonText
         overlayView.progressText = progressText
         
-        // Update MotionAnalyzer with current scanning state (for gating)
+        // CRITICAL: Update MotionAnalyzer scanningState BEFORE isProcessingActive is set to true
+        // This ensures MotionAnalyzer is ready to process frames when auto-capture is enabled
         motionAnalyzer.scanningState = state
-        android.util.Log.d("Guided", "Updated MotionAnalyzer scanningState to: $state")
+        android.util.Log.d("GuidedCaptureManager", "Updated MotionAnalyzer scanningState to: $state")
+        
+        // Log when entering scanning states to help debug auto-capture issues
+        if (state == ScanningState.SCANNING_LOWER || state == ScanningState.SCANNING_UPPER) {
+            android.util.Log.d("GuidedCaptureManager", "Entering scanning state: $state - MotionAnalyzer should now process frames")
+        }
     }
 
     override fun onFlashRequested() {

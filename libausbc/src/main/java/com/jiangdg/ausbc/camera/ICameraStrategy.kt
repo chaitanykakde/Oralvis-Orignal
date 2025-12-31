@@ -42,6 +42,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.io.File
 
 /** Camera Manager abstract class
  *
@@ -69,7 +70,14 @@ abstract class ICameraStrategy(context: Context) : Handler.Callback {
         SimpleDateFormat("yyyyMMddHHmmssSSS", Locale.getDefault())
     }
     protected val mCameraDir by lazy {
-        "${Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM)}/Camera"
+        val context = getContext()
+        val dir = File(context?.getExternalFilesDir(null), "Camera")
+        if (!dir.exists()) {
+            dir.mkdirs()
+            // Create .nomedia file to prevent media scanner from indexing this directory
+            File(dir, ".nomedia").createNewFile()
+        }
+        dir.absolutePath
     }
 
     private val mDeviceOrientation = object : OrientationEventListener(context) {

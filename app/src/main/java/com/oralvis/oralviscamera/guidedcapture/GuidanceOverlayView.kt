@@ -143,15 +143,72 @@ class GuidanceOverlayView @JvmOverloads constructor(
 
     private fun drawTopInstruction(canvas: Canvas, w: Int) {
         if (mainText.isEmpty()) return
-        textPaint.textSize = 42f
+        
+        val maxWidth = w * 0.9f
+        var textSize = 32f // Reduced from 42f
+        textPaint.textSize = textSize
+        
+        // Check if text fits, if not wrap into multiple lines
         val textWidth = textPaint.measureText(mainText)
-        val x = (w - textWidth) / 2f
-        val y = 80f
-        // Simple shadow effect for readability
-        textPaint.color = Color.BLACK
-        canvas.drawText(mainText, x + 2, y + 2, textPaint)
-        textPaint.color = Color.WHITE
-        canvas.drawText(mainText, x, y, textPaint)
+        val lines = if (textWidth > maxWidth) {
+            // Break text into multiple lines
+            breakTextIntoLines(mainText, textPaint, maxWidth)
+        } else {
+            listOf(mainText)
+        }
+        
+        // Draw each line centered
+        val lineHeight = textPaint.fontMetrics.let { it.descent - it.ascent }
+        val totalHeight = lineHeight * lines.size
+        var y = 80f - (totalHeight - lineHeight) / 2f // Center vertically
+        
+        for (line in lines) {
+            val lineWidth = textPaint.measureText(line)
+            val x = (w - lineWidth) / 2f
+            
+            // Simple shadow effect for readability
+            textPaint.color = Color.BLACK
+            canvas.drawText(line, x + 2, y + 2, textPaint)
+            textPaint.color = Color.WHITE
+            canvas.drawText(line, x, y, textPaint)
+            
+            y += lineHeight
+        }
+    }
+    
+    /**
+     * Break text into multiple lines that fit within maxWidth.
+     */
+    private fun breakTextIntoLines(text: String, paint: Paint, maxWidth: Float): List<String> {
+        val words = text.split(" ")
+        val lines = mutableListOf<String>()
+        var currentLine = ""
+        
+        for (word in words) {
+            val testLine = if (currentLine.isEmpty()) word else "$currentLine $word"
+            val testWidth = paint.measureText(testLine)
+            
+            if (testWidth <= maxWidth) {
+                currentLine = testLine
+            } else {
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine)
+                }
+                // If single word is too long, force it on a line anyway
+                currentLine = if (paint.measureText(word) > maxWidth) {
+                    // Word is too long, try to break it (though this is rare)
+                    word
+                } else {
+                    word
+                }
+            }
+        }
+        
+        if (currentLine.isNotEmpty()) {
+            lines.add(currentLine)
+        }
+        
+        return if (lines.isEmpty()) listOf(text) else lines
     }
 
     private fun drawControlPanel(canvas: Canvas, w: Int, h: Int) {

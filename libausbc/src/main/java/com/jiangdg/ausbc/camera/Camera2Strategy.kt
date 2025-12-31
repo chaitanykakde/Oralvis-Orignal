@@ -601,16 +601,7 @@ class Camera2Strategy(ctx: Context) : ICameraStrategy(ctx) {
 //                val location = captureResult[CaptureResult.JPEG_GPS_LOCATION]
                 // 写入文件
                 File(path).writeBytes(jpegBufferArray)
-                // 更新
-                val values = ContentValues()
-                values.put(MediaStore.Images.ImageColumns.TITLE, title)
-                values.put(MediaStore.Images.ImageColumns.DISPLAY_NAME, displayName)
-                values.put(MediaStore.Images.ImageColumns.DATA, path)
-                values.put(MediaStore.Images.ImageColumns.DATE_TAKEN, date)
-//                values.put(MediaStore.Images.ImageColumns.ORIENTATION, orientation)
-//                values.put(MediaStore.Images.ImageColumns.LONGITUDE, location?.longitude)
-//                values.put(MediaStore.Images.ImageColumns.LATITUDE, location?.latitude)
-                getContext()?.contentResolver?.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                // MediaStore insertion removed - images are saved to private directory and hidden from gallery
                 mMainHandler.post {
                     mCaptureDataCb?.onComplete(path)
                 }

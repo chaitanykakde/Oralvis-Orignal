@@ -99,10 +99,28 @@ class MotionAnalyzer {
             val oldValue = field
             field = value
             Log.d(TAG, "scanningState changed: $oldValue -> $value")
-            // Clear previous frame when state changes (not scanning)
-            if (value != ScanningState.SCANNING_LOWER && value != ScanningState.SCANNING_UPPER) {
+            
+            // Only clear previous frame when transitioning OUT of scanning states
+            // Don't clear when transitioning between scanning states (SCANNING_LOWER <-> SCANNING_UPPER)
+            val wasScanning = oldValue == ScanningState.SCANNING_LOWER || oldValue == ScanningState.SCANNING_UPPER
+            val isScanning = value == ScanningState.SCANNING_LOWER || value == ScanningState.SCANNING_UPPER
+            
+            if (wasScanning && !isScanning) {
+                // Transitioning from scanning to non-scanning: clear state
+                Log.d(TAG, "Transitioning from scanning ($oldValue) to non-scanning ($value), clearing previous frame")
+                clearPreviousFrame()
+            } else if (!wasScanning && isScanning) {
+                // Transitioning from non-scanning to scanning: keep state if possible, but reset frame counter for initialization
+                Log.d(TAG, "Transitioning from non-scanning ($oldValue) to scanning ($value), resetting frame counter")
+                workerHandler?.post {
+                    frameCount = 0 // Reset frame counter to trigger initialization frames
+                    // Don't clear prevGrayMat - keep it if available for smoother transition
+                }
+            } else if (!isScanning) {
+                // Already in non-scanning state, clear if needed
                 clearPreviousFrame()
             }
+            // If transitioning between scanning states (SCANNING_LOWER <-> SCANNING_UPPER), don't clear
         }
 
     init {
@@ -162,8 +180,9 @@ class MotionAnalyzer {
         // Gate by scanning state
         if (scanningState != ScanningState.SCANNING_LOWER && 
             scanningState != ScanningState.SCANNING_UPPER) {
-            // Only log occasionally to avoid spam
-            if (System.currentTimeMillis() % 2000 < 100) {
+            // Only log occasionally to avoid spam, but log more frequently for upper scan debugging
+            val now = System.currentTimeMillis()
+            if (now % 2000 < 100) {
                 Log.d(TAG, "onFrame: Not in scanning state (current: $scanningState)")
             }
             return
@@ -176,7 +195,12 @@ class MotionAnalyzer {
         }
         lastSampleTimeMs = nowMs
         
-        Log.d(TAG, "onFrame: Processing frame ${width}x${height}, state=$scanningState")
+        // Enhanced logging for upper scan debugging
+        if (scanningState == ScanningState.SCANNING_UPPER) {
+            Log.d(TAG, "onFrame: Processing UPPER scan frame ${width}x${height}, state=$scanningState")
+        } else {
+            Log.d(TAG, "onFrame: Processing frame ${width}x${height}, state=$scanningState")
+        }
         
         // Process on background thread
         workerHandler?.post {
@@ -257,11 +281,20 @@ class MotionAnalyzer {
             
             // Enhanced logging for debugging auto-capture issues
             val isStable = motionScore < 2.0 // Match AutoCaptureController threshold
-            Log.d(TAG, "Motion: raw=$rawMotionScore, smoothed=$motionScore, stable=$isStable, speedWarn=$speedWarning, stabilityWarn=$stabilityWarning, state=$scanningState")
+            if (scanningState == ScanningState.SCANNING_UPPER) {
+                // More verbose logging for upper scan debugging
+                Log.d(TAG, "Motion [UPPER]: raw=$rawMotionScore, smoothed=$motionScore, stable=$isStable, speedWarn=$speedWarning, stabilityWarn=$stabilityWarning, frameCount=$frameCount")
+            } else {
+                Log.d(TAG, "Motion: raw=$rawMotionScore, smoothed=$motionScore, stable=$isStable, speedWarn=$speedWarning, stabilityWarn=$stabilityWarning, state=$scanningState")
+            }
             
             // Log when motionScore is above threshold to help diagnose why capture isn't triggering
             if (!isStable && motionScore > 2.0) {
-                Log.w(TAG, "MotionScore above threshold: $motionScore > 2.0 (capture will not trigger)")
+                if (scanningState == ScanningState.SCANNING_UPPER) {
+                    Log.w(TAG, "MotionScore [UPPER] above threshold: $motionScore > 2.0 (capture will not trigger)")
+                } else {
+                    Log.w(TAG, "MotionScore above threshold: $motionScore > 2.0 (capture will not trigger)")
+                }
             }
             
             // Emit on main thread to avoid threading issues

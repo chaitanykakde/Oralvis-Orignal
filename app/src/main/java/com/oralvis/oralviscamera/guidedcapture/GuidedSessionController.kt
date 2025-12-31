@@ -64,23 +64,37 @@ class GuidedSessionController(
         when (state) {
             ScanningState.READY_TO_SCAN_LOWER -> {
                 state = ScanningState.SCANNING_LOWER
+                android.util.Log.d("GuidedSessionController", "Starting LOWER scan - state set to SCANNING_LOWER")
+                // notifyUi() will update MotionAnalyzer.scanningState via listener
+                notifyUi()
+                // Set isProcessingActive AFTER UI state is updated (which updates MotionAnalyzer)
                 autoCaptureController.isProcessingActive = true
+                android.util.Log.d("GuidedSessionController", "isProcessingActive set to true for LOWER scan")
             }
 
             ScanningState.SCANNING_LOWER -> {
                 state = ScanningState.READY_TO_SCAN_UPPER
+                android.util.Log.d("GuidedSessionController", "Finishing LOWER scan - state set to READY_TO_SCAN_UPPER")
                 autoCaptureController.isProcessingActive = false
+                notifyUi()
             }
 
             ScanningState.READY_TO_SCAN_UPPER -> {
                 state = ScanningState.SCANNING_UPPER
+                android.util.Log.d("GuidedSessionController", "Starting UPPER scan - state set to SCANNING_UPPER")
+                // notifyUi() will update MotionAnalyzer.scanningState via listener
+                notifyUi()
+                // Set isProcessingActive AFTER UI state is updated (which updates MotionAnalyzer)
                 autoCaptureController.isProcessingActive = true
+                android.util.Log.d("GuidedSessionController", "isProcessingActive set to true for UPPER scan")
             }
 
             ScanningState.SCANNING_UPPER -> {
                 state = ScanningState.COMPLETE
+                android.util.Log.d("GuidedSessionController", "Finishing UPPER scan - state set to COMPLETE")
                 autoCaptureController.isProcessingActive = false
                 sessionBridge.onGuidedSessionComplete(guidedSessionId)
+                notifyUi()
             }
 
             ScanningState.COMPLETE -> {
@@ -90,7 +104,6 @@ class GuidedSessionController(
                 return // Don't update UI or continue processing
             }
         }
-        notifyUi()
     }
 
     fun onRecaptureClicked() {
