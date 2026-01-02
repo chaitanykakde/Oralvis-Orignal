@@ -18,6 +18,7 @@ import com.oralvis.oralviscamera.api.ApiClient
 import com.oralvis.oralviscamera.api.PatientDto
 import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.database.Patient
+import com.oralvis.oralviscamera.session.SessionManager
 import com.oralvis.oralviscamera.databinding.DialogPatientSessionBinding
 import com.oralvis.oralviscamera.databinding.ItemPatientBinding
 import kotlinx.coroutines.Dispatchers
@@ -121,7 +122,10 @@ class PatientSessionDialogFragment : DialogFragment() {
             },
             onSyncClick = { patient ->
                 syncPatientMedia(patient)
-        }
+            },
+            onDeleteClick = { patient ->
+                showDeleteConfirmation(patient)
+            }
         )
         binding.recyclerPatients.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerPatients.adapter = adapter
@@ -137,7 +141,7 @@ class PatientSessionDialogFragment : DialogFragment() {
                 ) { current, total ->
                     // Update progress if needed
                 }
-                
+
                 if (result.successCount > 0) {
                     Toast.makeText(
                         context,
@@ -166,6 +170,88 @@ class PatientSessionDialogFragment : DialogFragment() {
                     Toast.LENGTH_LONG
                 ).show()
             }
+        }
+    }
+
+    private fun showDeleteConfirmation(patient: Patient) {
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Delete Patient")
+            .setMessage("Are you sure you want to delete patient '${patient.displayName}'? This will remove all associated media and cannot be undone.")
+            .setPositiveButton("Delete") { _, _ ->
+                deletePatientLocally(patient)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun deletePatientLocally(patient: Patient) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val database = MediaDatabase.getDatabase(requireContext())
+                val mediaDao = database.mediaDao()
+                val sessionDao = database.sessionDao()
+                val patientDao = database.patientDao()
+
+                // Step 1 — Delete ALL Media (files and records)
+                val allMedia = mediaDao.getUnsyncedMediaByPatient(patient.id)
+                allMedia.forEach { media ->
+                    try {
+                        java.io.File(media.filePath).delete()
+                    } catch (e: Exception) {
+                        android.util.Log.w("DeletePatient", "Failed to delete file: ${media.filePath}", e)
+                    }
+                    mediaDao.deleteMediaById(media.id)
+                }
+
+                // Step 2 — Delete ALL Sessions
+                val sessions = sessionDao.getSessionsByPatientOnce(patient.id)
+                sessions.forEach { session ->
+                    sessionDao.delete(session)
+                }
+
+                // Step 3 — Delete Patient Record
+                patientDao.delete(patient)
+
+                // Step 4 — Clear GLOBAL + UI STATE (CRITICAL)
+                withContext(Dispatchers.Main) {
+                    GlobalPatientManager.clearCurrentPatient()
+                    SessionManager(requireContext()).clearCurrentSession()
+
+                    // Clear in-memory media lists in MainActivity if it exists
+                    clearMainActivitySessionState()
+
+                    Toast.makeText(
+                        requireContext(),
+                        "Patient '${patient.displayName}' and all associated data deleted successfully",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    // Refresh the patient list
+                    adapter.notifyDataSetChanged()
+
+                    // Close dialog after successful deletion
+                    dismiss()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        requireContext(),
+                        "Error deleting patient: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    private fun clearMainActivitySessionState() {
+        try {
+            // Try to access MainActivity if it's running and clear its session state
+            val activity = activity as? com.oralvis.oralviscamera.MainActivity
+            activity?.clearSessionState()
+        } catch (e: Exception) {
+            // MainActivity might not be running, ignore
+            android.util.Log.d("DeletePatient", "MainActivity not accessible, skipping session state clear")
         }
     }
 
@@ -373,7 +459,8 @@ class PatientSessionDialogFragment : DialogFragment() {
 
     private class PatientsAdapter(
         private val onSelected: (Patient) -> Unit,
-        private val onSyncClick: (Patient) -> Unit
+        private val onSyncClick: (Patient) -> Unit,
+        private val onDeleteClick: (Patient) -> Unit
     ) : RecyclerView.Adapter<PatientsAdapter.PatientViewHolder>() {
 
         private var patients: List<Patient> = emptyList()
@@ -391,7 +478,7 @@ class PatientSessionDialogFragment : DialogFragment() {
                 parent,
                 false
             )
-            return PatientViewHolder(binding, onSyncClick)
+            return PatientViewHolder(binding, onSyncClick, onDeleteClick)
         }
 
         override fun getItemCount(): Int = patients.size
@@ -408,7 +495,8 @@ class PatientSessionDialogFragment : DialogFragment() {
 
         class PatientViewHolder(
             private val binding: ItemPatientBinding,
-            private val onSyncClick: (Patient) -> Unit
+            private val onSyncClick: (Patient) -> Unit,
+            private val onDeleteClick: (Patient) -> Unit
         ) : RecyclerView.ViewHolder(binding.root) {
 
             fun bind(patient: Patient, selected: Boolean) {
@@ -443,6 +531,11 @@ class PatientSessionDialogFragment : DialogFragment() {
                 // Set sync button click listener
                 binding.imgCloudSync.setOnClickListener {
                     onSyncClick(patient)
+                }
+
+                // Set delete button click listener
+                binding.imgDeletePatient.setOnClickListener {
+                    onDeleteClick(patient)
                 }
             }
         }

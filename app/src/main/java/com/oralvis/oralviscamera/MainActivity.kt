@@ -505,6 +505,10 @@ class MainActivity : AppCompatActivity() {
                 val patient = mediaDatabase.patientDao().getPatientById(patientId)
                 if (patient != null) {
                     withContext(Dispatchers.Main) {
+                        // Clear any previous session state before starting new session
+                        clearSessionState()
+                        clearCameraPreview()
+
                         GlobalPatientManager.setCurrentPatient(this@MainActivity, patient)
                         globalPatientId = patient.code
                         selectedPatient = patient
@@ -1426,6 +1430,9 @@ class MainActivity : AppCompatActivity() {
                         // Hide patient info card
                         binding.patientInfoCard.visibility = View.GONE
                         
+                        // Clear camera preview state
+                        clearCameraPreview()
+
                         // Reset UI to Start Session state
                         GlobalPatientManager.clearCurrentPatient()
                         selectedPatient = null
@@ -1951,7 +1958,7 @@ class MainActivity : AppCompatActivity() {
         // Resolution spinner was removed from settings panel
         // This method is kept for compatibility but no longer sets up the spinner
         android.util.Log.d("ResolutionClick", "setupResolutionSpinner() called but spinner was removed from settings panel - returning early")
-        return
+            return
     }
     
     private fun changeResolution(newResolution: PreviewSize, txtCurrentResolution: TextView) {
@@ -3647,9 +3654,45 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             android.util.Log.e("LogSharing", "Failed to collect logs: ${e.message}", e)
             Toast.makeText(this, "Failed to collect logs: ${e.message}", Toast.LENGTH_LONG).show()
-            
+
             // Show error details
             e.printStackTrace()
+        }
+    }
+
+    /**
+     * Clear all session state to ensure fresh session start
+     */
+    fun clearSessionState() {
+        sessionMediaList.clear()
+        sessionMediaAdapter?.submitList(emptyList())
+        binding.sessionMediaCount.text = "0 items"
+
+        // Show empty state
+        binding.emptyMediaState.visibility = View.VISIBLE
+        binding.sessionMediaRecycler.visibility = View.GONE
+
+        // Clear session data
+        selectedPatient = null
+        globalPatientId = null
+
+        // Hide patient info
+        binding.patientInfoCard.visibility = View.GONE
+    }
+
+    /**
+     * Clear camera preview state
+     */
+    private fun clearCameraPreview() {
+        try {
+            // Note: The actual camera preview clearing is handled by the camera framework
+            // when sessions change, but we ensure UI state is clean
+
+            // The TextureView will be refreshed when camera is reopened
+            // No explicit clearing needed for TextureView
+
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Failed to clear camera preview: ${e.message}")
         }
     }
 }
