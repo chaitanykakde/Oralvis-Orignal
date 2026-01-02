@@ -28,8 +28,11 @@
         android:text="9322067937"
         android:textColor="#FFFFFF"
         android:textSize="14sp"
+        android:maxLines="1"
+        android:ellipsize="end"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/imgDeletePatient" />
+        app:layout_constraintEnd_toStartOf="@id/txtUnsyncedCount"
+        app:layout_constraintStart_toEndOf="@id/txtPatientName" />
 
     <TextView
         android:id="@+id/txtPatientId"
@@ -55,7 +58,7 @@
         android:background="@drawable/unsynced_badge_background"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/imgCloudSync" />
+        app:layout_constraintEnd_toStartOf="@id/imgDeletePatient" />
 
     <!-- Cloud Sync Icon -->
     <ImageView

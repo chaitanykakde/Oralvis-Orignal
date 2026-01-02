@@ -3702,11 +3702,12 @@ class MainActivity : AppCompatActivity() {
      */
     private fun clearCameraPreview() {
         try {
-            // Note: The actual camera preview clearing is handled by the camera framework
-            // when sessions change, but we ensure UI state is clean
+            // Close the current camera to clear the preview
+            mCurrentCamera?.closeCamera()
+            mCurrentCamera = null
 
+            // Clear any preview surface
             // The TextureView will be refreshed when camera is reopened
-            // No explicit clearing needed for TextureView
 
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "Failed to clear camera preview: ${e.message}")
