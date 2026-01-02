@@ -410,53 +410,70 @@ class MainActivity : AppCompatActivity() {
         val startSessionClickListener = View.OnClickListener {
             android.util.Log.e("Guided", "Start Session CLICKED")
 
-            // Temporary: ensure some patient context exists for demo purposes
-            if (!GlobalPatientManager.hasPatientSelected()) {
-                android.util.Log.e("Guided", "No patient selected - attaching demo patient for guided flow")
-                // Attach a simple in-memory demo patient to satisfy session creation.
-                // This does not touch the real patient DB.
-                selectedPatient = com.oralvis.oralviscamera.database.Patient(
-                    id = -1,
-                    code = "DEMO",
-                    firstName = "Demo",
-                    lastName = "Patient",
-                    title = null,
-                    gender = null,
-                    age = null,
-                    diagnosis = null,
-                    appointmentTime = null,
-                    phone = null,
-                    email = null,
-                    otp = null,
-                    mobile = null,
-                    dob = null,
-                    addressLine1 = null,
-                    addressLine2 = null,
-                    area = null,
-                    city = null,
-                    pincode = null
-                )
-                updatePatientInfoDisplay()
-                binding.patientInfoCard.visibility = View.VISIBLE
+            // Check if there's a valid patient from the database (not deleted)
+            val currentPatient = GlobalPatientManager.getCurrentPatient()
+            if (currentPatient == null || currentPatient.id == -1L) {
+                android.util.Log.e("Guided", "No valid patient selected - opening patient selection dialog")
+                // Open patient selection dialog to choose or create a patient
+                openPatientDialogForSession()
+                return@OnClickListener
             }
 
-            if (guidedCaptureManager == null) {
-                android.util.Log.e("Guided", "GuidedCaptureManager is null, initializing now")
-                initializeGuidedCapture()
-            }
-            android.util.Log.e("Guided", "Calling guidedCaptureManager.enable()")
-            guidedCaptureManager?.enable()
-            
-            // Register GuidedCaptureManager as preview callback to receive NV21 frames
-            mCurrentCamera?.let { camera ->
-                camera.addPreviewDataCallBack(guidedCaptureManager!!)
-                android.util.Log.e("Guided", "Registered GuidedCaptureManager as preview callback")
-            } ?: run {
-                android.util.Log.w("Guided", "Camera not available, will register callback when camera opens")
+            // Verify the patient still exists in database
+            lifecycleScope.launch {
+                try {
+                    val patientExists = mediaDatabase.patientDao().getPatientById(currentPatient.id)
+                    if (patientExists == null) {
+                        android.util.Log.e("Guided", "Patient was deleted - opening patient selection dialog")
+                        withContext(Dispatchers.Main) {
+                            // Clear global state since patient no longer exists
+                            GlobalPatientManager.clearCurrentPatient()
+                            selectedPatient = null
+                            globalPatientId = null
+                            // Open patient selection dialog
+                            openPatientDialogForSession()
+                        }
+                        return@launch
+                    }
+
+                    // Patient exists, proceed with session
+                    withContext(Dispatchers.Main) {
+                        selectedPatient = currentPatient
+                        updatePatientInfoDisplay()
+                        binding.patientInfoCard.visibility = View.VISIBLE
+                        proceedWithSessionStart()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("Guided", "Error checking patient existence: ${e.message}")
+                    withContext(Dispatchers.Main) {
+                        openPatientDialogForSession()
+                    }
+                }
             }
         }
+
         binding.btnStartSession.setOnClickListener(startSessionClickListener)
         binding.btnStartGuidedSession.setOnClickListener(startSessionClickListener)
+    }
+
+    /**
+     * Proceeds with starting the guided capture session
+     */
+    private fun proceedWithSessionStart() {
+        if (guidedCaptureManager == null) {
+            android.util.Log.e("Guided", "GuidedCaptureManager is null, initializing now")
+            initializeGuidedCapture()
+        }
+        android.util.Log.e("Guided", "Calling guidedCaptureManager.enable()")
+        guidedCaptureManager?.enable()
+
+        // Register GuidedCaptureManager as preview callback to receive NV21 frames
+        mCurrentCamera?.let { camera ->
+            camera.addPreviewDataCallBack(guidedCaptureManager!!)
+            android.util.Log.e("Guided", "Registered GuidedCaptureManager as preview callback")
+        } ?: run {
+            android.util.Log.w("Guided", "Camera not available, will register callback when camera opens")
+        }
 
         // Reset controls
         binding.btnResetControls.setOnClickListener {
