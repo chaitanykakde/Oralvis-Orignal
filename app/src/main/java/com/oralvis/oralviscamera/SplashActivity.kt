@@ -23,6 +23,10 @@ class SplashActivity : AppCompatActivity() {
         Handler(Looper.getMainLooper()).post {
             val loginManager = LoginManager(this)
 
+            // Ensure fresh session start - clear any lingering patient session state
+            GlobalPatientManager.initialize(this)
+            GlobalPatientManager.clearCurrentPatient()
+
             // Check if user is logged in
             val intent = if (loginManager.isLoggedIn()) {
                 // User is logged in → go to main app.

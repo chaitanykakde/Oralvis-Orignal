@@ -119,10 +119,74 @@ class GalleryActivity : AppCompatActivity() {
         binding.btnGetReport.setOnClickListener {
             Toast.makeText(this, "Get Report feature coming soon", Toast.LENGTH_SHORT).show()
         }
-        
+
         binding.btnSaveAndSync.setOnClickListener {
-            // Trigger cloud sync
-            Toast.makeText(this, "Save and Sync feature coming soon", Toast.LENGTH_SHORT).show()
+            // Trigger cloud sync using existing logic
+            performCloudSync()
+        }
+    }
+
+    private fun performCloudSync() {
+        val patient = GlobalPatientManager.getCurrentPatient()
+        if (patient == null) {
+            Toast.makeText(this, "No patient selected", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Show progress indication
+        binding.btnSaveAndSync.isEnabled = false
+        binding.btnSaveAndSync.text = "Syncing..."
+
+        lifecycleScope.launch {
+            try {
+                val result = com.oralvis.oralviscamera.cloud.CloudSyncService.syncPatientMedia(
+                    context = this@GalleryActivity,
+                    patient = patient
+                ) { current, total ->
+                    // Update progress if needed
+                    runOnUiThread {
+                        binding.btnSaveAndSync.text = "Syncing... $current/$total"
+                    }
+                }
+
+                runOnUiThread {
+                    if (result.successCount > 0) {
+                        Toast.makeText(
+                            this@GalleryActivity,
+                            "Synced ${result.successCount} media file(s) successfully",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else if (result.errorCount > 0) {
+                        Toast.makeText(
+                            this@GalleryActivity,
+                            "Sync failed: ${result.error ?: "Unknown error"}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            this@GalleryActivity,
+                            "No media to sync",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+
+                    // Reset button state
+                    binding.btnSaveAndSync.isEnabled = true
+                    binding.btnSaveAndSync.text = "Save & Sync"
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this@GalleryActivity,
+                        "Sync error: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    // Reset button state
+                    binding.btnSaveAndSync.isEnabled = true
+                    binding.btnSaveAndSync.text = "Save & Sync"
+                }
+            }
         }
     }
 

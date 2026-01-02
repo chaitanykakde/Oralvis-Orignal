@@ -64,41 +64,6 @@
 
     </LinearLayout>
 
-    <!-- Resolution Selection -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_marginBottom="24dp">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Video Resolution"
-            android:textColor="@color/white"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
-
-        <Spinner
-            android:id="@+id/spinnerResolution"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:background="@android:drawable/btn_dropdown"
-            android:padding="12dp" />
-
-        <TextView
-            android:id="@+id/txtCurrentResolution"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Current: Not set"
-            android:textColor="@color/white"
-            android:textSize="12sp"
-            android:gravity="center" />
-
-    </LinearLayout>
-
     <!-- Reset Button -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnResetSettings"

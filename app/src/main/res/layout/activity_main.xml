@@ -1120,7 +1120,7 @@
                     android:id="@+id/btnShareLogs"
                     android:layout_width="match_parent"
                     android:layout_height="48dp"
-                    android:text="Share Recent Logs (Last 2 min)"
+                    android:text="Share Recent Logs (Last 1 hour)"
                     android:textSize="14sp"
                     android:backgroundTint="#2196F3"
                     app:cornerRadius="24dp"
