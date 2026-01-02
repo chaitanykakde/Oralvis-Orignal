@@ -302,7 +302,9 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onGuidedSessionComplete(guidedSessionId: String?) {
-                    // No-op for now; all state is tracked via MediaRecord rows.
+                    // Session completed - save the current session
+                    android.util.Log.d("GuidedCapture", "Guided session completed: $guidedSessionId")
+                    saveCurrentSession()
                 }
 
                 override fun onRecaptureLower(guidedSessionId: String) {
@@ -1435,14 +1437,31 @@ class MainActivity : AppCompatActivity() {
                         sessionManager.clearCurrentSession()
                         selectedPatient = null
                         sessionMediaList.clear()
-                        
-                        // Update RecyclerView with empty list
+
+                        android.util.Log.d("SessionFinish", "Clearing session media UI - list size: ${sessionMediaList.size}")
+
+                        // Clear RecyclerView completely and ensure UI reset
+                        // First, temporarily detach adapter to ensure clean reset
+                        binding.sessionMediaRecycler.adapter = null
+
+                        // Clear the list and adapter
+                        sessionMediaList.clear()
                         sessionMediaAdapter?.submitList(emptyList())
                         binding.sessionMediaCount.text = "0 items"
-                        
-                        // Show empty state, hide RecyclerView
-                        binding.emptyMediaState.visibility = View.VISIBLE
+
+                        // Reattach adapter with empty list
+                        binding.sessionMediaRecycler.adapter = sessionMediaAdapter
+
+                        // Force UI visibility reset - hide RecyclerView first, then show empty state
                         binding.sessionMediaRecycler.visibility = View.GONE
+                        binding.emptyMediaState.visibility = View.VISIBLE
+
+                        // Force layout refresh
+                        binding.sessionMediaCard.requestLayout()
+                        binding.sessionMediaRecycler.requestLayout()
+
+                        android.util.Log.d("SessionFinish", "Session media UI cleared - RecyclerView hidden: ${binding.sessionMediaRecycler.visibility == View.GONE}, Empty state visible: ${binding.emptyMediaState.visibility == View.VISIBLE}")
+                        android.util.Log.d("SessionFinish", "Adapter item count: ${sessionMediaAdapter?.itemCount ?: -1}, List size: ${sessionMediaList.size}")
                         
                         // Hide patient info card
                         binding.patientInfoCard.visibility = View.GONE
