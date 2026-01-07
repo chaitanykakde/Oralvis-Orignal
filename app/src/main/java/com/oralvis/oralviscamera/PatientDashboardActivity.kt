@@ -136,8 +136,8 @@ class PatientDashboardActivity : AppCompatActivity() {
                     ).show()
                     return@launch
                 }
-                val response = ApiClient.apiService.upsertPatient(
-                    ApiClient.API_PATIENT_SYNC_ENDPOINT,
+                android.util.Log.d("PatientCreation", "Using PROD API for patient creation")
+            val response = ApiClient.apiService.upsertPatient(
                     clientId,
                     patientDto
                 )
@@ -173,10 +173,8 @@ class PatientDashboardActivity : AppCompatActivity() {
                     return@launch
                 }
                 
-                val response = ApiClient.apiService.searchPatients(
-                    ApiClient.API_PATIENT_SYNC_ENDPOINT,
-                    clientId,
-                    null
+                val response = ApiClient.apiService.getPatients(
+                    clientId
                 )
                 
                 if (response.isSuccessful && response.body() != null) {
@@ -195,18 +193,24 @@ class PatientDashboardActivity : AppCompatActivity() {
                 if (clientId == null) {
                     return@launch
                 }
-                
+
                 // Add small delay to avoid too many API calls
                 delay(300)
-                
-                val response = ApiClient.apiService.searchPatients(
-                    ApiClient.API_PATIENT_SYNC_ENDPOINT,
-                    clientId,
-                    if (query.isBlank()) null else query
-                )
-                
+
+                // Get all patients and filter client-side
+                val response = ApiClient.apiService.getPatients(clientId)
+
                 if (response.isSuccessful && response.body() != null) {
-                    patientsAdapter.submitList(response.body()!!)
+                    val allPatients = response.body()!!
+                    val filteredPatients = if (query.isBlank()) {
+                        allPatients
+                    } else {
+                        allPatients.filter { patient ->
+                            patient.name.contains(query, ignoreCase = true) ||
+                            patient.patientId.contains(query, ignoreCase = true)
+                        }
+                    }
+                    patientsAdapter.submitList(filteredPatients)
                 }
             } catch (e: Exception) {
                 // Silent fail

@@ -33,13 +33,17 @@ interface MediaDao {
     fun getAllMedia(): Flow<List<MediaRecord>>
     
     /**
-     * Get all media records for a specific patient by joining with sessions table.
-     * This returns all media from all sessions belonging to the patient.
+     * Get all media records for a specific patient.
+     * Supports both session media (via session join) and non-session media (direct patientId).
+     * This returns all media belonging to the patient from all sources.
      */
     @Query("""
-        SELECT m.* FROM media m 
-        INNER JOIN sessions s ON m.sessionId = s.sessionId 
-        WHERE s.patientId = :patientId 
+        SELECT m.* FROM media m
+        LEFT JOIN sessions s ON m.sessionId = s.sessionId
+        WHERE
+            (s.patientId = :patientId)
+            OR
+            (m.patientId = :patientId AND m.sessionId IS NULL)
         ORDER BY m.captureTime DESC
     """)
     fun getMediaByPatient(patientId: Long): Flow<List<MediaRecord>>
@@ -69,9 +73,58 @@ interface MediaDao {
      * Update media sync status.
      */
     @Query("""
-        UPDATE media 
-        SET isSynced = :isSynced, s3Url = :s3Url 
+        UPDATE media
+        SET isSynced = :isSynced, s3Url = :s3Url
         WHERE id = :mediaId
     """)
     suspend fun updateSyncStatus(mediaId: Long, isSynced: Boolean, s3Url: String?)
+
+    /**
+     * Update media with cloud metadata after successful upload.
+     */
+    @Query("""
+        UPDATE media
+        SET isSynced = 1, cloudFileName = :cloudFileName, s3Url = :s3Url
+        WHERE id = :mediaId
+    """)
+    suspend fun updateCloudMetadata(mediaId: Long, cloudFileName: String, s3Url: String?)
+
+    /**
+     * Reassign all media from one patient to another (used for duplicate repair).
+     */
+    @Query("UPDATE media SET patientId = :newPatientId WHERE patientId = :oldPatientId")
+    fun reassignMediaToPatient(oldPatientId: Long, newPatientId: Long)
+
+    /**
+     * Cloud media sync methods - CRITICAL FOR DEDUPLICATION.
+     */
+
+    /**
+     * Find media by cloud file name for deduplication.
+     * This is the GLOBAL UNIQUE IDENTIFIER - prevents duplicates.
+     */
+    @Query("SELECT * FROM media WHERE cloudFileName = :cloudFileName LIMIT 1")
+    suspend fun getMediaByCloudFileName(cloudFileName: String): MediaRecord?
+
+    /**
+     * Insert media record only if it doesn't already exist.
+     * Used for safe cloud media insertion - ignores duplicates.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertMediaIfNotExists(mediaRecord: MediaRecord): Long
+
+    /**
+     * Get all local media that can be uploaded to cloud.
+     * Only LOCAL source media that hasn't been synced yet.
+     * CRITICAL: This prevents re-uploading already synced media.
+     */
+    @Query("""
+        SELECT m.* FROM media m
+        INNER JOIN sessions s ON m.sessionId = s.sessionId
+        WHERE s.patientId = :patientId
+        AND m.source = 'LOCAL'
+        AND m.isSynced = 0
+        ORDER BY m.captureTime ASC
+    """)
+    suspend fun getUploadableMediaByPatient(patientId: Long): List<MediaRecord>
 }

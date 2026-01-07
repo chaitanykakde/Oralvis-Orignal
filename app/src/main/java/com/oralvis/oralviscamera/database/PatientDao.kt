@@ -25,5 +25,12 @@ interface PatientDao {
 
     @androidx.room.Delete
     suspend fun delete(patient: Patient)
+
+    // Cloud-synced patient operations (patients table for sync)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(patients: List<Patient>)
+
+    @Query("DELETE FROM patients")
+    suspend fun clearAll()
 }
 

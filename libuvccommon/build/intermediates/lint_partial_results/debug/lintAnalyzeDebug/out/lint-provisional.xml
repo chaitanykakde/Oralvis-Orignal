@@ -1,0 +1,3548 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.2" type="conditional_incidents">
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.BLUETOOTH_CONNECT" message="Missing permissions required by BluetoothDevice.getName: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/bluetooth/BluetoothDeviceInfo.java"
+            line="55"
+            column="10"
+            startOffset="1669"
+            endLine="55"
+            endColumn="26"
+            endOffset="1685"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by BluetoothDevice.getName: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.BLUETOOTH_CONNECT"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.BLUETOOTH_CONNECT" message="Missing permissions required by BluetoothDevice.getType: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/bluetooth/BluetoothDeviceInfo.java"
+            line="58"
+            column="11"
+            startOffset="1800"
+            endLine="58"
+            endColumn="27"
+            endOffset="1816"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by BluetoothDevice.getType: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.BLUETOOTH_CONNECT"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.BLUETOOTH_CONNECT" message="Missing permissions required by BluetoothDevice.getBluetoothClass: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/bluetooth/BluetoothDeviceInfo.java"
+            line="62"
+            column="32"
+            startOffset="1877"
+            endLine="62"
+            endColumn="58"
+            endOffset="1903"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by BluetoothDevice.getBluetoothClass: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.BLUETOOTH_CONNECT"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.BLUETOOTH_CONNECT" message="Missing permissions required by BluetoothDevice.getBondState: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/bluetooth/BluetoothDeviceInfo.java"
+            line="64"
+            column="15"
+            startOffset="1979"
+            endLine="64"
+            endColumn="36"
+            endOffset="2000"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by BluetoothDevice.getBondState: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.BLUETOOTH_CONNECT"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.RECORD_AUDIO" message="Missing permissions required by Builder.build: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/IAudioSampler.java"
+            line="80"
+            column="20"
+            startOffset="2880"
+            endLine="89"
+            endColumn="15"
+            endOffset="3228"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by Builder.build: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.RECORD_AUDIO"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.RECORD_AUDIO" message="Missing permissions required by AudioRecord.AudioRecord: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/IAudioSampler.java"
+            line="91"
+            column="20"
+            startOffset="3262"
+            endLine="93"
+            endColumn="27"
+            endOffset="3409"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by AudioRecord.AudioRecord: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.RECORD_AUDIO"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.RECORD_AUDIO" message="Missing permissions required by AudioRecord.AudioRecord: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaAudioEncoder.java"
+            line="127"
+            column="21"
+            startOffset="4695"
+            endLine="129"
+            endColumn="82"
+            endOffset="4822"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by AudioRecord.AudioRecord: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.RECORD_AUDIO"/>
+        </map>
+    </incident>
+
+    <incident
+        id="MissingPermission"
+        severity="error"
+        message="">
+        <fix-data missing="android.permission.POST_NOTIFICATIONS" message="Missing permissions required by NotificationManagerCompat.notify: %1$s" lastApi="2147483647"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/notification/NotificationBuilder.java"
+            line="892"
+            column="3"
+            startOffset="22015"
+            endLine="893"
+            endColumn="46"
+            endOffset="22100"/>
+        <map>
+            <entry
+                name="message"
+                string="Missing permissions required by NotificationManagerCompat.notify: %1$s"/>
+            <entry
+                name="requirement"
+                string="android.permission.POST_NOTIFICATIONS"/>
+        </map>
+    </incident>
+
+    <incident
+        id="NotificationPermission"
+        severity="error"
+        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission">
+        <fix-data missing="android.permission.POST_NOTIFICATIONS"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/service/BaseService.java"
+            line="514"
+            column="3"
+            startOffset="15403"
+            endLine="514"
+            endColumn="47"
+            endOffset="15447"/>
+    </incident>
+
+    <incident
+        id="NotificationPermission"
+        severity="error"
+        message="When targeting Android 13 or higher, posting a permission requires holding the `POST_NOTIFICATIONS` permission">
+        <fix-data missing="android.permission.POST_NOTIFICATIONS"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/notification/NotificationBuilder.java"
+            line="892"
+            column="3"
+            startOffset="22015"
+            endLine="893"
+            endColumn="46"
+            endOffset="22100"/>
+    </incident>
+
+    <incident
+        id="PrivateResource"
+        severity="warning"
+        message="The resource `@styleable/DialogPreference_dialogTitle` is marked as private in androidx.preference:preference:1.2.0">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/DialogPreferenceV7.java"
+            line="77"
+            column="4"
+            startOffset="2217"
+            endLine="77"
+            endColumn="64"
+            endOffset="2277"/>
+        <map>
+            <entry
+                name="url"
+                string="@styleable/DialogPreference_dialogTitle"/>
+        </map>
+    </incident>
+
+    <incident
+        id="PrivateResource"
+        severity="warning"
+        message="The resource `@styleable/DialogPreference_dialogMessage` is marked as private in androidx.preference:preference:1.2.0">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/DialogPreferenceV7.java"
+            line="85"
+            column="4"
+            startOffset="2478"
+            endLine="85"
+            endColumn="66"
+            endOffset="2540"/>
+        <map>
+            <entry
+                name="url"
+                string="@styleable/DialogPreference_dialogMessage"/>
+        </map>
+    </incident>
+
+    <incident
+        id="PrivateResource"
+        severity="warning"
+        message="The resource `@styleable/DialogPreference_dialogIcon` is marked as private in androidx.preference:preference:1.2.0">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/DialogPreferenceV7.java"
+            line="87"
+            column="4"
+            startOffset="2577"
+            endLine="87"
+            endColumn="63"
+            endOffset="2636"/>
+        <map>
+            <entry
+                name="url"
+                string="@styleable/DialogPreference_dialogIcon"/>
+        </map>
+    </incident>
+
+    <incident
+        id="PrivateResource"
+        severity="warning"
+        message="The resource `@styleable/DialogPreference_positiveButtonText` is marked as private in androidx.preference:preference:1.2.0">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/DialogPreferenceV7.java"
+            line="89"
+            column="4"
+            startOffset="2679"
+            endLine="89"
+            endColumn="71"
+            endOffset="2746"/>
+        <map>
+            <entry
+                name="url"
+                string="@styleable/DialogPreference_positiveButtonText"/>
+        </map>
+    </incident>
+
+    <incident
+        id="PrivateResource"
+        severity="warning"
+        message="The resource `@styleable/DialogPreference_negativeButtonText` is marked as private in androidx.preference:preference:1.2.0">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/DialogPreferenceV7.java"
+            line="91"
+            column="4"
+            startOffset="2789"
+            endLine="91"
+            endColumn="71"
+            endOffset="2856"/>
+        <map>
+            <entry
+                name="url"
+                string="@styleable/DialogPreference_negativeButtonText"/>
+        </map>
+    </incident>
+
+    <incident
+        id="PrivateResource"
+        severity="warning"
+        message="The resource `@styleable/DialogPreference_dialogLayout` is marked as private in androidx.preference:preference:1.2.0">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/DialogPreferenceV7.java"
+            line="93"
+            column="4"
+            startOffset="2902"
+            endLine="93"
+            endColumn="65"
+            endOffset="2963"/>
+        <map>
+            <entry
+                name="url"
+                string="@styleable/DialogPreference_dialogLayout"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractAudioEncoder.java"
+                startOffset="1005"
+                endOffset="1047"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractAudioEncoder.java"
+            line="34"
+            column="1"
+            startOffset="1005"
+            endLine="34"
+            endColumn="43"
+            endOffset="1047"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractEncoder.java"
+                startOffset="1040"
+                endOffset="1082"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractEncoder.java"
+            line="35"
+            column="1"
+            startOffset="1040"
+            endLine="35"
+            endColumn="43"
+            endOffset="1082"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 17">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractFakeEncoder.java"
+                startOffset="1278"
+                endOffset="1324"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractFakeEncoder.java"
+            line="41"
+            column="1"
+            startOffset="1278"
+            endLine="41"
+            endColumn="47"
+            endOffset="1324"/>
+        <map>
+            <condition minGE="ffffffffffff0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 18">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/glutils/AbstractRendererHolder.java"
+                startOffset="34675"
+                endOffset="34721"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/glutils/AbstractRendererHolder.java"
+            line="1380"
+            column="3"
+            startOffset="34675"
+            endLine="1380"
+            endColumn="49"
+            endOffset="34721"/>
+        <map>
+            <condition minGE="fffffffffffe0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractVideoEncoder.java"
+                startOffset="956"
+                endOffset="998"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractVideoEncoder.java"
+            line="32"
+            column="1"
+            startOffset="956"
+            endLine="32"
+            endColumn="43"
+            endOffset="998"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractVideoEncoder.java"
+                startOffset="2397"
+                endOffset="2435"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AbstractVideoEncoder.java"
+            line="86"
+            column="5"
+            startOffset="2397"
+            endLine="86"
+            endColumn="43"
+            endOffset="2435"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AudioEncoder.java"
+                startOffset="1194"
+                endOffset="1236"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/AudioEncoder.java"
+            line="38"
+            column="1"
+            startOffset="1194"
+            endLine="38"
+            endColumn="43"
+            endOffset="1236"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 26">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/service/BaseService.java"
+                startOffset="7142"
+                endOffset="7175"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/service/BaseService.java"
+            line="235"
+            column="3"
+            startOffset="7142"
+            endLine="235"
+            endColumn="36"
+            endOffset="7175"/>
+        <map>
+            <condition minGE="fffffffffe000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 26">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/service/BaseService.java"
+                startOffset="8758"
+                endOffset="8791"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/service/BaseService.java"
+            line="285"
+            column="3"
+            startOffset="8758"
+            endLine="285"
+            endColumn="36"
+            endOffset="8791"/>
+        <map>
+            <condition minGE="fffffffffe000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/graphics/BaseShape.java"
+                startOffset="2207"
+                endOffset="2247"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/graphics/BaseShape.java"
+            line="78"
+            column="5"
+            startOffset="2207"
+            endLine="78"
+            endColumn="45"
+            endOffset="2247"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 26">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/notification/ChannelBuilder.java"
+                startOffset="20091"
+                endOffset="20124"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/notification/ChannelBuilder.java"
+            line="764"
+            column="2"
+            startOffset="20091"
+            endLine="764"
+            endColumn="35"
+            endOffset="20124"/>
+        <map>
+            <condition minGE="fffffffffe000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 26">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/notification/ChannelBuilder.java"
+                startOffset="22181"
+                endOffset="22214"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/notification/ChannelBuilder.java"
+            line="829"
+            column="2"
+            startOffset="22181"
+            endLine="829"
+            endColumn="35"
+            endOffset="22214"/>
+        <map>
+            <condition minGE="fffffffffe000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 17">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/dialog/ColorPickerDialog.java"
+                startOffset="1305"
+                endOffset="1351"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/dialog/ColorPickerDialog.java"
+            line="41"
+            column="1"
+            startOffset="1305"
+            endLine="41"
+            endColumn="47"
+            endOffset="1351"/>
+        <map>
+            <condition minGE="ffffffffffff0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+                startOffset="7433"
+                endOffset="7473"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+            line="250"
+            column="2"
+            startOffset="7433"
+            endLine="250"
+            endColumn="42"
+            endOffset="7473"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+                startOffset="9355"
+                endOffset="9395"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+            line="306"
+            column="2"
+            startOffset="9355"
+            endLine="306"
+            endColumn="42"
+            endOffset="9395"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+                startOffset="9764"
+                endOffset="9804"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+            line="322"
+            column="2"
+            startOffset="9764"
+            endLine="322"
+            endColumn="42"
+            endOffset="9804"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+                startOffset="18508"
+                endOffset="18548"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+            line="563"
+            column="2"
+            startOffset="18508"
+            endLine="563"
+            endColumn="42"
+            endOffset="18548"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+                startOffset="19298"
+                endOffset="19338"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+            line="581"
+            column="2"
+            startOffset="19298"
+            endLine="581"
+            endColumn="42"
+            endOffset="19338"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+                startOffset="19882"
+                endOffset="19922"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+            line="596"
+            column="2"
+            startOffset="19882"
+            endLine="596"
+            endColumn="42"
+            endOffset="19922"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+                startOffset="20231"
+                endOffset="20271"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/net/ConnectivityHelper.java"
+            line="607"
+            column="2"
+            startOffset="20231"
+            endLine="607"
+            endColumn="42"
+            endOffset="20271"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 18">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/glutils/EGLBase14.java"
+                startOffset="1346"
+                endOffset="1392"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/glutils/EGLBase14.java"
+            line="44"
+            column="1"
+            startOffset="1346"
+            endLine="44"
+            endColumn="47"
+            endOffset="1392"/>
+        <map>
+            <condition minGE="fffffffffffe0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/FakeVideoEncoder.java"
+                startOffset="859"
+                endOffset="901"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/FakeVideoEncoder.java"
+            line="28"
+            column="1"
+            startOffset="859"
+            endLine="28"
+            endColumn="43"
+            endOffset="901"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaAudioDecoder.java"
+                startOffset="1159"
+                endOffset="1201"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaAudioDecoder.java"
+            line="38"
+            column="1"
+            startOffset="1159"
+            endLine="38"
+            endColumn="43"
+            endOffset="1201"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaAudioDecoder.java"
+                startOffset="1476"
+                endOffset="1518"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaAudioDecoder.java"
+            line="48"
+            column="2"
+            startOffset="1476"
+            endLine="48"
+            endColumn="44"
+            endOffset="1518"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaAudioEncoder.java"
+                startOffset="1132"
+                endOffset="1174"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaAudioEncoder.java"
+            line="37"
+            column="1"
+            startOffset="1132"
+            endLine="37"
+            endColumn="43"
+            endOffset="1174"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaCodecHelper.java"
+                startOffset="1175"
+                endOffset="1217"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaCodecHelper.java"
+            line="38"
+            column="1"
+            startOffset="1175"
+            endLine="38"
+            endColumn="43"
+            endOffset="1217"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaData.java"
+                startOffset="2292"
+                endOffset="2334"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaData.java"
+            line="97"
+            column="2"
+            startOffset="2292"
+            endLine="97"
+            endColumn="44"
+            endOffset="2334"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaData.java"
+                startOffset="4216"
+                endOffset="4258"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaData.java"
+            line="188"
+            column="2"
+            startOffset="4216"
+            endLine="188"
+            endColumn="44"
+            endOffset="4258"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaDecoder.java"
+                startOffset="1317"
+                endOffset="1359"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaDecoder.java"
+            line="43"
+            column="1"
+            startOffset="1317"
+            endLine="43"
+            endColumn="43"
+            endOffset="1359"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaEncoder.java"
+                startOffset="1070"
+                endOffset="1112"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaEncoder.java"
+            line="35"
+            column="1"
+            startOffset="1070"
+            endLine="35"
+            endColumn="43"
+            endOffset="1112"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @RequiresApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/MediaInfo.java"
+                startOffset="1040"
+                endOffset="1090"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/MediaInfo.java"
+            line="35"
+            column="1"
+            startOffset="1040"
+            endLine="35"
+            endColumn="51"
+            endOffset="1090"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMoviePlayer.java"
+                startOffset="1439"
+                endOffset="1481"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMoviePlayer.java"
+            line="46"
+            column="1"
+            startOffset="1439"
+            endLine="46"
+            endColumn="43"
+            endOffset="1481"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 18">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMovieRecorder.java"
+                startOffset="1020"
+                endOffset="1066"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMovieRecorder.java"
+            line="34"
+            column="1"
+            startOffset="1020"
+            endLine="34"
+            endColumn="47"
+            endOffset="1066"/>
+        <map>
+            <condition minGE="fffffffffffe0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 18">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMuxerWrapper.java"
+                startOffset="1110"
+                endOffset="1156"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMuxerWrapper.java"
+            line="37"
+            column="1"
+            startOffset="1110"
+            endLine="37"
+            endColumn="47"
+            endOffset="1156"/>
+        <map>
+            <condition minGE="fffffffffffe0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 26">
+        <fix-replace
+            description="Delete @RequiresApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMuxerWrapper.java"
+                startOffset="1533"
+                endOffset="1574"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaMuxerWrapper.java"
+            line="51"
+            column="2"
+            startOffset="1533"
+            endLine="51"
+            endColumn="43"
+            endOffset="1574"/>
+        <map>
+            <condition minGE="fffffffffe000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaReaper.java"
+                startOffset="1141"
+                endOffset="1183"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaReaper.java"
+            line="36"
+            column="1"
+            startOffset="1141"
+            endLine="36"
+            endColumn="43"
+            endOffset="1183"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/mediastore/MediaStoreHelper.java"
+                startOffset="1494"
+                endOffset="1536"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/mediastore/MediaStoreHelper.java"
+            line="47"
+            column="1"
+            startOffset="1494"
+            endLine="47"
+            endColumn="43"
+            endOffset="1536"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaVideoDecoder.java"
+                startOffset="1100"
+                endOffset="1142"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaVideoDecoder.java"
+            line="36"
+            column="1"
+            startOffset="1100"
+            endLine="36"
+            endColumn="43"
+            endOffset="1142"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 18">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaVideoEncoder.java"
+                startOffset="1054"
+                endOffset="1100"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/MediaVideoEncoder.java"
+            line="35"
+            column="1"
+            startOffset="1054"
+            endLine="35"
+            endColumn="47"
+            endOffset="1100"/>
+        <map>
+            <condition minGE="fffffffffffe0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/RefCountedAutoCloseable.java"
+                startOffset="1152"
+                endOffset="1190"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/RefCountedAutoCloseable.java"
+            line="31"
+            column="1"
+            startOffset="1152"
+            endLine="31"
+            endColumn="39"
+            endOffset="1190"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="4776"
+                endOffset="4814"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="169"
+            column="2"
+            startOffset="4776"
+            endLine="169"
+            endColumn="40"
+            endOffset="4814"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="5185"
+                endOffset="5223"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="185"
+            column="2"
+            startOffset="5185"
+            endLine="185"
+            endColumn="40"
+            endOffset="5223"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="5615"
+                endOffset="5653"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="202"
+            column="2"
+            startOffset="5615"
+            endLine="202"
+            endColumn="40"
+            endOffset="5653"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="6036"
+                endOffset="6074"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="218"
+            column="2"
+            startOffset="6036"
+            endLine="218"
+            endColumn="40"
+            endOffset="6074"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="6424"
+                endOffset="6462"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="233"
+            column="2"
+            startOffset="6424"
+            endLine="233"
+            endColumn="40"
+            endOffset="6462"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="6778"
+                endOffset="6816"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="247"
+            column="2"
+            startOffset="6778"
+            endLine="247"
+            endColumn="40"
+            endOffset="6816"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="7212"
+                endOffset="7250"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="264"
+            column="2"
+            startOffset="7212"
+            endLine="264"
+            endColumn="40"
+            endOffset="7250"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="7656"
+                endOffset="7694"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="280"
+            column="2"
+            startOffset="7656"
+            endLine="280"
+            endColumn="40"
+            endOffset="7694"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="8098"
+                endOffset="8136"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="297"
+            column="2"
+            startOffset="8098"
+            endLine="297"
+            endColumn="40"
+            endOffset="8136"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="8550"
+                endOffset="8588"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="313"
+            column="2"
+            startOffset="8550"
+            endLine="313"
+            endColumn="40"
+            endOffset="8588"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="8996"
+                endOffset="9034"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="330"
+            column="2"
+            startOffset="8996"
+            endLine="330"
+            endColumn="40"
+            endOffset="9034"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="9452"
+                endOffset="9490"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="346"
+            column="2"
+            startOffset="9452"
+            endLine="346"
+            endColumn="40"
+            endOffset="9490"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="9887"
+                endOffset="9925"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="363"
+            column="2"
+            startOffset="9887"
+            endLine="363"
+            endColumn="40"
+            endOffset="9925"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="10333"
+                endOffset="10371"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="379"
+            column="2"
+            startOffset="10333"
+            endLine="379"
+            endColumn="40"
+            endOffset="10371"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="10778"
+                endOffset="10816"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="396"
+            column="2"
+            startOffset="10778"
+            endLine="396"
+            endColumn="40"
+            endOffset="10816"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="11196"
+                endOffset="11234"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="412"
+            column="2"
+            startOffset="11196"
+            endLine="412"
+            endColumn="40"
+            endOffset="11234"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="11982"
+                endOffset="12022"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="441"
+            column="2"
+            startOffset="11982"
+            endLine="441"
+            endColumn="42"
+            endOffset="12022"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="12587"
+                endOffset="12627"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="462"
+            column="2"
+            startOffset="12587"
+            endLine="462"
+            endColumn="42"
+            endOffset="12627"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="13213"
+                endOffset="13253"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="484"
+            column="2"
+            startOffset="13213"
+            endLine="484"
+            endColumn="42"
+            endOffset="13253"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="13786"
+                endOffset="13826"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="502"
+            column="2"
+            startOffset="13786"
+            endLine="502"
+            endColumn="42"
+            endOffset="13826"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="14432"
+                endOffset="14472"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="524"
+            column="2"
+            startOffset="14432"
+            endLine="524"
+            endColumn="42"
+            endOffset="14472"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="15151"
+                endOffset="15191"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="555"
+            column="2"
+            startOffset="15151"
+            endLine="555"
+            endColumn="42"
+            endOffset="15191"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="15412"
+                endOffset="15452"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="567"
+            column="2"
+            startOffset="15412"
+            endLine="567"
+            endColumn="42"
+            endOffset="15452"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="15865"
+                endOffset="15905"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="584"
+            column="2"
+            startOffset="15865"
+            endLine="584"
+            endColumn="42"
+            endOffset="15905"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="16357"
+                endOffset="16397"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="602"
+            column="2"
+            startOffset="16357"
+            endLine="602"
+            endColumn="42"
+            endOffset="16397"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="21421"
+                endOffset="21461"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="790"
+            column="2"
+            startOffset="21421"
+            endLine="790"
+            endColumn="42"
+            endOffset="21461"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="21842"
+                endOffset="21882"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="806"
+            column="2"
+            startOffset="21842"
+            endLine="806"
+            endColumn="42"
+            endOffset="21882"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="23440"
+                endOffset="23480"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="868"
+            column="2"
+            startOffset="23440"
+            endLine="868"
+            endColumn="42"
+            endOffset="23480"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="23941"
+                endOffset="23981"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="886"
+            column="2"
+            startOffset="23941"
+            endLine="886"
+            endColumn="42"
+            endOffset="23981"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="25846"
+                endOffset="25886"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="952"
+            column="2"
+            startOffset="25846"
+            endLine="952"
+            endColumn="42"
+            endOffset="25886"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="26335"
+                endOffset="26375"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="970"
+            column="2"
+            startOffset="26335"
+            endLine="970"
+            endColumn="42"
+            endOffset="26375"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="28023"
+                endOffset="28063"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="1031"
+            column="2"
+            startOffset="28023"
+            endLine="1031"
+            endColumn="42"
+            endOffset="28063"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="30011"
+                endOffset="30051"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="1096"
+            column="2"
+            startOffset="30011"
+            endLine="1096"
+            endColumn="42"
+            endOffset="30051"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="30657"
+                endOffset="30697"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="1122"
+            column="2"
+            startOffset="30657"
+            endLine="1122"
+            endColumn="42"
+            endOffset="30697"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="31072"
+                endOffset="31112"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="1138"
+            column="2"
+            startOffset="31072"
+            endLine="1138"
+            endColumn="42"
+            endOffset="31112"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="31855"
+                endOffset="31895"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="1164"
+            column="2"
+            startOffset="31855"
+            endLine="1164"
+            endColumn="42"
+            endOffset="31895"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+                startOffset="32325"
+                endOffset="32365"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SAFUtils.java"
+            line="1180"
+            column="2"
+            startOffset="32325"
+            endLine="1180"
+            endColumn="42"
+            endOffset="32365"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="4824"
+                endOffset="4862"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="174"
+            column="2"
+            startOffset="4824"
+            endLine="174"
+            endColumn="40"
+            endOffset="4862"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="5233"
+                endOffset="5271"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="190"
+            column="2"
+            startOffset="5233"
+            endLine="190"
+            endColumn="40"
+            endOffset="5271"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="5663"
+                endOffset="5701"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="207"
+            column="2"
+            startOffset="5663"
+            endLine="207"
+            endColumn="40"
+            endOffset="5701"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="6084"
+                endOffset="6122"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="223"
+            column="2"
+            startOffset="6084"
+            endLine="223"
+            endColumn="40"
+            endOffset="6122"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="6472"
+                endOffset="6510"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="238"
+            column="2"
+            startOffset="6472"
+            endLine="238"
+            endColumn="40"
+            endOffset="6510"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="6826"
+                endOffset="6864"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="252"
+            column="2"
+            startOffset="6826"
+            endLine="252"
+            endColumn="40"
+            endOffset="6864"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="7260"
+                endOffset="7298"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="269"
+            column="2"
+            startOffset="7260"
+            endLine="269"
+            endColumn="40"
+            endOffset="7298"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="7704"
+                endOffset="7742"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="285"
+            column="2"
+            startOffset="7704"
+            endLine="285"
+            endColumn="40"
+            endOffset="7742"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="8146"
+                endOffset="8184"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="302"
+            column="2"
+            startOffset="8146"
+            endLine="302"
+            endColumn="40"
+            endOffset="8184"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="8598"
+                endOffset="8636"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="318"
+            column="2"
+            startOffset="8598"
+            endLine="318"
+            endColumn="40"
+            endOffset="8636"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="9044"
+                endOffset="9082"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="335"
+            column="2"
+            startOffset="9044"
+            endLine="335"
+            endColumn="40"
+            endOffset="9082"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="9500"
+                endOffset="9538"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="351"
+            column="2"
+            startOffset="9500"
+            endLine="351"
+            endColumn="40"
+            endOffset="9538"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="9935"
+                endOffset="9973"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="368"
+            column="2"
+            startOffset="9935"
+            endLine="368"
+            endColumn="40"
+            endOffset="9973"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="10381"
+                endOffset="10419"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="384"
+            column="2"
+            startOffset="10381"
+            endLine="384"
+            endColumn="40"
+            endOffset="10419"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="10826"
+                endOffset="10864"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="401"
+            column="2"
+            startOffset="10826"
+            endLine="401"
+            endColumn="40"
+            endOffset="10864"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="11244"
+                endOffset="11282"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="417"
+            column="2"
+            startOffset="11244"
+            endLine="417"
+            endColumn="40"
+            endOffset="11282"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="12030"
+                endOffset="12070"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="446"
+            column="2"
+            startOffset="12030"
+            endLine="446"
+            endColumn="42"
+            endOffset="12070"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="12635"
+                endOffset="12675"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="467"
+            column="2"
+            startOffset="12635"
+            endLine="467"
+            endColumn="42"
+            endOffset="12675"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="13261"
+                endOffset="13301"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="489"
+            column="2"
+            startOffset="13261"
+            endLine="489"
+            endColumn="42"
+            endOffset="13301"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="13834"
+                endOffset="13874"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="507"
+            column="2"
+            startOffset="13834"
+            endLine="507"
+            endColumn="42"
+            endOffset="13874"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="14480"
+                endOffset="14520"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="529"
+            column="2"
+            startOffset="14480"
+            endLine="529"
+            endColumn="42"
+            endOffset="14520"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="15199"
+                endOffset="15239"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="560"
+            column="2"
+            startOffset="15199"
+            endLine="560"
+            endColumn="42"
+            endOffset="15239"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="15460"
+                endOffset="15500"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="572"
+            column="2"
+            startOffset="15460"
+            endLine="572"
+            endColumn="42"
+            endOffset="15500"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="15913"
+                endOffset="15953"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="589"
+            column="2"
+            startOffset="15913"
+            endLine="589"
+            endColumn="42"
+            endOffset="15953"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="16405"
+                endOffset="16445"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="607"
+            column="2"
+            startOffset="16405"
+            endLine="607"
+            endColumn="42"
+            endOffset="16445"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="21460"
+                endOffset="21500"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="795"
+            column="2"
+            startOffset="21460"
+            endLine="795"
+            endColumn="42"
+            endOffset="21500"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="21881"
+                endOffset="21921"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="811"
+            column="2"
+            startOffset="21881"
+            endLine="811"
+            endColumn="42"
+            endOffset="21921"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="23480"
+                endOffset="23520"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="873"
+            column="2"
+            startOffset="23480"
+            endLine="873"
+            endColumn="42"
+            endOffset="23520"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="23955"
+                endOffset="23995"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="891"
+            column="2"
+            startOffset="23955"
+            endLine="891"
+            endColumn="42"
+            endOffset="23995"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="25860"
+                endOffset="25900"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="957"
+            column="2"
+            startOffset="25860"
+            endLine="957"
+            endColumn="42"
+            endOffset="25900"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="26327"
+                endOffset="26367"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="975"
+            column="2"
+            startOffset="26327"
+            endLine="975"
+            endColumn="42"
+            endOffset="26367"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="28015"
+                endOffset="28055"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="1036"
+            column="2"
+            startOffset="28015"
+            endLine="1036"
+            endColumn="42"
+            endOffset="28055"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="29979"
+                endOffset="30019"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="1101"
+            column="2"
+            startOffset="29979"
+            endLine="1101"
+            endColumn="42"
+            endOffset="30019"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="30625"
+                endOffset="30665"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="1127"
+            column="2"
+            startOffset="30625"
+            endLine="1127"
+            endColumn="42"
+            endOffset="30665"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="31040"
+                endOffset="31080"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="1143"
+            column="2"
+            startOffset="31040"
+            endLine="1143"
+            endColumn="42"
+            endOffset="31080"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="31823"
+                endOffset="31863"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="1169"
+            column="2"
+            startOffset="31823"
+            endLine="1169"
+            endColumn="42"
+            endOffset="31863"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 21">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+                startOffset="32293"
+                endOffset="32333"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/SDUtils.java"
+            line="1185"
+            column="2"
+            startOffset="32293"
+            endLine="1185"
+            endColumn="42"
+            endOffset="32333"/>
+        <map>
+            <condition minGE="fffffffffff00000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 18">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/SurfaceEncoder.java"
+                startOffset="902"
+                endOffset="948"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/SurfaceEncoder.java"
+            line="28"
+            column="1"
+            startOffset="902"
+            endLine="28"
+            endColumn="47"
+            endOffset="948"/>
+        <map>
+            <condition minGE="fffffffffffe0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 19">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/UriHelper.java"
+                startOffset="3517"
+                endOffset="3555"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/utils/UriHelper.java"
+            line="124"
+            column="2"
+            startOffset="3517"
+            endLine="124"
+            endColumn="40"
+            endOffset="3555"/>
+        <map>
+            <condition minGE="fffffffffffc0000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/VideoEncoder.java"
+                startOffset="927"
+                endOffset="969"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/VideoEncoder.java"
+            line="30"
+            column="1"
+            startOffset="927"
+            endLine="30"
+            endColumn="43"
+            endOffset="969"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 16">
+        <fix-replace
+            description="Delete @TargetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/VideoMuxer.java"
+                startOffset="1133"
+                endOffset="1175"/>
+        </fix-replace>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/media/VideoMuxer.java"
+            line="38"
+            column="1"
+            startOffset="1133"
+            endLine="38"
+            endColumn="43"
+            endOffset="1175"/>
+        <map>
+            <condition minGE="ffffffffffff8000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="LabelFor"
+        severity="warning"
+        message="">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*resDir*0}/layout/item_picker.xml"
+            line="31"
+            column="6"
+            startOffset="1130"
+            endLine="31"
+            endColumn="14"
+            endOffset="1138"/>
+        <map>
+            <entry
+                name="hint"
+                boolean="false"/>
+            <entry
+                name="label"
+                boolean="false"/>
+        </map>
+    </incident>
+
+    <incident
+        id="RtlHardcoded"
+        severity="warning"
+        message="Use &quot;`Gravity.END`&quot; instead of &quot;`Gravity.RIGHT`&quot; to ensure correct behavior in right-to-left locales">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/TwoPainViewGroup.java"
+            line="695"
+            column="16"
+            startOffset="22629"
+            endLine="695"
+            endColumn="21"
+            endOffset="22634"/>
+        <map>
+            <entry
+                name="applies"
+                int="2"/>
+        </map>
+    </incident>
+
+    <incident
+        id="RtlHardcoded"
+        severity="warning"
+        message="Use &quot;`Gravity.START`&quot; instead of &quot;`Gravity.LEFT`&quot; to ensure correct behavior in right-to-left locales">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*javaDir*0}/com/jiangdg/widget/TwoPainViewGroup.java"
+            line="698"
+            column="16"
+            startOffset="22708"
+            endLine="698"
+            endColumn="20"
+            endOffset="22712"/>
+        <map>
+            <entry
+                name="applies"
+                int="2"/>
+        </map>
+    </incident>
+
+    <incident
+        id="RtlHardcoded"
+        severity="warning"
+        message="Redundant attribute `paddingLeft`; already defining `paddingStart` with `targetSdkVersion` 34">
+        <fix-attribute
+            description="Delete paddingLeft"
+            robot="true"
+            independent="true"
+            namespace="http://schemas.android.com/apk/res/android"
+            attribute="paddingLeft"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*resDir*0}/layout/checkbox_dont_ahow_again.xml"
+            line="7"
+            column="2"
+            startOffset="242"
+            endLine="7"
+            endColumn="21"
+            endOffset="261"/>
+        <map>
+            <entry
+                name="applies"
+                int="18"/>
+        </map>
+    </incident>
+
+    <incident
+        id="RtlHardcoded"
+        severity="warning"
+        message="Redundant attribute `paddingRight`; already defining `paddingEnd` with `targetSdkVersion` 34">
+        <fix-attribute
+            description="Delete paddingRight"
+            robot="true"
+            independent="true"
+            namespace="http://schemas.android.com/apk/res/android"
+            attribute="paddingRight"/>
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*resDir*0}/layout/checkbox_dont_ahow_again.xml"
+            line="9"
+            column="2"
+            startOffset="390"
+            endLine="9"
+            endColumn="22"
+            endOffset="410"/>
+        <map>
+            <entry
+                name="applies"
+                int="18"/>
+        </map>
+    </incident>
+
+    <incident
+        id="RtlHardcoded"
+        severity="warning"
+        message="Use &quot;`start`&quot; instead of &quot;`left`&quot; to ensure correct behavior in right-to-left locales">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*resDir*0}/layout/item_picker.xml"
+            line="27"
+            column="33"
+            startOffset="1019"
+            endLine="27"
+            endColumn="53"
+            endOffset="1039"/>
+        <map>
+            <entry
+                name="applies"
+                int="2"/>
+        </map>
+    </incident>
+
+    <incident
+        id="RtlHardcoded"
+        severity="warning"
+        message="Use &quot;`end`&quot; instead of &quot;`right`&quot; to ensure correct behavior in right-to-left locales">
+        <location
+            file="${:libuvccommon*debug*MAIN*sourceProvider*0*resDir*0}/layout/item_picker.xml"
+            line="46"
+            column="33"
+            startOffset="1693"
+            endLine="46"
+            endColumn="54"
+            endOffset="1714"/>
+        <map>
+            <entry
+                name="applies"
+                int="2"/>
+        </map>
+    </incident>
+
+</incidents>

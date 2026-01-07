@@ -8,7 +8,7 @@ import androidx.room.TypeConverters
 
 @Database(
     entities = [MediaRecord::class, Session::class, Patient::class],
-    version = 7, // Incremented for guided capture metadata fields in MediaRecord
+    version = 13, // Made MediaRecord.sessionId nullable for cloud media compatibility
     exportSchema = false
 )
 @TypeConverters(Converters::class)

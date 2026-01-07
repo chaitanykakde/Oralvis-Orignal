@@ -58,8 +58,68 @@ data class MediaMetadataDto(
 data class MediaMetadataSyncResponse(
     @SerializedName("message")
     val message: String,
-    
+
     @SerializedName("fileName")
     val fileName: String
+)
+
+/**
+ * Cloud media metadata returned from GET /patients/{patientId}/media
+ */
+data class CloudMediaDto(
+    @SerializedName("FileName")
+    val fileName: String,        // UUID.ext - unique cloud identifier
+
+    @SerializedName("MediaType")
+    val mediaType: String,       // "Image" or "Video"
+
+    @SerializedName("CameraMode")
+    val cameraMode: String,      // "RGB" or "Fluorescence"
+
+    @SerializedName("S3Url")
+    val s3Url: String,           // Full S3 URL
+
+    @SerializedName("CaptureTime")
+    val captureTime: String,     // ISO 8601 timestamp
+
+    @SerializedName("DentalArch")
+    val dentalArch: String?,     // "Upper" or "Lower"
+
+    @SerializedName("SequenceNumber")
+    val sequenceNumber: Int?     // Sequence number
+)
+
+/**
+ * Wrapper response for GET /patients/{patientId}/media
+ * API returns: { patientId, count, media: [] }
+ */
+data class CloudMediaListResponse(
+    @SerializedName("patientId")
+    val patientId: String,       // Patient ID
+
+    @SerializedName("count")
+    val count: Int,              // Number of media items
+
+    @SerializedName("media")
+    val media: List<CloudMediaDto> // List of media items
+)
+
+/**
+ * Request payload for POST /media/download-url
+ */
+data class MediaDownloadRequest(
+    @SerializedName("patientId")
+    val patientId: String,        // Patient ID
+
+    @SerializedName("fileName")
+    val fileName: String          // UUID.ext filename
+)
+
+/**
+ * Response from POST /media/download-url
+ */
+data class MediaDownloadResponse(
+    @SerializedName("downloadUrl")
+    val downloadUrl: String       // Presigned S3 download URL
 )
 

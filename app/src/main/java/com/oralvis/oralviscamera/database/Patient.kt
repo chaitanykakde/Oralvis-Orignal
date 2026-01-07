@@ -1,10 +1,14 @@
 package com.oralvis.oralviscamera.database
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import java.util.Date
 
-@Entity(tableName = "patients")
+@Entity(
+    tableName = "patients",
+    indices = [Index(value = ["code"], unique = true, name = "idx_patients_code")]
+)
 data class Patient(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val code: String = "",

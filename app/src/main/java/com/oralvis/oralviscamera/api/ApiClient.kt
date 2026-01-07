@@ -24,28 +24,25 @@ object ApiClient {
     val AWS_ACCESS_KEY: String = com.oralvis.oralviscamera.BuildConfig.AWS_ACCESS_KEY
     val AWS_SECRET_KEY: String = com.oralvis.oralviscamera.BuildConfig.AWS_SECRET_KEY
 
-    // API Gateway endpoints
+    // API Gateway endpoints - ALL USING /prod STAGE
     const val API_MEDIA_SYNC_ENDPOINT =
-        "https://ocki7ui6wa.execute-api.ap-south-1.amazonaws.com/default/SyncMediaMetadata"
-    const val API_PATIENT_SYNC_ENDPOINT =
-        "https://te2fzjde7j.execute-api.ap-south-1.amazonaws.com/patients"
+        "https://lciq6du3h6.execute-api.ap-south-1.amazonaws.com/prod/media/sync"
     const val API_CLINIC_REGISTRATION_ENDPOINT =
         "https://d3x0w8vpui.execute-api.ap-south-1.amazonaws.com/default/OralVis_ClinicRegistration"
-    
-    // Login API uses separate HTTP API Gateway (ejriu7iz5a)
-    // Endpoint: https://ejriu7iz5a.execute-api.ap-south-1.amazonaws.com/client-login
+
+    // Login API uses separate HTTP API Gateway (ejriu7iz5a) with /prod stage
+    // Endpoint: https://ejriu7iz5a.execute-api.ap-south-1.amazonaws.com/prod/client-login
 
     /**
-     * Retrofit still requires a base URL even when using full @Url values.
-     * We point it at the patient API host; method-level @Url overrides this.
+     * Base URL for ALL APIs using /prod stage.
+     * ALL operations now use production APIs.
      */
-    private const val BASE_URL = "https://te2fzjde7j.execute-api.ap-south-1.amazonaws.com/"
-    
+    private const val BASE_URL = "https://19p5ev9nic.execute-api.ap-south-1.amazonaws.com/prod/"
+
     /**
-     * Base URL for login API (separate HTTP API Gateway).
-     * Stage: $default (auto-deploy)
+     * Base URL for login API (separate HTTP API Gateway with /prod stage).
      */
-    private const val LOGIN_BASE_URL = "https://ejriu7iz5a.execute-api.ap-south-1.amazonaws.com/"
+    private const val LOGIN_BASE_URL = "https://ejriu7iz5a.execute-api.ap-south-1.amazonaws.com/prod/"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY

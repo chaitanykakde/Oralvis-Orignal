@@ -37,6 +37,7 @@ class FindPatientsActivity : AppCompatActivity() {
     private var allPatients: List<Patient> = emptyList()
     private var currentSearchQuery: String = ""
     private var selectedPatient: Patient? = null
+    private var currentPatientObserver: androidx.lifecycle.Observer<Patient?>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -140,7 +141,13 @@ class FindPatientsActivity : AppCompatActivity() {
     }
     
     private fun observeCurrentPatient() {
-        GlobalPatientManager.currentPatient.observe(this) { patient ->
+        // Remove existing observer if it exists
+        currentPatientObserver?.let {
+            GlobalPatientManager.currentPatient.removeObserver(it)
+        }
+
+        // Create new observer
+        currentPatientObserver = androidx.lifecycle.Observer<Patient?> { patient ->
             // Reflect global patient selection in UI, but don't change local viewing
             // The global selection is shown for reference, but clicking patients in list
             // only views their data without changing global selection
@@ -148,6 +155,17 @@ class FindPatientsActivity : AppCompatActivity() {
                 // Update UI to show which patient is globally selected
                 // But keep viewing the currently selected patient in the list
             }
+        }
+
+        // Add the observer
+        GlobalPatientManager.currentPatient.observe(this, currentPatientObserver!!)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Remove the observer to prevent memory leaks and duplicate observer crashes
+        currentPatientObserver?.let {
+            GlobalPatientManager.currentPatient.removeObserver(it)
         }
     }
 

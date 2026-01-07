@@ -61,7 +61,10 @@ object GlobalPatientManager {
     fun setCurrentPatient(context: Context, patient: Patient) {
         prefs?.edit()?.putLong(KEY_PATIENT_ID, patient.id)?.apply()
         _currentPatient.value = patient
-        
+
+        // Log patient resolution for debugging
+        android.util.Log.d("GlobalPatientManager", "Resolved patient cloudId=${patient.code} → localId=${patient.id}")
+
         // Auto-start session when patient is selected
         sessionManager?.let { manager ->
             val sessionId = manager.startNewSession()
@@ -88,6 +91,7 @@ object GlobalPatientManager {
     
     /**
      * Load the current patient from SharedPreferences and update LiveData.
+     * CRITICAL: Never silently clear invalid patient IDs.
      */
     private fun loadCurrentPatient(context: Context) {
         val patientId = getCurrentPatientId()
@@ -97,16 +101,28 @@ object GlobalPatientManager {
                     val database = MediaDatabase.getDatabase(context)
                     val patient = database.patientDao().getPatientById(patientId)
                     withContext(Dispatchers.Main) {
-                        _currentPatient.value = patient
+                        if (patient != null) {
+                            _currentPatient.value = patient
+                            android.util.Log.d("GlobalPatientManager", "Successfully loaded patient: ${patient.displayName} (id=$patientId)")
+                        } else {
+                            // CRITICAL: Patient ID exists in SharedPreferences but not in DB
+                            android.util.Log.e("GlobalPatientManager",
+                                "CRITICAL ERROR: Patient ID $patientId stored in SharedPreferences " +
+                                "but patient not found in database. This will cause gallery to show no media. " +
+                                "User must re-select patient.")
+
+                            // DO NOT clear silently - this would mask the problem
+                            // Let the app handle invalid patientId gracefully
+                            _currentPatient.value = null
+                        }
                     }
                 } catch (e: Exception) {
-                    // If patient not found, clear selection
-                    withContext(Dispatchers.Main) {
-                        clearCurrentPatient()
-                    }
+                    android.util.Log.e("GlobalPatientManager", "Exception loading patient $patientId", e)
+                    _currentPatient.value = null
                 }
             }
         } else {
+            android.util.Log.d("GlobalPatientManager", "No patient ID stored in SharedPreferences")
             _currentPatient.value = null
         }
     }

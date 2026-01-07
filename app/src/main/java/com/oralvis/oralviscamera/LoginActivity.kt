@@ -87,7 +87,10 @@ class LoginActivity : AppCompatActivity() {
                         // Save login state with the user-entered Client ID
                         // Use the Client ID that the user entered as the global client ID for syncing
                         loginManager.saveLoginSuccess(clientId)
-                        
+
+                        // Sync patients from cloud after successful login
+                        performPatientSync()
+
                         // Navigate to MainActivity
                         navigateToMain()
                     } else {
@@ -124,6 +127,24 @@ class LoginActivity : AppCompatActivity() {
         val intent = Intent(this, MainActivity::class.java)
         startActivity(intent)
         finish()
+    }
+
+    private fun performPatientSync() {
+        // Perform patient sync in background after login
+        // This is fire-and-forget - no UI blocking, silent operation
+        lifecycleScope.launch {
+            try {
+                val result = PatientSyncManager.syncPatients(this@LoginActivity)
+                if (result.success) {
+                    android.util.Log.d("LoginActivity", "Patient sync successful: ${result.patientCount} patients")
+                } else {
+                    android.util.Log.w("LoginActivity", "Patient sync failed: ${result.error}")
+                    // Don't show error to user - sync will retry on next app start or manual refresh
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("LoginActivity", "Exception during patient sync", e)
+            }
+        }
     }
 }
 

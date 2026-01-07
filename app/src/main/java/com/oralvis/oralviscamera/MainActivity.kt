@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var themeManager: ThemeManager
     private var currentMode = "Normal"
     private var settingsBottomSheet: BottomSheetDialog? = null
+    private var globalPatientObserver: androidx.lifecycle.Observer<com.oralvis.oralviscamera.database.Patient?>? = null
     
     // Resolution management
     private var availableResolutions = mutableListOf<PreviewSize>()
@@ -526,7 +527,11 @@ class MainActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         // Clear any previous session state before starting new session
                         clearSessionState()
-                        clearCameraPreview()
+                        // NOTE: Camera should remain connected - do NOT call clearCameraPreview()
+
+                        android.util.Log.d("CAMERA_LIFE", "Patient selected = ${patient.code}, camera should remain connected")
+                        android.util.Log.d("CAMERA_LIFE", "Dialog dismissed")
+                        android.util.Log.d("CAMERA_LIFE", "Camera still active = ${mCurrentCamera != null}")
 
                         GlobalPatientManager.setCurrentPatient(this@MainActivity, patient)
                         globalPatientId = patient.code
@@ -1095,7 +1100,13 @@ class MainActivity : AppCompatActivity() {
      * Observe global patient changes and update UI accordingly
      */
     private fun observeGlobalPatient() {
-        GlobalPatientManager.currentPatient.observe(this) { patient ->
+        // Remove existing observer if it exists
+        globalPatientObserver?.let {
+            GlobalPatientManager.currentPatient.removeObserver(it)
+        }
+
+        // Create new observer
+        globalPatientObserver = androidx.lifecycle.Observer<com.oralvis.oralviscamera.database.Patient?> { patient ->
             if (patient != null) {
                 selectedPatient = patient
                 globalPatientId = patient.code
@@ -1107,7 +1118,11 @@ class MainActivity : AppCompatActivity() {
                 binding.patientInfoCard.visibility = View.GONE
             }
         }
+
+        // Add the observer
+        GlobalPatientManager.currentPatient.observe(this, globalPatientObserver!!)
     }
+
     
     /**
      * Initialize from global patient if one is already selected
@@ -1465,9 +1480,8 @@ class MainActivity : AppCompatActivity() {
                         
                         // Hide patient info card
                         binding.patientInfoCard.visibility = View.GONE
-                        
-                        // Clear camera preview state
-                        clearCameraPreview()
+
+                        // NOTE: Camera should remain connected - do NOT call clearCameraPreview()
 
                         // Reset UI to Start Session state
                         GlobalPatientManager.clearCurrentPatient()
@@ -2373,6 +2387,7 @@ class MainActivity : AppCompatActivity() {
                 device ?: return
                 ctrlBlock ?: return
                 
+                android.util.Log.d("CAMERA_LIFE", "Camera connected")
                 binding.statusText.text = "Camera connected - Opening camera..."
                 
                 // Get camera from map and set control block
@@ -2499,6 +2514,7 @@ class MainActivity : AppCompatActivity() {
                         .create()
                     
                     // Open camera with texture view
+                    android.util.Log.d("CAMERA_LIFE", "Opening camera with resolution ${recordingWidth}x${recordingHeight}")
                     camera.openCamera(binding.cameraTextureView, cameraRequest)
                 }
             }
@@ -2923,10 +2939,12 @@ class MainActivity : AppCompatActivity() {
                     sequenceNumber = sequenceNumber,
                     guidedSessionId = guidedSessionId
                 )
-                
+
+                android.util.Log.d("CAPTURE_DEBUG", "About to insert media - selectedPatient: ${selectedPatient?.displayName} (id=${selectedPatient?.id})")
+                android.util.Log.d("CAPTURE_DEBUG", "SessionId: $sessionId, patientId in record: ${mediaRecord.patientId}")
                 android.util.Log.d("MediaDatabase", "Inserting media record: $mediaRecord")
                 val insertedId = mediaDatabase.mediaDao().insertMedia(mediaRecord)
-                android.util.Log.d("MediaDatabase", "Media inserted with ID: $insertedId")
+                android.util.Log.d("CAPTURE_DEBUG", "Media inserted with ID: $insertedId for patient ${selectedPatient?.id}")
                 
                 // Create session in database if it doesn't exist
                 createSessionInDatabaseIfNeeded(sessionId)
@@ -3504,7 +3522,12 @@ class MainActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
-        
+
+        // Remove the observer to prevent memory leaks and duplicate observer crashes
+        globalPatientObserver?.let {
+            GlobalPatientManager.currentPatient.removeObserver(it)
+        }
+
         // Unregister GuidedCaptureManager preview callback
         guidedCaptureManager?.let { manager ->
             mCurrentCamera?.removePreviewDataCallBack(manager)
@@ -3512,10 +3535,10 @@ class MainActivity : AppCompatActivity() {
 
         // Clean up exposure update handler
         exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
-        
+
         // Check if current session has any media, if not, clean it up
         cleanupEmptySession()
-        
+
         mCameraClient?.unRegister()
         mCameraClient?.destroy()
         mCameraClient = null
@@ -3721,12 +3744,10 @@ class MainActivity : AppCompatActivity() {
      */
     private fun clearCameraPreview() {
         try {
-            // Close the current camera to clear the preview
-            mCurrentCamera?.closeCamera()
-            mCurrentCamera = null
+            // NOTE: Camera should remain connected - do NOT close it
+            // This method now only clears UI state, not camera connection
 
-            // Clear any preview surface
-            // The TextureView will be refreshed when camera is reopened
+            android.util.Log.d("CAMERA_LIFE", "Camera preview cleared but camera remains connected = ${mCurrentCamera != null}")
 
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "Failed to clear camera preview: ${e.message}")

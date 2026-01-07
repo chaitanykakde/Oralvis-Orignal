@@ -56,8 +56,8 @@ object CloudSyncService {
             error = "Client ID not found. Please login."
         )
 
-        // Get all unsynced media for this patient
-        val unsyncedMedia = mediaDao.getUnsyncedMediaByPatient(patient.id)
+        // Get all uploadable media for this patient (LOCAL source, not synced)
+        val unsyncedMedia = mediaDao.getUploadableMediaByPatient(patient.id)
         if (unsyncedMedia.isEmpty()) {
             return@withContext SyncResult(0, 0, null)
         }
@@ -70,8 +70,8 @@ object CloudSyncService {
             try {
                 val result = syncSingleMedia(context, patient, mediaRecord, clientId)
                 if (result.success) {
-                    // Update local database
-                    mediaDao.updateSyncStatus(mediaRecord.id, true, result.s3Url)
+                    // Update local database with cloud metadata
+                    mediaDao.updateCloudMetadata(mediaRecord.id, result.cloudFileName, result.s3Url)
                     successCount++
                 } else {
                     errorCount++
@@ -102,7 +102,7 @@ object CloudSyncService {
         try {
             val file = File(mediaRecord.filePath)
             if (!file.exists()) {
-                return@withContext SingleMediaResult(false, null, "File not found: ${mediaRecord.filePath}")
+                return@withContext SingleMediaResult(false, "", null, "File not found: ${mediaRecord.filePath}")
             }
 
             // Generate unique filename (GUID + extension)
@@ -116,7 +116,7 @@ object CloudSyncService {
             
             val s3Url = uploadFileToS3(context, file, s3Key)
             if (s3Url == null) {
-                return@withContext SingleMediaResult(false, null, "Failed to upload file to S3")
+                return@withContext SingleMediaResult(false, newFileName, null, "Failed to upload file to S3")
             }
             
             Log.d(TAG, "File uploaded to S3: $s3Url")
@@ -162,7 +162,7 @@ object CloudSyncService {
 
             if (response.isSuccessful) {
                 Log.d(TAG, "Successfully synced media metadata")
-                SingleMediaResult(true, s3Url, null)
+                SingleMediaResult(true, newFileName, s3Url, null)
             } else {
                 val errorBody = try {
                     response.errorBody()?.string() ?: "No error body"
@@ -171,11 +171,11 @@ object CloudSyncService {
                 }
                 val errorMessage = "API error (${response.code()}): $errorBody"
                 Log.e(TAG, "Failed to sync media metadata: $errorMessage")
-                SingleMediaResult(false, null, errorMessage)
+                SingleMediaResult(false, newFileName, null, errorMessage)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Exception syncing media", e)
-            SingleMediaResult(false, null, "Exception: ${e.message}")
+            SingleMediaResult(false, "", null, "Exception: ${e.message}")
         }
     }
 
@@ -259,6 +259,7 @@ object CloudSyncService {
 
     private data class SingleMediaResult(
         val success: Boolean,
+        val cloudFileName: String,
         val s3Url: String?,
         val error: String?
     )

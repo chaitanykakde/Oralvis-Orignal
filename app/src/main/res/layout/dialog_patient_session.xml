@@ -202,6 +202,35 @@
 
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <!-- Refresh Button Row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="8dp"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Pull to refresh or tap to sync"
+                            android:textSize="11sp"
+                            android:textColor="#94A3B8" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnRefreshPatients"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Refresh"
+                            android:textSize="12sp"
+                            android:textAllCaps="false"
+                            app:icon="@android:drawable/ic_menu_rotate"
+                            app:iconGravity="textStart"
+                            style="@style/Widget.MaterialComponents.Button.TextButton" />
+
+                    </LinearLayout>
+
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/recyclerPatients"
                         android:layout_width="match_parent"

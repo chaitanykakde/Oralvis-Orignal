@@ -116,19 +116,20 @@ class PatientSessionDialogFragment : DialogFragment() {
     private fun setupRecycler() {
         adapter = PatientsAdapter(
             onSelected = { patient ->
-            selectedPatient = patient
+                selectedPatient = patient
                 // Show close button when patient is selected
                 binding.btnClose.visibility = View.VISIBLE
             },
-            onSyncClick = { patient ->
-                syncPatientMedia(patient)
-            },
-            onDeleteClick = { patient ->
-                showDeleteConfirmation(patient)
-            }
+            onSyncClick = { /* Not used for cloud sync */ },
+            onDeleteClick = { /* Not used for cloud sync */ }
         )
         binding.recyclerPatients.layoutManager = LinearLayoutManager(requireContext())
         binding.recyclerPatients.adapter = adapter
+
+        // Setup sync button (now two-phase)
+        binding.btnRefreshPatients.setOnClickListener {
+            performTwoPhaseSync()
+        }
     }
     
     private fun syncPatientMedia(patient: Patient) {
@@ -260,6 +261,56 @@ class PatientSessionDialogFragment : DialogFragment() {
             patientDao.observePatients().collectLatest { list ->
                 allPatients = list
                 adapter.submitList(list)
+            }
+        }
+    }
+
+    private fun performTwoPhaseSync() {
+        val patient = selectedPatient
+        if (patient == null) {
+            Toast.makeText(requireContext(), "Please select a patient first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                // Disable sync button during sync
+                binding.btnRefreshPatients.isEnabled = false
+                binding.btnRefreshPatients.text = "Uploading..."
+
+                // Perform two-phase sync
+                val result = SyncOrchestrator.syncPatientMediaTwoPhase(
+                    context = requireContext(),
+                    patient = patient,
+                    onProgress = null, // Could add progress for uploads
+                    onPhaseChange = {
+                        // Update UI when moving to download phase
+                        binding.btnRefreshPatients.text = "Downloading..."
+                    }
+                )
+
+                if (result.success) {
+                    val uploadCount = result.uploadResult?.successCount ?: 0
+                    val downloadCount = result.downloadResult?.successCount ?: 0
+                    Toast.makeText(
+                        requireContext(),
+                        "Sync complete: $uploadCount uploaded, $downloadCount downloaded",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        requireContext(),
+                        "Sync failed: ${result.error ?: "Unknown error"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PatientSessionDialog", "Error during sync", e)
+                Toast.makeText(requireContext(), "Sync failed", Toast.LENGTH_SHORT).show()
+            } finally {
+                // Re-enable sync button
+                binding.btnRefreshPatients.isEnabled = true
+                binding.btnRefreshPatients.text = "Sync"
             }
         }
     }
@@ -398,9 +449,19 @@ class PatientSessionDialogFragment : DialogFragment() {
             )
 
             val insertedPatient = withContext(Dispatchers.IO) {
-                patientDao.insert(patient)
-                // Get the inserted patient with its ID
-                patientDao.getPatientByCode(globalPatientId)
+                // CRITICAL: Check if patient already exists by cloudPatientId (code)
+                val existingPatient = patientDao.getPatientByCode(globalPatientId)
+                if (existingPatient != null) {
+                    // Patient already exists, use existing one
+                    android.util.Log.d("PatientCreation", "Using existing patient: cloudId=$globalPatientId → localId=${existingPatient.id}")
+                    existingPatient
+                } else {
+                    // Create new patient
+                    patientDao.insert(patient)
+                    val createdPatient = patientDao.getPatientByCode(globalPatientId)
+                    android.util.Log.d("PatientCreation", "Created new patient: cloudId=$globalPatientId → localId=${createdPatient?.id}")
+                    createdPatient
+                }
             }
 
             // Cloud upsert, non-blocking for local save
@@ -413,8 +474,8 @@ class PatientSessionDialogFragment : DialogFragment() {
                         age = age,
                         phoneNumber = phone
                     )
-                    val response = ApiClient.apiService.upsertPatient(
-                        ApiClient.API_PATIENT_SYNC_ENDPOINT,
+                    android.util.Log.d("PatientCreation", "Using PROD API for patient creation")
+                val response = ApiClient.apiService.upsertPatient(
                         clientId, // Use Client ID from login
                         dto
                     )
@@ -465,7 +526,6 @@ class PatientSessionDialogFragment : DialogFragment() {
 
         private var patients: List<Patient> = emptyList()
         private var selectedId: Long? = null
-        private val unsyncedCounts = mutableMapOf<Long, Int>()
 
         fun submitList(list: List<Patient>) {
             patients = list
@@ -512,31 +572,11 @@ class PatientSessionDialogFragment : DialogFragment() {
                         binding.root.context.getColor(android.R.color.transparent)
                     }
                 )
-                
-                // Load and display unsynced count
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                    val database = MediaDatabase.getDatabase(binding.root.context)
-                    val unsyncedCount = database.mediaDao().getUnsyncedMediaCount(patient.id)
-                    
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        if (unsyncedCount > 0) {
-                            binding.txtUnsyncedCount.text = unsyncedCount.toString()
-                            binding.txtUnsyncedCount.visibility = View.VISIBLE
-                        } else {
-                            binding.txtUnsyncedCount.visibility = View.GONE
-                        }
-                    }
-                }
-                
-                // Set sync button click listener
-                binding.imgCloudSync.setOnClickListener {
-                    onSyncClick(patient)
-                }
 
-                // Set delete button click listener
-                binding.imgDeletePatient.setOnClickListener {
-                    onDeleteClick(patient)
-                }
+                // Hide sync and delete buttons for cloud-synced patients
+                binding.imgCloudSync.visibility = View.GONE
+                binding.imgDeletePatient.visibility = View.GONE
+                binding.txtUnsyncedCount.visibility = View.GONE
             }
         }
     }

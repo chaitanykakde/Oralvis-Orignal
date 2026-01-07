@@ -121,8 +121,8 @@ class AddPatientBottomSheet : BottomSheetDialogFragment() {
                         age = safeAge,
                         phoneNumber = phoneForId
                     )
-                    val response = ApiClient.apiService.upsertPatient(
-                        ApiClient.API_PATIENT_SYNC_ENDPOINT,
+                    android.util.Log.d("PatientCreation", "Using PROD API for patient creation")
+                val response = ApiClient.apiService.upsertPatient(
                         clientId, // Use Client ID from login
                         dto
                     )

@@ -9,16 +9,20 @@ import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
+import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Url
 
 /**
  * API surface mapped to concrete AWS API Gateway endpoints.
  *
- * NOTE: We use @Url so each call can hit its own full HTTPS endpoint:
+ * NOTE: Patient endpoints use the legacy BASE_URL (NO /prod prefix):
+ *  - GET /patients - fetch all patients for clinic
+ *  - POST /patients - upsert patient
  *  - Clinic registration: ApiClient.API_CLINIC_REGISTRATION_ENDPOINT
- *  - Patient sync/search: ApiClient.API_PATIENT_SYNC_ENDPOINT
  *  - Media metadata sync: ApiClient.API_MEDIA_SYNC_ENDPOINT (when used)
+ *
+ * Media endpoints are handled separately by CloudMediaSyncManager using /prod API Gateway.
  */
 interface ApiService {
 
@@ -28,19 +32,16 @@ interface ApiService {
         @Body request: ClinicRegistrationRequest
     ): Response<ClinicRegistrationResponse>
 
-    @POST
+    @GET("patients")
+    suspend fun getPatients(
+        @Header("ClinicId") clinicId: String
+    ): Response<List<PatientDto>>
+
+    @POST("patients")
     suspend fun upsertPatient(
-        @Url url: String,
         @Header("ClinicId") clinicId: String,
         @Body request: PatientDto
     ): Response<PatientDto>
-
-    @GET
-    suspend fun searchPatients(
-        @Url url: String,
-        @Header("ClinicId") clinicId: String,
-        @Query("name") name: String?
-    ): Response<List<PatientDto>>
 
     /**
      * Sync media metadata to DynamoDB via Lambda.
@@ -52,6 +53,27 @@ interface ApiService {
         @Header("ClinicId") clinicId: String,
         @Body request: MediaMetadataDto
     ): Response<MediaMetadataSyncResponse>
+
+    /**
+     * Get cloud media list for a specific patient.
+     * Returns metadata for all media files stored in cloud for this patient.
+     * Response format: { patientId, count, media: [] }
+     */
+    @GET("patients/{patientId}/media")
+    suspend fun getPatientMedia(
+        @Path("patientId") patientId: String,
+        @Header("ClinicId") clinicId: String
+    ): Response<CloudMediaListResponse>
+
+    /**
+     * Get presigned download URL for a specific media file.
+     * Returns a temporary download URL for accessing the file from S3.
+     */
+    @POST("media/download-url")
+    suspend fun getMediaDownloadUrl(
+        @Header("ClinicId") clinicId: String,
+        @Body request: MediaDownloadRequest
+    ): Response<MediaDownloadResponse>
 }
 
 
