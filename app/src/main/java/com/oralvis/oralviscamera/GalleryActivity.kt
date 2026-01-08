@@ -29,7 +29,7 @@ import java.io.File
 
 class GalleryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityGalleryNewBinding
-    private lateinit var mediaDao: com.oralvis.oralviscamera.database.MediaDao
+    private lateinit var mediaRepository: com.oralvis.oralviscamera.database.MediaRepository
     private lateinit var sequenceAdapter: SequenceCardAdapter
     private lateinit var themeManager: ThemeManager
     
@@ -37,7 +37,7 @@ class GalleryActivity : AppCompatActivity() {
     private var currentArchTab = 1 // Default to Lower Arch
     
     // All media for current patient
-    private var allMedia: List<com.oralvis.oralviscamera.database.MediaRecord> = emptyList()
+    private var allMedia: List<com.oralvis.oralviscamera.database.MediaRecordV2> = emptyList()
     private var currentPatientObserver: androidx.lifecycle.Observer<com.oralvis.oralviscamera.database.Patient?>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,7 +58,7 @@ class GalleryActivity : AppCompatActivity() {
         }
         
         val database = MediaDatabase.getDatabase(this)
-        mediaDao = database.mediaDao()
+        mediaRepository = com.oralvis.oralviscamera.database.MediaRepository(this)
         themeManager = ThemeManager(this)
         
         setupRecycler()
@@ -79,12 +79,16 @@ class GalleryActivity : AppCompatActivity() {
             sequenceCards = emptyList(),
             onRgbImageClick = { card ->
                 card.rgbImage?.let { media ->
-                    openMediaPreview(media.filePath, media.mediaType == "Video")
+                    media.filePath?.let { path ->
+                        openMediaPreview(path, media.mediaType == "Video")
+                    }
                 }
             },
             onFluorescenceImageClick = { card ->
                 card.fluorescenceImage?.let { media ->
-                    openMediaPreview(media.filePath, media.mediaType == "Video")
+                    media.filePath?.let { path ->
+                        openMediaPreview(path, media.mediaType == "Video")
+                    }
                 }
             },
             onDiscardClick = { card ->
@@ -344,33 +348,34 @@ class GalleryActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     android.util.Log.d("GalleryActivity", "Collecting media flow for patientId: $patientId")
-                    android.util.Log.d("SESSION_MEDIA", "Gallery querying media for patientId: $patientId")
-                    android.util.Log.d("SESSION_MEDIA", "Gallery query: SELECT m.* FROM media m LEFT JOIN sessions s ON m.sessionId = s.sessionId WHERE (s.patientId = $patientId) OR (m.patientId = $patientId AND m.sessionId IS NULL)")
-                    android.util.Log.d("MEDIA_DEBUG", "Fetching media for patientId=$patientId")
-                    mediaDao.getMediaByPatient(patientId).collect { mediaList ->
+                    android.util.Log.d("MEDIA_DEBUG", "Fetching visible media for patientId=$patientId using MediaRepository")
+                    mediaRepository.getVisibleMediaForPatient(patientId).collect { mediaList ->
                         android.util.Log.d("GALLERY_DEBUG", "Flow collected - mediaList.size = ${mediaList.size}")
                         android.util.Log.d("GalleryActivity", "Received media list update: ${mediaList.size} items")
                         android.util.Log.d("SESSION_MEDIA", "Gallery received ${mediaList.size} media records for patientId=$patientId")
 
-                        // VALIDATION LOGGING: Break down media sources
+                        // VALIDATION LOGGING: Break down media sources and states
                         val sessionMedia = mediaList.filter { it.sessionId != null }
                         val directMedia = mediaList.filter { it.sessionId == null }
+                        val syncedMedia = mediaList.filter { it.state == com.oralvis.oralviscamera.database.MediaState.SYNCED }
+                        val downloadedMedia = mediaList.filter { it.state == com.oralvis.oralviscamera.database.MediaState.DOWNLOADED }
+                        val missingMedia = mediaList.filter { it.state == com.oralvis.oralviscamera.database.MediaState.FILE_MISSING }
+
                         android.util.Log.d("VALIDATION", "Session media: ${sessionMedia.size}, Direct media: ${directMedia.size}, Total: ${mediaList.size}")
-                        android.util.Log.d("VALIDATION", "Session media sources: ${sessionMedia.map { it.source }.distinct()}")
-                        android.util.Log.d("VALIDATION", "Direct media sources: ${directMedia.map { it.source }.distinct()}")
+                        android.util.Log.d("VALIDATION", "Synced: ${syncedMedia.size}, Downloaded: ${downloadedMedia.size}, Missing: ${missingMedia.size}")
 
                         // Detailed logging of each media item
                         mediaList.forEachIndexed { index, media ->
-                            android.util.Log.d("GALLERY_DEBUG", "Media[$index]: id=${media.id}, sessionId=${media.sessionId}, patientId=${media.patientId}, source=${media.source}, fileName=${media.fileName}")
+                            android.util.Log.d("GALLERY_DEBUG", "Media[$index]: mediaId=${media.mediaId}, sessionId=${media.sessionId}, patientId=${media.patientId}, state=${media.state}, fileName=${media.fileName}")
                         }
 
                         // 1️⃣ Log RAW DB RESULTS
                         android.util.Log.d("MEDIA_DEBUG", "DB returned media count = ${mediaList.size}")
 
-                        // Check for duplicates
-                        val ids = mediaList.map { it.id }
-                        val uniqueIds = ids.distinct()
-                        android.util.Log.d("MEDIA_DEBUG", "Unique IDs: ${uniqueIds.size} out of ${ids.size} total")
+                        // Check for duplicates by canonical ID
+                        val mediaIds = mediaList.map { it.mediaId }
+                        val uniqueMediaIds = mediaIds.distinct()
+                        android.util.Log.d("MEDIA_DEBUG", "Unique mediaIds: ${uniqueMediaIds.size} out of ${mediaIds.size} total")
 
                         val cloudNames = mediaList.mapNotNull { it.cloudFileName }
                         val uniqueCloudNames = cloudNames.distinct()
@@ -379,10 +384,10 @@ class GalleryActivity : AppCompatActivity() {
                         mediaList.forEachIndexed { index, media ->
                             android.util.Log.d(
                                 "MEDIA_DEBUG",
-                                "DB[$index] id=${media.id}, patientId=${media.patientId}, " +
-                                "arch=${media.dentalArch}, cloudName=${media.cloudFileName}, " +
+                                "DB[$index] mediaId=${media.mediaId}, patientId=${media.patientId}, " +
+                                "state=${media.state}, arch=${media.dentalArch}, cloudName=${media.cloudFileName}, " +
                                 "fileName=${media.fileName}, sessionId=${media.sessionId}, " +
-                                "source=${media.source}, isFromCloud=${media.isFromCloud}"
+                                "filePath=${media.filePath}"
                             )
                         }
 
@@ -424,13 +429,13 @@ class GalleryActivity : AppCompatActivity() {
     /**
      * Group media into sequence cards based on arch tab selection.
      */
-    private fun groupMediaIntoSequences(mediaList: List<com.oralvis.oralviscamera.database.MediaRecord>): List<SequenceCard> {
+    private fun groupMediaIntoSequences(mediaList: List<com.oralvis.oralviscamera.database.MediaRecordV2>): List<SequenceCard> {
         android.util.Log.d("GROUP_DEBUG", "groupMediaIntoSequences called with ${mediaList.size} media items")
         android.util.Log.d("GROUP_DEBUG", "Current arch tab: $currentArchTab")
 
         // DEBUG: Log all media with their properties
         mediaList.forEachIndexed { index, media ->
-            android.util.Log.d("GROUP_DEBUG", "Media[$index]: id=${media.id}, fileName=${media.fileName}, arch=${media.dentalArch}, mode=${media.mode}, sessionId=${media.sessionId}, guidedId=${media.guidedSessionId}, seqNum=${media.sequenceNumber}")
+            android.util.Log.d("GROUP_DEBUG", "Media[$index]: mediaId=${media.mediaId}, fileName=${media.fileName}, arch=${media.dentalArch}, mode=${media.mode}, sessionId=${media.sessionId}, guidedId=${media.guidedSessionId}, seqNum=${media.sequenceNumber}, state=${media.state}")
         }
 
         // 2️⃣ Log BEFORE TAB FILTERING
@@ -492,7 +497,7 @@ class GalleryActivity : AppCompatActivity() {
         filteredMedia.forEach { media ->
             android.util.Log.d(
                 "MEDIA_DEBUG",
-                "FILTERED id=${media.id}, arch=${media.dentalArch}, cloud=${media.cloudFileName}, fileName=${media.fileName}"
+                "FILTERED mediaId=${media.mediaId}, arch=${media.dentalArch}, cloud=${media.cloudFileName}, fileName=${media.fileName}"
             )
         }
 
@@ -546,10 +551,10 @@ class GalleryActivity : AppCompatActivity() {
         // Process unguided media (create individual sequence cards)
         unguidedMedia.forEach { media ->
             val arch = "LOWER"  // Assign to LOWER tab
-            val sessionId = "unguided_${media.id}"  // Unique session ID for each unguided media
+            val sessionId = "unguided_${media.mediaId}"  // Unique session ID for each unguided media
             val sequenceNum = 1  // All unguided get sequence 1
 
-            android.util.Log.d("GalleryActivity", "Processing unguided media: id=${media.id}, mode=${media.mode}, fileName=${media.fileName}")
+            android.util.Log.d("GalleryActivity", "Processing unguided media: mediaId=${media.mediaId}, mode=${media.mode}, fileName=${media.fileName}")
 
             val key = "$sessionId|$arch"
 
@@ -587,7 +592,7 @@ class GalleryActivity : AppCompatActivity() {
         allSequences.forEachIndexed { index, card ->
             android.util.Log.d(
                 "MEDIA_DEBUG",
-                "SEQUENCE_CARD[$index] seq=${card.sequenceNumber}, arch=${card.dentalArch}, rgbId=${card.rgbImage?.id}, fluoId=${card.fluorescenceImage?.id}, guided=${card.guidedSessionId != null}"
+                "SEQUENCE_CARD[$index] seq=${card.sequenceNumber}, arch=${card.dentalArch}, rgbId=${card.rgbImage?.mediaId}, fluoId=${card.fluorescenceImage?.mediaId}, guided=${card.guidedSessionId != null}"
             )
         }
 
@@ -608,16 +613,17 @@ class GalleryActivity : AppCompatActivity() {
     private fun discardSequencePair(card: SequenceCard) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
+                // TODO: Implement proper media deletion via MediaRepository
                 // Delete RGB image if exists
                 card.rgbImage?.let { media ->
-                    mediaDao.deleteMediaById(media.id)
-                    File(media.filePath).delete()
+                    // mediaRepository.deleteMedia(media.mediaId)
+                    File(media.filePath ?: "").delete()
                 }
-                
+
                 // Delete Fluorescence image if exists
                 card.fluorescenceImage?.let { media ->
-                    mediaDao.deleteMediaById(media.id)
-                    File(media.filePath).delete()
+                    // mediaRepository.deleteMedia(media.mediaId)
+                    File(media.filePath ?: "").delete()
                 }
                 
                 withContext(Dispatchers.Main) {

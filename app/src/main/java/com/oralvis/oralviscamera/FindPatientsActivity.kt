@@ -17,6 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.oralvis.oralviscamera.database.MediaDatabase
+import com.oralvis.oralviscamera.database.MediaRepository
 import com.oralvis.oralviscamera.database.Patient
 import com.oralvis.oralviscamera.databinding.ActivityFindPatientsBinding
 import com.oralvis.oralviscamera.home.PatientListAdapter
@@ -205,10 +206,34 @@ class FindPatientsActivity : AppCompatActivity() {
     private fun loadPatientGallery(patient: Patient) {
         lifecycleScope.launch {
             try {
-                mediaDao.getMediaByPatient(patient.id).collectLatest { mediaList ->
+                // Use MediaRepository to ensure consistency with Gallery
+                val mediaRepository = com.oralvis.oralviscamera.database.MediaRepository(this@FindPatientsActivity)
+                mediaRepository.getVisibleMediaForPatient(patient.id).collectLatest { mediaList ->
                     withContext(kotlinx.coroutines.Dispatchers.Main) {
                         if (mediaList.isNotEmpty()) {
-                            galleryAdapter = SessionMediaGridAdapter(mediaList) { media ->
+                            // Convert MediaRecordV2 to MediaRecord for compatibility with existing adapter
+                            // This is a temporary conversion - ideally the adapter should be updated too
+                            val compatibleMediaList = mediaList.map { mediaV2 ->
+                                com.oralvis.oralviscamera.database.MediaRecord(
+                                    id = mediaV2.mediaId.toLong(), // Temporary mapping
+                                    sessionId = mediaV2.sessionId,
+                                    fileName = mediaV2.fileName,
+                                    mode = mediaV2.mode,
+                                    mediaType = mediaV2.mediaType,
+                                    captureTime = mediaV2.captureTime,
+                                    filePath = mediaV2.filePath ?: "",
+                                    isSynced = mediaV2.state == com.oralvis.oralviscamera.database.MediaState.SYNCED,
+                                    s3Url = mediaV2.s3Url,
+                                    patientId = mediaV2.patientId,
+                                    cloudFileName = mediaV2.cloudFileName,
+                                    source = if (mediaV2.isFromCloud) "CLOUD" else "LOCAL",
+                                    isFromCloud = mediaV2.isFromCloud,
+                                    dentalArch = mediaV2.dentalArch,
+                                    sequenceNumber = mediaV2.sequenceNumber,
+                                    guidedSessionId = mediaV2.guidedSessionId
+                                )
+                            }
+                            galleryAdapter = SessionMediaGridAdapter(compatibleMediaList) { media ->
                                 openMediaPreview(media.filePath, media.mediaType == "Video")
                             }
                             binding.galleryRecyclerView.adapter = galleryAdapter

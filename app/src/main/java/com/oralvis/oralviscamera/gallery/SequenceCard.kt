@@ -1,6 +1,6 @@
 package com.oralvis.oralviscamera.gallery
 
-import com.oralvis.oralviscamera.database.MediaRecord
+import com.oralvis.oralviscamera.database.MediaRecordV2
 
 /**
  * Represents a sequence card showing RGB and Fluorescence image pair.
@@ -10,8 +10,8 @@ data class SequenceCard(
     val sequenceNumber: Int,
     val dentalArch: String, // "LOWER", "UPPER", or "OTHER"
     val guidedSessionId: String?,
-    val rgbImage: MediaRecord?, // Normal mode image
-    val fluorescenceImage: MediaRecord? // Fluorescence mode image
+    val rgbImage: MediaRecordV2?, // Normal mode image
+    val fluorescenceImage: MediaRecordV2? // Fluorescence mode image
 ) {
     /**
      * Check if this sequence has both images captured.

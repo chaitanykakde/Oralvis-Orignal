@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
 import com.oralvis.oralviscamera.R
+import kotlinx.coroutines.*
 import java.io.File
 
 class SequenceCardAdapter(
@@ -55,27 +56,27 @@ class SequenceCardAdapter(
         holder.sequenceTitle.text = card.getTitle()
 
         // Load RGB image
-        if (card.rgbImage != null) {
+        if (card.rgbImage != null && card.rgbImage.filePath != null) {
             android.util.Log.d("SequenceCardAdapter", "Loading RGB image: ${card.rgbImage.filePath}")
             loadImage(holder.rgbImage, card.rgbImage.filePath)
             holder.rgbLabel.visibility = View.VISIBLE
             holder.rgbImage.setOnClickListener { onRgbImageClick(card) }
         } else {
-            android.util.Log.d("SequenceCardAdapter", "No RGB image, setting placeholder")
+            android.util.Log.d("SequenceCardAdapter", "No RGB image or file path missing, setting placeholder")
             holder.rgbImage.setImageResource(R.drawable.ic_media_placeholder)
             holder.rgbLabel.visibility = View.GONE
             holder.rgbImage.setOnClickListener(null)
         }
 
         // Load Fluorescence image
-        if (card.fluorescenceImage != null) {
+        if (card.fluorescenceImage != null && card.fluorescenceImage.filePath != null) {
             android.util.Log.d("SequenceCardAdapter", "Loading Fluorescence image: ${card.fluorescenceImage.filePath}")
             loadImage(holder.fluorescenceImage, card.fluorescenceImage.filePath)
             holder.fluorescenceLabel.visibility = View.VISIBLE
             holder.waitingForCapture.visibility = View.GONE
             holder.fluorescenceImage.setOnClickListener { onFluorescenceImageClick(card) }
         } else {
-            android.util.Log.d("SequenceCardAdapter", "No Fluorescence image, setting placeholder")
+            android.util.Log.d("SequenceCardAdapter", "No Fluorescence image or file path missing, setting placeholder")
             holder.fluorescenceImage.setImageResource(R.drawable.ic_media_placeholder)
             holder.fluorescenceLabel.visibility = View.GONE
             holder.waitingForCapture.visibility = View.VISIBLE
@@ -89,29 +90,35 @@ class SequenceCardAdapter(
     override fun getItemCount(): Int = sequenceCards.size
 
     private fun loadImage(imageView: ImageView, filePath: String) {
-        try {
-            val file = File(filePath)
-            android.util.Log.d("SequenceCardAdapter", "Loading image: $filePath, exists: ${file.exists()}")
+        // Set placeholder immediately to prevent UI blocking
+        imageView.setImageResource(R.drawable.ic_media_placeholder)
 
-            if (file.exists() && file.length() > 0) {
-                // Use the same simple approach as SessionMediaGridAdapter
-                val bitmap = BitmapFactory.decodeFile(filePath)
-                android.util.Log.d("SequenceCardAdapter", "Bitmap decoded: ${bitmap?.let { "${it.width}x${it.height}" } ?: "null"}")
+        // Load image asynchronously
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val file = File(filePath)
+                android.util.Log.d("SequenceCardAdapter", "Loading image: $filePath, exists: ${file.exists()}")
 
-                if (bitmap != null) {
-                    imageView.setImageBitmap(bitmap)
-                    android.util.Log.d("SequenceCardAdapter", "Image set successfully")
+                if (file.exists() && file.length() > 0) {
+                    // Decode bitmap on background thread
+                    val bitmap = BitmapFactory.decodeFile(filePath)
+                    android.util.Log.d("SequenceCardAdapter", "Bitmap decoded: ${bitmap?.let { "${it.width}x${it.height}" } ?: "null"}")
+
+                    if (bitmap != null) {
+                        // Switch to main thread to update UI
+                        withContext(Dispatchers.Main) {
+                            imageView.setImageBitmap(bitmap)
+                            android.util.Log.d("SequenceCardAdapter", "Image set successfully")
+                        }
+                    } else {
+                        android.util.Log.w("SequenceCardAdapter", "Bitmap decode failed")
+                    }
                 } else {
-                    android.util.Log.w("SequenceCardAdapter", "Bitmap decode failed, using placeholder")
-                    imageView.setImageResource(R.drawable.ic_media_placeholder)
+                    android.util.Log.w("SequenceCardAdapter", "File does not exist or is empty: $filePath")
                 }
-            } else {
-                android.util.Log.w("SequenceCardAdapter", "File does not exist or is empty: $filePath")
-                imageView.setImageResource(R.drawable.ic_media_placeholder)
+            } catch (e: Exception) {
+                android.util.Log.e("SequenceCardAdapter", "Exception loading image: ${e.message}")
             }
-        } catch (e: Exception) {
-            android.util.Log.e("SequenceCardAdapter", "Exception loading image: ${e.message}")
-            imageView.setImageResource(R.drawable.ic_media_placeholder)
         }
     }
 }

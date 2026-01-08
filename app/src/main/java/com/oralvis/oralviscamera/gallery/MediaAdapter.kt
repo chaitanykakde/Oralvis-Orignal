@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.oralvis.oralviscamera.R
 import com.oralvis.oralviscamera.database.MediaRecord
+import kotlinx.coroutines.*
 import java.io.File
 import java.text.DecimalFormat
 
@@ -79,41 +80,40 @@ class MediaAdapter(
         }
 
         private fun loadThumbnail(filePath: String, mediaType: String) {
-            try {
-                android.util.Log.d("MediaAdapter", "Loading thumbnail for: $filePath, type: $mediaType")
-                val file = File(filePath)
-                if (file.exists()) {
-                    android.util.Log.d("MediaAdapter", "File exists, size: ${file.length()} bytes")
-                    
-                    val bitmap = when (mediaType) {
-                        "Image" -> loadImageThumbnail(filePath)
-                        "Video" -> loadVideoThumbnail(filePath)
-                        else -> null
-                    }
-                    
-                    if (bitmap != null) {
-                        android.util.Log.d("MediaAdapter", "Thumbnail loaded successfully: ${bitmap.width}x${bitmap.height}")
-                        imageView.setImageBitmap(bitmap)
+            // Set placeholder immediately to prevent UI blocking
+            imageView.setImageResource(
+                if (mediaType == "Video") android.R.drawable.ic_media_play
+                else android.R.drawable.ic_menu_camera
+            )
+
+            // Load thumbnail asynchronously
+            kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                try {
+                    android.util.Log.d("MediaAdapter", "Loading thumbnail for: $filePath, type: $mediaType")
+                    val file = File(filePath)
+                    if (file.exists()) {
+                        android.util.Log.d("MediaAdapter", "File exists, size: ${file.length()} bytes")
+
+                        val bitmap = when (mediaType) {
+                            "Image" -> loadImageThumbnail(filePath)
+                            "Video" -> loadVideoThumbnail(filePath)
+                            else -> null
+                        }
+
+                        if (bitmap != null) {
+                            android.util.Log.d("MediaAdapter", "Thumbnail loaded successfully: ${bitmap.width}x${bitmap.height}")
+                            withContext(Dispatchers.Main) {
+                                imageView.setImageBitmap(bitmap)
+                            }
+                        } else {
+                            android.util.Log.w("MediaAdapter", "Failed to load thumbnail")
+                        }
                     } else {
-                        android.util.Log.w("MediaAdapter", "Failed to load thumbnail")
-                        imageView.setImageResource(
-                            if (mediaType == "Video") android.R.drawable.ic_media_play 
-                            else android.R.drawable.ic_menu_camera
-                        )
+                        android.util.Log.w("MediaAdapter", "File does not exist: $filePath - STATE INCONSISTENCY DETECTED")
                     }
-                } else {
-                    android.util.Log.w("MediaAdapter", "File does not exist: $filePath")
-                    imageView.setImageResource(
-                        if (mediaType == "Video") android.R.drawable.ic_media_play 
-                        else android.R.drawable.ic_menu_camera
-                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("MediaAdapter", "Error loading thumbnail: ${e.message}")
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("MediaAdapter", "Error loading thumbnail: ${e.message}")
-                imageView.setImageResource(
-                    if (mediaType == "Video") android.R.drawable.ic_media_play 
-                    else android.R.drawable.ic_menu_camera
-                )
             }
         }
         
