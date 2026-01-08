@@ -104,8 +104,7 @@ object CloudMediaSyncManager {
 
             Log.d(TAG, "Found ${cloudMediaList.size} cloud media items for patient $patientCode")
 
-            val database = MediaDatabase.getDatabase(context)
-            val mediaDao = database.mediaDao()
+            val mediaRepository = com.oralvis.oralviscamera.database.MediaRepository(context)
 
             var successCount = 0
             var errorCount = 0
@@ -113,15 +112,22 @@ object CloudMediaSyncManager {
             // Process each cloud media item
             cloudMediaList.forEachIndexed { index, cloudMedia ->
                 try {
-                    // Check if we already have this cloud media locally
-                    val existingMedia = mediaDao.getMediaByCloudFileName(cloudMedia.fileName)
+                    // Check if we already have this cloud media locally using canonical mediaId
+                    val existingMedia = if (cloudMedia.mediaId != null) {
+                        // Use canonical mediaId for deduplication if available
+                        mediaRepository.getMediaById(cloudMedia.mediaId)
+                    } else {
+                        // Fallback to cloud filename for legacy compatibility
+                        val database = MediaDatabase.getDatabase(context)
+                        database.mediaDaoV2().getMediaByCloudFileName(cloudMedia.fileName)
+                    }
 
                     if (existingMedia != null) {
-                        Log.d(TAG, "Cloud media ${cloudMedia.fileName} already exists locally, skipping")
+                        Log.d(TAG, "Cloud media ${cloudMedia.fileName} (mediaId=${cloudMedia.mediaId ?: "null"}) already exists locally, skipping")
                         successCount++ // Count as success since it's already synced
                     } else {
-                        // Download and insert new cloud media
-                        val result = downloadAndInsertCloudMedia(context, cloudMedia, patientId, patientCode, clinicId, mediaDao)
+                        // Download and insert new cloud media using repository
+                        val result = downloadAndInsertCloudMediaV2(context, cloudMedia, patientId, patientCode, clinicId, mediaRepository)
                         if (result) {
                             successCount++
                         } else {
@@ -186,16 +192,16 @@ object CloudMediaSyncManager {
     }
 
     /**
-     * Download cloud media file and insert Room record.
+     * Download cloud media file and insert Room record (V2 - uses MediaRepository and canonical mediaId).
      * Returns true if successful, false otherwise.
      */
-    private suspend fun downloadAndInsertCloudMedia(
+    private suspend fun downloadAndInsertCloudMediaV2(
         context: Context,
         cloudMedia: CloudMediaDto,
         patientId: Long,
         patientCode: String,
         clinicId: String,
-        mediaDao: com.oralvis.oralviscamera.database.MediaDao
+        mediaRepository: com.oralvis.oralviscamera.database.MediaRepository
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             // Get download URL
@@ -234,35 +240,34 @@ object CloudMediaSyncManager {
                 Date()
             }
 
-            // Create MediaRecord for cloud media
-            val mediaRecord = MediaRecord(
-                sessionId = null, // Cloud media doesn't belong to a local session
-                fileName = cloudMedia.fileName,
-                mode = cloudMedia.cameraMode,
-                mediaType = cloudMedia.mediaType,
-                captureTime = captureTime,
-                filePath = localPath,
-                isSynced = true, // Cloud media is already "synced"
+            // Use canonical mediaId from cloud, or generate one if not provided (legacy compatibility)
+            val mediaId = cloudMedia.mediaId ?: UUID.randomUUID().toString()
+
+            // Use MediaRepository to create cloud media record atomically
+            val mediaRecord = mediaRepository.createCloudMediaRecord(
+                mediaId = mediaId,
+                patientId = patientId,
+                cloudFileName = cloudMedia.fileName,
                 s3Url = cloudMedia.s3Url,
-                patientId = patientId, // Direct patient association for cloud media
-                cloudFileName = cloudMedia.fileName, // Cloud identity for deduplication
-                source = "CLOUD", // Mark as downloaded from cloud
-                isFromCloud = true, // Downloaded from cloud
+                fileContent = localFile.readBytes(), // Read downloaded file content
+                mediaType = cloudMedia.mediaType,
+                mode = cloudMedia.cameraMode,
+                captureTime = captureTime,
                 dentalArch = cloudMedia.dentalArch,
-                sequenceNumber = cloudMedia.sequenceNumber,
-                guidedSessionId = null // Not applicable for cloud media
+                sequenceNumber = cloudMedia.sequenceNumber
             )
 
-            // Insert safely (ignore if already exists)
-            val insertedId = mediaDao.insertMediaIfNotExists(mediaRecord)
-
-            if (insertedId == -1L) {
-                Log.w(TAG, "Cloud media ${cloudMedia.fileName} already exists, skipping insert")
+            if (mediaRecord != null) {
+                Log.d(TAG, "Successfully created cloud media record: mediaId=$mediaId, cloudFileName=${cloudMedia.fileName}")
+                return@withContext true
             } else {
-                Log.d(TAG, "Successfully inserted cloud media ${cloudMedia.fileName} with ID $insertedId (sessionId=null, patientId=$patientId)")
+                Log.e(TAG, "Failed to create cloud media record for ${cloudMedia.fileName}")
+                // Clean up downloaded file on failure
+                if (localFile.exists()) {
+                    localFile.delete()
+                }
+                return@withContext false
             }
-
-            return@withContext true
 
         } catch (e: Exception) {
             Log.e(TAG, "Exception downloading/inserting cloud media ${cloudMedia.fileName}", e)

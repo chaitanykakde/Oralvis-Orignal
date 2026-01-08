@@ -47,8 +47,7 @@ object CloudSyncService {
         patient: Patient,
         onProgress: ((Int, Int) -> Unit)? = null
     ): SyncResult = withContext(Dispatchers.IO) {
-        val database = MediaDatabase.getDatabase(context)
-        val mediaDao = database.mediaDao()
+        val mediaRepository = com.oralvis.oralviscamera.database.MediaRepository(context)
         val loginManager = LoginManager(context)
         val clientId = loginManager.getClientId() ?: return@withContext SyncResult(
             successCount = 0,
@@ -56,8 +55,8 @@ object CloudSyncService {
             error = "Client ID not found. Please login."
         )
 
-        // Get all uploadable media for this patient (LOCAL source, not synced)
-        val unsyncedMedia = mediaDao.getUploadableMediaByPatient(patient.id)
+        // Get all uploadable media for this patient using new repository
+        val unsyncedMedia = mediaRepository.getUploadableMedia(patient.id)
         if (unsyncedMedia.isEmpty()) {
             return@withContext SyncResult(0, 0, null)
         }
@@ -68,21 +67,47 @@ object CloudSyncService {
 
         unsyncedMedia.forEachIndexed { index, mediaRecord ->
             try {
-                val result = syncSingleMedia(context, patient, mediaRecord, clientId)
-                if (result.success) {
-                    // Update local database with cloud metadata
-                    mediaDao.updateCloudMetadata(mediaRecord.id, result.cloudFileName, result.s3Url)
-                    successCount++
+                // INVARIANT: Only upload media in DB_COMMITTED state
+                if (mediaRecord.state != com.oralvis.oralviscamera.database.MediaState.DB_COMMITTED) {
+                    Log.w(TAG, "Skipping media ${mediaRecord.mediaId} in state ${mediaRecord.state} (expected DB_COMMITTED)")
+                    errorCount++
+                    return@forEachIndexed
+                }
+
+                // Update state to UPLOADING
+                val stateUpdated = mediaRepository.updateMediaState(mediaRecord.mediaId, com.oralvis.oralviscamera.database.MediaState.UPLOADING)
+                if (!stateUpdated) {
+                    Log.w(TAG, "Failed to update state to UPLOADING for ${mediaRecord.mediaId}")
+                    errorCount++
+                    return@forEachIndexed
+                }
+
+                val result = syncSingleMediaV2(context, patient, mediaRecord, clientId)
+                if (result.success && result.s3Url != null) {
+                    // Update repository with cloud metadata and SYNCED state
+                    val metadataUpdated = mediaRepository.updateCloudMetadata(mediaRecord.mediaId, result.cloudFileName, result.s3Url)
+                    if (metadataUpdated) {
+                        successCount++
+                    } else {
+                        Log.e(TAG, "Failed to update cloud metadata for ${mediaRecord.mediaId}")
+                        // Rollback to DB_COMMITTED state
+                        mediaRepository.updateMediaState(mediaRecord.mediaId, com.oralvis.oralviscamera.database.MediaState.DB_COMMITTED)
+                        errorCount++
+                    }
                 } else {
+                    // Upload failed - rollback to DB_COMMITTED state
+                    mediaRepository.updateMediaState(mediaRecord.mediaId, com.oralvis.oralviscamera.database.MediaState.DB_COMMITTED)
                     errorCount++
                     lastError = result.error
-                    Log.e(TAG, "Failed to sync media ${mediaRecord.id}: ${result.error}")
+                    Log.e(TAG, "Failed to sync media ${mediaRecord.mediaId}: ${result.error}")
                 }
                 onProgress?.invoke(index + 1, unsyncedMedia.size)
             } catch (e: Exception) {
                 errorCount++
                 lastError = e.message
-                Log.e(TAG, "Exception syncing media ${mediaRecord.id}", e)
+                // Ensure state is rolled back on exception
+                mediaRepository.updateMediaState(mediaRecord.mediaId, com.oralvis.oralviscamera.database.MediaState.DB_COMMITTED)
+                Log.e(TAG, "Exception syncing media ${mediaRecord.mediaId}", e)
             }
         }
 
@@ -90,13 +115,13 @@ object CloudSyncService {
     }
 
     /**
-     * Sync a single media file to cloud.
-     * Process: 1) Upload file to S3, 2) Call Lambda with JSON metadata
+     * Sync a single media file to cloud (V2 - uses MediaRecordV2 and canonical mediaId).
+     * Process: 1) Upload file to S3, 2) Call Lambda with JSON metadata including mediaId
      */
-    private suspend fun syncSingleMedia(
+    private suspend fun syncSingleMediaV2(
         context: Context,
         patient: Patient,
-        mediaRecord: MediaRecord,
+        mediaRecord: com.oralvis.oralviscamera.database.MediaRecordV2,
         clientId: String
     ): SingleMediaResult = withContext(Dispatchers.IO) {
         try {
@@ -105,45 +130,47 @@ object CloudSyncService {
                 return@withContext SingleMediaResult(false, "", null, "File not found: ${mediaRecord.filePath}")
             }
 
-            // Generate unique filename (GUID + extension)
+            // Use canonical mediaId to generate cloud filename for deduplication
             val originalExtension = file.extension
-            val newFileName = "${UUID.randomUUID()}.$originalExtension"
+            val cloudFileName = "${mediaRecord.mediaId}.$originalExtension"
 
             // Step 1: Upload file to S3
-            // S3 path: s3://oralvis-media/{GlobalPatientId}/{ClientId}/{FileName}
-            val s3Key = "${patient.code}/$clientId/$newFileName"
-            Log.d(TAG, "Uploading file to S3: bucket=$S3_BUCKET_NAME, key=$s3Key")
-            
+            // S3 path: s3://oralvis-media/{GlobalPatientId}/{ClientId}/{CloudFileName}
+            val s3Key = "${patient.code}/$clientId/$cloudFileName"
+            Log.d(TAG, "Uploading file to S3: bucket=$S3_BUCKET_NAME, key=$s3Key, mediaId=${mediaRecord.mediaId}")
+
             val s3Url = uploadFileToS3(context, file, s3Key)
             if (s3Url == null) {
-                return@withContext SingleMediaResult(false, newFileName, null, "Failed to upload file to S3")
+                return@withContext SingleMediaResult(false, cloudFileName, null, "Failed to upload file to S3")
             }
-            
+
             Log.d(TAG, "File uploaded to S3: $s3Url")
 
-            // Step 2: Prepare metadata for Lambda (JSON format)
+            // Step 2: Prepare metadata for Lambda (JSON format) - now includes mediaId
             val captureTimeStr = dateFormat.format(mediaRecord.captureTime)
-            
+
             // Map camera mode: "Normal" -> "RGB", "Fluorescence" -> "Fluorescence"
             val cameraMode = when (mediaRecord.mode) {
                 "Normal" -> "RGB"
                 "Fluorescence" -> "Fluorescence"
                 else -> mediaRecord.mode
             }
-            
+
             // Ensure mediaType is capitalized correctly (Image/Video)
-            val mediaTypeForApi = mediaRecord.mediaType.replaceFirstChar { 
-                if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() 
+            val mediaTypeForApi = mediaRecord.mediaType.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString()
             }
-            
-            // Create metadata DTO matching Lambda function expectations
+
+            // Create metadata DTO with canonical mediaId for cloud deduplication
             val metadata = MediaMetadataDto(
                 patientId = patient.code,
                 clinicId = clientId, // Use Client ID from login
-                fileName = newFileName,
+                fileName = cloudFileName,
                 s3Url = s3Url,
                 mediaType = mediaTypeForApi,
                 cameraMode = cameraMode,
+                // Include canonical mediaId for deduplication
+                mediaId = mediaRecord.mediaId, // NEW: Canonical ID for cloud deduplication
                 // For legacy/manual captures these will be null.
                 // For guided auto-capture, they are populated from MediaRecord.
                 dentalArch = mediaRecord.dentalArch,
@@ -151,8 +178,8 @@ object CloudSyncService {
                 captureTime = captureTimeStr
             )
 
-            Log.d(TAG, "Syncing metadata to Lambda: patientId=${patient.code}, fileName=$newFileName")
-            
+            Log.d(TAG, "Syncing metadata to Lambda: patientId=${patient.code}, fileName=$cloudFileName")
+
             // Step 3: Call Lambda with JSON body
             val response = ApiClient.apiService.syncMediaMetadata(
                 url = ApiClient.API_MEDIA_SYNC_ENDPOINT,
@@ -162,7 +189,7 @@ object CloudSyncService {
 
             if (response.isSuccessful) {
                 Log.d(TAG, "Successfully synced media metadata")
-                SingleMediaResult(true, newFileName, s3Url, null)
+                SingleMediaResult(true, cloudFileName, s3Url, null)
             } else {
                 val errorBody = try {
                     response.errorBody()?.string() ?: "No error body"
@@ -171,7 +198,7 @@ object CloudSyncService {
                 }
                 val errorMessage = "API error (${response.code()}): $errorBody"
                 Log.e(TAG, "Failed to sync media metadata: $errorMessage")
-                SingleMediaResult(false, newFileName, null, errorMessage)
+                SingleMediaResult(false, cloudFileName, null, errorMessage)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Exception syncing media", e)
@@ -260,7 +287,7 @@ object CloudSyncService {
     private data class SingleMediaResult(
         val success: Boolean,
         val cloudFileName: String,
-        val s3Url: String?,
+        val s3Url: String?,  // Can be null on failure
         val error: String?
     )
 }
