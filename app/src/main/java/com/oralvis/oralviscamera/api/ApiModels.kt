@@ -29,30 +29,33 @@ data class PatientDto(
 data class MediaMetadataDto(
     @SerializedName("patientId")
     val patientId: String,
-    
+
     @SerializedName("clinicId")
     val clinicId: String,
-    
+
     @SerializedName("fileName")
     val fileName: String,
-    
+
     @SerializedName("s3Url")
     val s3Url: String,
-    
+
     @SerializedName("mediaType")
     val mediaType: String,
-    
+
     @SerializedName("cameraMode")
     val cameraMode: String,
-    
+
     @SerializedName("dentalArch")
     val dentalArch: String?,
-    
+
     @SerializedName("sequenceNumber")
     val sequenceNumber: Int?,
-    
+
     @SerializedName("captureTime")
-    val captureTime: String
+    val captureTime: String,
+
+    @SerializedName("mediaId")
+    val mediaId: String? = null     // Canonical media ID for deduplication
 )
 
 data class MediaMetadataSyncResponse(
@@ -86,7 +89,10 @@ data class CloudMediaDto(
     val dentalArch: String?,     // "Upper" or "Lower"
 
     @SerializedName("SequenceNumber")
-    val sequenceNumber: Int?     // Sequence number
+    val sequenceNumber: Int?,    // Sequence number
+
+    @SerializedName("MediaId")
+    val mediaId: String? = null  // Canonical media ID (if available from cloud)
 )
 
 /**
