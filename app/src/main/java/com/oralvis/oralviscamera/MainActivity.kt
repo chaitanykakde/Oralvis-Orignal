@@ -8,6 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
+import java.io.ByteArrayOutputStream
 import android.hardware.usb.UsbDevice
 import android.net.Uri
 import android.os.Build
@@ -57,6 +58,7 @@ import android.view.ViewGroup
 import com.oralvis.oralviscamera.databinding.ActivityMainBinding
 import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.database.MediaRecord
+import com.oralvis.oralviscamera.database.MediaRepository
 import com.oralvis.oralviscamera.database.Session
 import com.oralvis.oralviscamera.database.Patient
 import com.oralvis.oralviscamera.database.PatientDao
@@ -114,6 +116,7 @@ class MainActivity : AppCompatActivity() {
     // New features
     private lateinit var sessionManager: SessionManager
     private lateinit var mediaDatabase: MediaDatabase
+    private lateinit var mediaRepository: MediaRepository
     private lateinit var patientDao: PatientDao
     private lateinit var themeManager: ThemeManager
     private var currentMode = "Normal"
@@ -229,6 +232,7 @@ class MainActivity : AppCompatActivity() {
         LocalPatientIdManager.initialize(this)
         sessionManager = SessionManager(this)
         mediaDatabase = MediaDatabase.getDatabase(this)
+        mediaRepository = MediaRepository(this)
         patientDao = mediaDatabase.patientDao()
         themeManager = ThemeManager(this)
         // Derive client and patient context:
@@ -2756,14 +2760,15 @@ class MainActivity : AppCompatActivity() {
                                     val finalPath = path ?: imagePath
                                     android.util.Log.d("GuidedCapture", "Guided photo captured - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
                                     Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-                                    logMediaToDatabase(
+
+                                    // Use MediaRepository for consistent capture handling
+                                    captureRealImageToRepository(
                                         filePath = finalPath,
                                         mediaType = "Image",
                                         guidedSessionId = guidedSessionId,
                                         dentalArch = dentalArch,
                                         sequenceNumber = sequenceNumber
                                     )
-                                    addSessionMedia(finalPath, isVideo = false)
                                 }
                             }
                         }
@@ -2853,10 +2858,8 @@ class MainActivity : AppCompatActivity() {
                                 if (!isFinishing && !isDestroyed) {
                                     val finalPath = path ?: imagePath
                                     Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-                                    // Log to database
-                                    logMediaToDatabase(finalPath, "Image")
-                                    // Add to session media list
-                                    addSessionMedia(finalPath, isVideo = false)
+                                    // Use MediaRepository for consistent capture handling
+                                    captureRealImageToRepository(finalPath, "Image")
                                     android.util.Log.d("PhotoManager", "Photo capture completed: $finalPath")
                                 }
                             }
@@ -3080,10 +3083,8 @@ class MainActivity : AppCompatActivity() {
                                         stopRecordingTimer()
                                         val finalPath = path ?: videoFile
                                         Toast.makeText(this@MainActivity, "Video saved", Toast.LENGTH_SHORT).show()
-                                        // Log to database
-                                        logMediaToDatabase(finalPath, "Video")
-                                        // Add to session media list
-                                        addSessionMedia(finalPath, isVideo = true)
+                                        // Use MediaRepository for consistent capture handling
+                                        captureRealImageToRepository(finalPath, "Video")
                                         android.util.Log.d("RecordingManager", "Recording completed: $finalPath")
                                     }
                                 }
@@ -3325,71 +3326,163 @@ class MainActivity : AppCompatActivity() {
     // ========================================
     
     private fun captureBlankImage() {
-        try {
-            android.util.Log.d("BlankCapture", "Capturing blank image (no camera connected)...")
-            
-            // Create image file path
-            val imagePath = createImageFile()
-            android.util.Log.d("BlankCapture", "Image path created: $imagePath")
-            
-            // Verify directory exists
-            val imageFile = java.io.File(imagePath)
-            val parentDir = imageFile.parentFile
-            android.util.Log.d("BlankCapture", "Parent directory exists: ${parentDir?.exists()}")
-            android.util.Log.d("BlankCapture", "Parent directory path: ${parentDir?.absolutePath}")
-            
-            // Create a blank bitmap
-            val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            
-            // Fill with black background
-            canvas.drawColor(Color.BLACK)
-            
-            // Add text overlay
-            val paint = Paint().apply {
-                color = Color.WHITE
-                textSize = 60f
-                isAntiAlias = true
-                textAlign = Paint.Align.CENTER
+        lifecycleScope.launch {
+            try {
+                android.util.Log.d("BlankCapture", "Capturing blank image (no camera connected)...")
+
+                // Get current patient and session context
+                val patientId = GlobalPatientManager.getCurrentPatientId()
+                if (patientId == null) {
+                    android.util.Log.w("BlankCapture", "No patient selected, cannot capture")
+                    Toast.makeText(this@MainActivity, "Please select a patient first", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val sessionId = sessionManager.getCurrentSessionId()
+                android.util.Log.d("BlankCapture", "Patient ID: $patientId, Session ID: $sessionId")
+
+                // Create a blank bitmap
+                val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+
+                // Fill with black background
+                canvas.drawColor(Color.BLACK)
+
+                // Add text overlay
+                val paint = Paint().apply {
+                    color = Color.WHITE
+                    textSize = 60f
+                    isAntiAlias = true
+                    textAlign = Paint.Align.CENTER
+                }
+
+                val text = "Blank Image\n${currentMode} Mode\nNo Camera Connected"
+                val textBounds = Rect()
+                paint.getTextBounds(text, 0, text.length, textBounds)
+
+                val x = bitmap.width / 2f
+                val y = bitmap.height / 2f + textBounds.height() / 2f
+
+                canvas.drawText(text, x, y, paint)
+
+                // Convert bitmap to byte array
+                val outputStream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+                val imageData = outputStream.toByteArray()
+                outputStream.close()
+
+                // Generate filename
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                val fileName = "OralVis_Image_${currentMode}_$timestamp.jpg"
+
+                // Use MediaRepository to create media record atomically
+                val mediaRecord = mediaRepository.createMediaRecord(
+                    patientId = patientId,
+                    sessionId = sessionId,
+                    mediaType = "Image",
+                    mode = currentMode,
+                    fileName = fileName,
+                    fileContent = imageData
+                )
+
+                if (mediaRecord != null) {
+                    android.util.Log.d("BlankCapture", "Media record created: ${mediaRecord.mediaId}")
+
+                    // Update UI - add to session media list for immediate feedback
+                    runOnUiThread {
+                        addSessionMedia(mediaRecord.filePath!!, isVideo = false)
+                        Toast.makeText(this@MainActivity, "Image captured", Toast.LENGTH_SHORT).show()
+                    }
+
+                    android.util.Log.d("BlankCapture", "Blank image captured successfully: ${mediaRecord.mediaId}")
+                } else {
+                    android.util.Log.e("BlankCapture", "Failed to create media record")
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Failed to capture blank image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                android.util.Log.e("BlankCapture", "Failed to capture blank image: ${e.message}", e)
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
-            
-            val text = "Blank Image\n${currentMode} Mode\nNo Camera Connected"
-            val textBounds = Rect()
-            paint.getTextBounds(text, 0, text.length, textBounds)
-            
-            val x = bitmap.width / 2f
-            val y = bitmap.height / 2f + textBounds.height() / 2f
-            
-            canvas.drawText(text, x, y, paint)
-            
-            // Save the bitmap
-            android.util.Log.d("BlankCapture", "Saving bitmap to file: $imagePath")
-            val outputStream = FileOutputStream(imageFile)
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-            outputStream.flush()
-            outputStream.close()
-            
-            // Verify file was created
-            val fileExists = imageFile.exists()
-            val fileSize = if (fileExists) imageFile.length() else 0
-            android.util.Log.d("BlankCapture", "File exists after save: $fileExists, size: $fileSize bytes")
-            
-            // Small delay to ensure file is fully written
-            Handler(Looper.getMainLooper()).postDelayed({
-                // Log to database
-                android.util.Log.d("BlankCapture", "Logging blank image to database: $imagePath")
-                logMediaToDatabase(imagePath, "Image")
-                // Add to session media list
-                addSessionMedia(imagePath, isVideo = false)
-                
-                // Show success message
-                Toast.makeText(this, "Image captured", Toast.LENGTH_SHORT).show()
-                android.util.Log.d("BlankCapture", "Blank image captured successfully: $imagePath")
-            }, 100)
-            
-        } catch (e: Exception) {
-            android.util.Log.e("BlankCapture", "Failed to capture blank image: ${e.message}", e)
-            Toast.makeText(this, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun captureRealImageToRepository(
+        filePath: String,
+        mediaType: String,
+        guidedSessionId: String? = null,
+        dentalArch: String? = null,
+        sequenceNumber: Int? = null
+    ) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                android.util.Log.d("RealCapture", "Processing real camera capture: $filePath")
+
+                // Get current patient and session context
+                val patientId = GlobalPatientManager.getCurrentPatientId()
+                if (patientId == null) {
+                    android.util.Log.w("RealCapture", "No patient selected, cannot process capture")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "No patient selected", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val sessionId = sessionManager.getCurrentSessionId()
+                android.util.Log.d("RealCapture", "Patient ID: $patientId, Session ID: $sessionId")
+
+                // Read file from disk
+                val file = java.io.File(filePath)
+                if (!file.exists()) {
+                    android.util.Log.e("RealCapture", "Captured file does not exist: $filePath")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Capture file not found", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val fileData = file.readBytes()
+                val fileName = file.name
+
+                // Use MediaRepository to create media record atomically
+                val mediaRecord = mediaRepository.createMediaRecord(
+                    patientId = patientId,
+                    sessionId = sessionId,
+                    mediaType = mediaType,
+                    mode = currentMode,
+                    fileName = fileName,
+                    dentalArch = dentalArch,
+                    sequenceNumber = sequenceNumber,
+                    guidedSessionId = guidedSessionId,
+                    fileContent = fileData
+                )
+
+                if (mediaRecord != null) {
+                    android.util.Log.d("RealCapture", "Media record created: ${mediaRecord.mediaId}")
+
+                    // Update UI - add to session media list for immediate feedback
+                    withContext(Dispatchers.Main) {
+                        addSessionMedia(mediaRecord.filePath!!, isVideo = false)
+                    }
+
+                    android.util.Log.d("RealCapture", "Real camera capture processed successfully: ${mediaRecord.mediaId}")
+                } else {
+                    android.util.Log.e("RealCapture", "Failed to create media record")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@MainActivity, "Failed to process capture", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                android.util.Log.e("RealCapture", "Failed to process real camera capture: ${e.message}", e)
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Failed to process capture: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -3398,48 +3491,87 @@ class MainActivity : AppCompatActivity() {
         dentalArch: String,
         sequenceNumber: Int
     ) {
-        try {
-            android.util.Log.d("BlankCapture", "Capturing guided blank image (no camera connected)...")
-            android.util.Log.d("BlankCapture", "Guided metadata - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
-            val imagePath = createImageFile()
-            val imageFile = java.io.File(imagePath)
+        lifecycleScope.launch {
+            try {
+                android.util.Log.d("BlankCapture", "Capturing guided blank image (no camera connected)...")
+                android.util.Log.d("BlankCapture", "Guided metadata - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
 
-            val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            canvas.drawColor(Color.BLACK)
+                // Get current patient and session context
+                val patientId = GlobalPatientManager.getCurrentPatientId()
+                if (patientId == null) {
+                    android.util.Log.w("BlankCapture", "No patient selected, cannot capture")
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Please select a patient first", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
 
-            val paint = Paint().apply {
-                color = Color.WHITE
-                textSize = 60f
-                isAntiAlias = true
-                textAlign = Paint.Align.CENTER
-            }
-            val text = "Blank Guided Image\n${currentMode} Mode\nNo Camera Connected"
-            val textBounds = Rect()
-            paint.getTextBounds(text, 0, text.length, textBounds)
-            val x = bitmap.width / 2f
-            val y = bitmap.height / 2f + textBounds.height() / 2f
-            canvas.drawText(text, x, y, paint)
+                val sessionId = sessionManager.getCurrentSessionId()
+                android.util.Log.d("BlankCapture", "Patient ID: $patientId, Session ID: $sessionId")
 
-            val outputStream = FileOutputStream(imageFile)
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-            outputStream.flush()
-            outputStream.close()
+                val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                canvas.drawColor(Color.BLACK)
 
-            Handler(Looper.getMainLooper()).postDelayed({
-                logMediaToDatabase(
-                    filePath = imagePath,
+                val paint = Paint().apply {
+                    color = Color.WHITE
+                    textSize = 60f
+                    isAntiAlias = true
+                    textAlign = Paint.Align.CENTER
+                }
+                val text = "Blank Guided Image\n${currentMode} Mode\nNo Camera Connected"
+                val textBounds = Rect()
+                paint.getTextBounds(text, 0, text.length, textBounds)
+                val x = bitmap.width / 2f
+                val y = bitmap.height / 2f + textBounds.height() / 2f
+                canvas.drawText(text, x, y, paint)
+
+                // Convert bitmap to byte array
+                val outputStream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
+                val imageData = outputStream.toByteArray()
+                outputStream.close()
+
+                // Generate filename
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                val fileName = "OralVis_Image_${currentMode}_$timestamp.jpg"
+
+                // Use MediaRepository to create media record atomically
+                val mediaRecord = mediaRepository.createMediaRecord(
+                    patientId = patientId,
+                    sessionId = sessionId,
                     mediaType = "Image",
-                    guidedSessionId = guidedSessionId,
+                    mode = currentMode,
+                    fileName = fileName,
                     dentalArch = dentalArch,
-                    sequenceNumber = sequenceNumber
+                    sequenceNumber = sequenceNumber,
+                    guidedSessionId = guidedSessionId,
+                    fileContent = imageData
                 )
-                addSessionMedia(imagePath, isVideo = false)
-                Toast.makeText(this, "Guided blank image captured", Toast.LENGTH_SHORT).show()
-            }, 100)
-        } catch (e: Exception) {
-            android.util.Log.e("BlankCapture", "Failed to capture guided blank image: ${e.message}", e)
-            Toast.makeText(this, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
+
+                if (mediaRecord != null) {
+                    android.util.Log.d("BlankCapture", "Guided media record created: ${mediaRecord.mediaId}")
+
+                    // Update UI - add to session media list for immediate feedback
+                    runOnUiThread {
+                        addSessionMedia(mediaRecord.filePath!!, isVideo = false)
+                        Toast.makeText(this@MainActivity, "Guided blank image captured", Toast.LENGTH_SHORT).show()
+                    }
+
+                    android.util.Log.d("BlankCapture", "Guided blank image captured successfully: ${mediaRecord.mediaId}")
+                } else {
+                    android.util.Log.e("BlankCapture", "Failed to create guided media record")
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "Failed to capture guided blank image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                android.util.Log.e("BlankCapture", "Failed to capture guided blank image: ${e.message}", e)
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
     
