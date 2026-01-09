@@ -80,8 +80,8 @@ class FindPatientsActivity : AppCompatActivity() {
     private fun setupRecyclers() {
         // Patient list adapter
         patientAdapter = PatientListAdapter { patient ->
-            // View patient data without changing global selection
-            selectPatient(patient, updateGlobal = false)
+            // Select patient globally when clicked in Find Patient
+            selectPatient(patient, updateGlobal = true)
         }
         binding.patientsRecyclerView.layoutManager = LinearLayoutManager(this)
         binding.patientsRecyclerView.adapter = patientAdapter
@@ -215,7 +215,7 @@ class FindPatientsActivity : AppCompatActivity() {
                             // This is a temporary conversion - ideally the adapter should be updated too
                             val compatibleMediaList = mediaList.map { mediaV2 ->
                                 com.oralvis.oralviscamera.database.MediaRecord(
-                                    id = mediaV2.mediaId.toLong(), // Temporary mapping
+                                    id = mediaV2.mediaId.hashCode().toLong(), // Convert UUID string to stable Long hash
                                     sessionId = mediaV2.sessionId,
                                     fileName = mediaV2.fileName,
                                     mode = mediaV2.mode,
