@@ -90,35 +90,30 @@ class SequenceCardAdapter(
     override fun getItemCount(): Int = sequenceCards.size
 
     private fun loadImage(imageView: ImageView, filePath: String) {
-        // Set placeholder immediately to prevent UI blocking
-        imageView.setImageResource(R.drawable.ic_media_placeholder)
+        // Load image synchronously like SessionMediaGridAdapter does
+        try {
+            val file = File(filePath)
+            android.util.Log.d("SequenceCardAdapter", "Loading image: $filePath, exists: ${file.exists()}, length: ${file.length()}")
 
-        // Load image asynchronously
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
-            try {
-                val file = File(filePath)
-                android.util.Log.d("SequenceCardAdapter", "Loading image: $filePath, exists: ${file.exists()}")
+            if (file.exists() && file.length() > 0) {
+                // Decode bitmap on main thread (like SessionMediaGridAdapter)
+                val bitmap = BitmapFactory.decodeFile(filePath)
+                android.util.Log.d("SequenceCardAdapter", "Bitmap decoded: ${bitmap?.let { "${it.width}x${it.height}" } ?: "null"}")
 
-                if (file.exists() && file.length() > 0) {
-                    // Decode bitmap on background thread
-                    val bitmap = BitmapFactory.decodeFile(filePath)
-                    android.util.Log.d("SequenceCardAdapter", "Bitmap decoded: ${bitmap?.let { "${it.width}x${it.height}" } ?: "null"}")
-
-                    if (bitmap != null) {
-                        // Switch to main thread to update UI
-                        withContext(Dispatchers.Main) {
-                            imageView.setImageBitmap(bitmap)
-                            android.util.Log.d("SequenceCardAdapter", "Image set successfully")
-                        }
-                    } else {
-                        android.util.Log.w("SequenceCardAdapter", "Bitmap decode failed")
-                    }
+                if (bitmap != null) {
+                    imageView.setImageBitmap(bitmap)
+                    android.util.Log.d("SequenceCardAdapter", "Image set successfully")
                 } else {
-                    android.util.Log.w("SequenceCardAdapter", "File does not exist or is empty: $filePath")
+                    android.util.Log.w("SequenceCardAdapter", "Bitmap decode failed, setting placeholder")
+                    imageView.setImageResource(R.drawable.ic_media_placeholder)
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("SequenceCardAdapter", "Exception loading image: ${e.message}")
+            } else {
+                android.util.Log.w("SequenceCardAdapter", "File does not exist or is empty: $filePath, setting placeholder")
+                imageView.setImageResource(R.drawable.ic_media_placeholder)
             }
+        } catch (e: Exception) {
+            android.util.Log.e("SequenceCardAdapter", "Exception loading image: ${e.message}, setting placeholder")
+            imageView.setImageResource(R.drawable.ic_media_placeholder)
         }
     }
 }
