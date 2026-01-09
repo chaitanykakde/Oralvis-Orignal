@@ -38,6 +38,24 @@ object CloudMediaSyncManager {
     }
 
     /**
+     * Extract UUID from cloud filename (format: uuid.ext)
+     * Cloud filenames are typically UUID.ext where UUID is the media identifier.
+     */
+    private fun extractUuidFromFileName(fileName: String): String {
+        // Remove file extension and use as UUID
+        val uuidPart = fileName.substringBeforeLast(".")
+        return try {
+            // Validate it's a proper UUID format
+            UUID.fromString(uuidPart)
+            uuidPart
+        } catch (e: IllegalArgumentException) {
+            // If not a valid UUID, generate one but log warning
+            Log.w(TAG, "Filename $fileName does not contain valid UUID, generating new one")
+            UUID.randomUUID().toString()
+        }
+    }
+
+    /**
      * Separate Retrofit instance for Cloud → Local sync APIs.
      * Uses dedicated HTTP API Gateway for read operations.
      */
@@ -240,8 +258,15 @@ object CloudMediaSyncManager {
                 Date()
             }
 
-            // Use canonical mediaId from cloud, or generate one if not provided (legacy compatibility)
-            val mediaId = cloudMedia.mediaId ?: UUID.randomUUID().toString()
+            // Use canonical mediaId from cloud, or extract from filename (deterministic)
+            val mediaId = cloudMedia.mediaId ?: extractUuidFromFileName(cloudMedia.fileName)
+
+            // Map cloud cameraMode to local mode values
+            // Cloud uses "RGB" but local app uses "Normal"
+            val localMode = when (cloudMedia.cameraMode) {
+                "RGB" -> "Normal"
+                else -> cloudMedia.cameraMode
+            }
 
             // Use MediaRepository to create cloud media record atomically
             val mediaRecord = mediaRepository.createCloudMediaRecord(
@@ -251,7 +276,7 @@ object CloudMediaSyncManager {
                 s3Url = cloudMedia.s3Url,
                 fileContent = localFile.readBytes(), // Read downloaded file content
                 mediaType = cloudMedia.mediaType,
-                mode = cloudMedia.cameraMode,
+                mode = localMode,
                 captureTime = captureTime,
                 dentalArch = cloudMedia.dentalArch,
                 sequenceNumber = cloudMedia.sequenceNumber

@@ -84,9 +84,46 @@ data class MediaRecordV2(
         if (s3Url != null && cloudFileName == null) return false
         if (uploadedAt != null && (cloudFileName == null || s3Url == null)) return false
 
-        // Guided capture consistency
+        // Split validation by state - cloud media has different constraints than local media
+        return when (state) {
+            MediaState.DOWNLOADED -> validateCloudMediaRecord()
+            else -> validateLocalMediaRecord()
+        }
+    }
+
+    /**
+     * Validation for cloud-downloaded media (DOWNLOADED state).
+     * Cloud media can have dentalArch/sequenceNumber without guidedSessionId.
+     */
+    private fun validateCloudMediaRecord(): Boolean {
+        // Basic field validation
+        if (patientId <= 0) return false
+
+        // Cloud metadata is required for downloaded media
+        if (cloudFileName.isNullOrBlank()) return false
+        if (s3Url.isNullOrBlank()) return false
+        if (uploadedAt == null) return false
+
+        // Dental arch and sequence validation (relaxed for cloud media)
         if (dentalArch != null && dentalArch !in listOf("LOWER", "UPPER")) return false
         if (sequenceNumber != null && sequenceNumber < 1) return false
+
+        // Cloud media allows dentalArch + sequenceNumber WITHOUT requiring guidedSessionId
+        // This is different from local capture which requires guidedSessionId
+
+        return true
+    }
+
+    /**
+     * Validation for local-captured media (all states except DOWNLOADED).
+     * Local media follows stricter guided capture constraints.
+     */
+    private fun validateLocalMediaRecord(): Boolean {
+        // Dental arch and sequence validation
+        if (dentalArch != null && dentalArch !in listOf("LOWER", "UPPER")) return false
+        if (sequenceNumber != null && sequenceNumber < 1) return false
+
+        // Local media requires guidedSessionId when dentalArch or sequenceNumber is present
         if ((dentalArch != null || sequenceNumber != null) && guidedSessionId == null) return false
 
         return true
