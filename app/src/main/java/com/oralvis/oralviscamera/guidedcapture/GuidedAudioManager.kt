@@ -36,9 +36,9 @@ class GuidedAudioManager(context: Context) {
         android.util.Log.d("GuidedAudio", "Initializing GuidedAudioManager")
 
         val attrs = AudioAttributes.Builder()
-            // Use a standard media/sonification usage so prompts route through
-            // the normal media stream and respect the device media volume.
-            .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+            // Use media usage so prompts play through the main media stream
+            // and respect the device media volume setting.
+            .setUsage(AudioAttributes.USAGE_MEDIA)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
@@ -52,7 +52,7 @@ class GuidedAudioManager(context: Context) {
         // as loaded (which would block all playback).
         soundPool.setOnLoadCompleteListener { _, sampleId, status ->
             if (status != 0) {
-                android.util.Log.e("GuidedAudio", "Failed to load soundId=$sampleId, status=$status")
+                android.util.Log.e("GuidedAudio", "Failed to load soundId=$sampleId, status=$status - AUDIO WILL NOT WORK")
                 return@setOnLoadCompleteListener
             }
 
@@ -66,8 +66,11 @@ class GuidedAudioManager(context: Context) {
             // play any deferred state prompt.
             if (!allLoaded && expectedSoundCount > 0 && loadedSoundIds.size == expectedSoundCount) {
                 allLoaded = true
-                android.util.Log.d("GuidedAudio", "All guided audio prompts loaded")
-                pendingStateToPlay?.let { safePlay(it) }
+                android.util.Log.d("GuidedAudio", "All guided audio prompts loaded - READY TO PLAY")
+                pendingStateToPlay?.let {
+                    android.util.Log.d("GuidedAudio", "Playing deferred state: $it")
+                    safePlay(it)
+                }
                 pendingStateToPlay = null
             }
         }
@@ -120,13 +123,22 @@ class GuidedAudioManager(context: Context) {
     }
 
     private fun safePlay(state: ScanningState) {
-        val soundId = soundMap[state] ?: return
+        val soundId = soundMap[state] ?: run {
+            android.util.Log.w("GuidedAudio", "No soundId mapped for state=$state")
+            return
+        }
         if (!loadedSoundIds.contains(soundId)) {
             android.util.Log.w("GuidedAudio", "Requested play for state=$state but soundId=$soundId not fully loaded yet")
             return
         }
+
         android.util.Log.d("GuidedAudio", "Playing audio for state=$state, soundId=$soundId")
-        soundPool.play(soundId, 1f, 1f, 1, 0, 1f)
+        val playResult = soundPool.play(soundId, 1f, 1f, 1, 0, 1f)
+        if (playResult == 0) {
+            android.util.Log.e("GuidedAudio", "Failed to play sound for state=$state, soundId=$soundId")
+        } else {
+            android.util.Log.d("GuidedAudio", "Successfully started playing sound, streamId=$playResult")
+        }
     }
 
     fun release() {
