@@ -17,6 +17,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.tabs.TabLayout
 import com.oralvis.oralviscamera.database.MediaDatabase
+import com.oralvis.oralviscamera.database.MediaState
 import com.oralvis.oralviscamera.databinding.ActivityGalleryNewBinding
 import com.oralvis.oralviscamera.gallery.SequenceCard
 import com.oralvis.oralviscamera.gallery.SequenceCardAdapter
@@ -508,10 +509,11 @@ class GalleryActivity : AppCompatActivity() {
         
         // Group by guidedSessionId, dentalArch, and sequenceNumber
         val sequenceMap = mutableMapOf<String, MutableMap<Int, SequenceCard>>()
-        
-        // First, handle guided media (with dentalArch and sequenceNumber)
-        val guidedMedia = filteredMedia.filter { it.dentalArch != null && it.sequenceNumber != null }
-        val unguidedMedia = filteredMedia.filter { it.dentalArch == null }
+
+        // First, handle guided media (local captured with dentalArch, sequenceNumber, and guidedSessionId)
+        // Cloud media (DOWNLOADED state) is treated as unguided even if it has sequenceNumber
+        val guidedMedia = filteredMedia.filter { it.dentalArch != null && it.sequenceNumber != null && it.guidedSessionId != null && it.state != MediaState.DOWNLOADED }
+        val unguidedMedia = filteredMedia.filter { it.dentalArch == null || it.state == MediaState.DOWNLOADED }
 
         // Process guided media (normal guided capture)
         guidedMedia.forEach { media ->
@@ -539,7 +541,7 @@ class GalleryActivity : AppCompatActivity() {
 
             val card = sequenceMapForSession[sequenceNum]!!
             when (media.mode) {
-                "RGB" -> {
+                "Normal" -> {
                     sequenceMapForSession[sequenceNum] = card.copy(rgbImage = media)
                 }
                 "Fluorescence" -> {
@@ -550,9 +552,9 @@ class GalleryActivity : AppCompatActivity() {
 
         // Process unguided media (create individual sequence cards)
         unguidedMedia.forEach { media ->
-            val arch = "LOWER"  // Assign to LOWER tab
+            val arch = media.dentalArch ?: "LOWER"  // Use actual arch if available, default to LOWER
             val sessionId = "unguided_${media.mediaId}"  // Unique session ID for each unguided media
-            val sequenceNum = 1  // All unguided get sequence 1
+            val sequenceNum = media.sequenceNumber ?: 1  // Use sequence number if available, otherwise 1
 
             android.util.Log.d("GalleryActivity", "Processing unguided media: mediaId=${media.mediaId}, mode=${media.mode}, fileName=${media.fileName}")
 
@@ -562,7 +564,7 @@ class GalleryActivity : AppCompatActivity() {
             val sequenceMapForSession = sequenceMap[key]!!
 
             // Create a sequence card for this single unguided media
-            val rgbImage = if (media.mode == "RGB") media else null
+            val rgbImage = if (media.mode == "Normal") media else null
             val fluorescenceImage = if (media.mode == "Fluorescence") media else null
 
             android.util.Log.d("GalleryActivity", "Unguided media assignment: rgbImage=${rgbImage?.fileName}, fluorescenceImage=${fluorescenceImage?.fileName}")
