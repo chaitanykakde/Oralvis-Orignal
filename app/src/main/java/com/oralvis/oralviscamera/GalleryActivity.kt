@@ -19,6 +19,7 @@ import com.google.android.material.tabs.TabLayout
 import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.database.MediaState
 import com.oralvis.oralviscamera.databinding.ActivityGalleryNewBinding
+import com.oralvis.oralviscamera.session.SessionManager
 import com.oralvis.oralviscamera.gallery.SequenceCard
 import com.oralvis.oralviscamera.gallery.SequenceCardAdapter
 import com.oralvis.oralviscamera.SessionMediaGridAdapter
@@ -57,8 +58,7 @@ class GalleryActivity : AppCompatActivity() {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-        
-        val database = MediaDatabase.getDatabase(this)
+
         mediaRepository = com.oralvis.oralviscamera.database.MediaRepository(this)
         themeManager = ThemeManager(this)
         
@@ -146,7 +146,12 @@ class GalleryActivity : AppCompatActivity() {
                 binding.mediaEmptyState.visibility = View.VISIBLE
             }
         } else {
-            android.util.Log.d("TAB_DEBUG", "No media available to re-group for tab $currentArchTab")
+            android.util.Log.d("TAB_DEBUG", "No media available to re-group for tab $currentArchTab - showing empty state")
+            sequenceAdapter.updateSequenceCards(emptyList())
+            binding.mediaRecyclerView.visibility = View.GONE
+            binding.mediaEmptyState.visibility = View.VISIBLE
+            // Update empty state text to be session-specific
+            binding.mediaEmptyState.findViewById<TextView>(android.R.id.text1)?.text = "No media captured in this session yet"
         }
     }
     
@@ -271,7 +276,7 @@ class GalleryActivity : AppCompatActivity() {
         currentPatientObserver = androidx.lifecycle.Observer<com.oralvis.oralviscamera.database.Patient?> { patient ->
             if (patient != null) {
                 updatePatientInfo(patient)
-                observeMediaForCurrentPatient()
+                observeMediaForCurrentSession()
             } else {
                 showNoPatientState()
             }
@@ -332,8 +337,8 @@ class GalleryActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                android.util.Log.d("GalleryActivity", "Starting media observation for patient: ${patient.displayName} (id=$patientId)")
-                observeMediaForPatient(patientId)
+                android.util.Log.d("GalleryActivity", "Starting session media observation for patient: ${patient.displayName} (id=$patientId)")
+                observeMediaForCurrentSession()
             } catch (e: Exception) {
                 android.util.Log.e("GalleryActivity", "Error validating patient: ${e.message}")
                 redirectToPatientSelection()
@@ -341,55 +346,32 @@ class GalleryActivity : AppCompatActivity() {
         }
     }
 
-    private fun observeMediaForPatient(patientId: Long) {
-        android.util.Log.d("GALLERY_DEBUG", "observeMediaForPatient called with patientId: $patientId")
+    private fun observeMediaForCurrentSession() {
+        val patientId = GlobalPatientManager.getCurrentPatientId()
+        val sessionId = SessionManager(this).getCurrentSessionId()
+
+        android.util.Log.d("GALLERY_DEBUG", "observeMediaForCurrentSession called with patientId: $patientId, sessionId: $sessionId")
+
+        if (patientId == null || sessionId == null) {
+            android.util.Log.d("GalleryActivity", "No active patient or session, showing empty gallery")
+            showSessionEmptyState()
+            return
+        }
 
         // Use repeatOnLifecycle to properly observe the Flow
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    android.util.Log.d("GalleryActivity", "Collecting media flow for patientId: $patientId")
-                    android.util.Log.d("MEDIA_DEBUG", "Fetching visible media for patientId=$patientId using MediaRepository")
-                    mediaRepository.getVisibleMediaForPatient(patientId).collect { mediaList ->
-                        android.util.Log.d("GALLERY_DEBUG", "Flow collected - mediaList.size = ${mediaList.size}")
-                        android.util.Log.d("GalleryActivity", "Received media list update: ${mediaList.size} items")
-                        android.util.Log.d("SESSION_MEDIA", "Gallery received ${mediaList.size} media records for patientId=$patientId")
-
-                        // VALIDATION LOGGING: Break down media sources and states
-                        val sessionMedia = mediaList.filter { it.sessionId != null }
-                        val directMedia = mediaList.filter { it.sessionId == null }
-                        val syncedMedia = mediaList.filter { it.state == com.oralvis.oralviscamera.database.MediaState.SYNCED }
-                        val downloadedMedia = mediaList.filter { it.state == com.oralvis.oralviscamera.database.MediaState.DOWNLOADED }
-                        val missingMedia = mediaList.filter { it.state == com.oralvis.oralviscamera.database.MediaState.FILE_MISSING }
-
-                        android.util.Log.d("VALIDATION", "Session media: ${sessionMedia.size}, Direct media: ${directMedia.size}, Total: ${mediaList.size}")
-                        android.util.Log.d("VALIDATION", "Synced: ${syncedMedia.size}, Downloaded: ${downloadedMedia.size}, Missing: ${missingMedia.size}")
+                    android.util.Log.d("GalleryActivity", "Collecting session media flow for patientId: $patientId, sessionId: $sessionId")
+                    android.util.Log.d("SESSION_DEBUG", "Fetching session media for patientId=$patientId, sessionId=$sessionId")
+                    mediaRepository.getMediaForCurrentSession(patientId, sessionId).collect { mediaList ->
+                        android.util.Log.d("GALLERY_DEBUG", "Session flow collected - mediaList.size = ${mediaList.size}")
+                        android.util.Log.d("GalleryActivity", "Received session media list update: ${mediaList.size} items")
+                        android.util.Log.d("SESSION_MEDIA", "Gallery received ${mediaList.size} media records for sessionId=$sessionId")
 
                         // Detailed logging of each media item
                         mediaList.forEachIndexed { index, media ->
-                            android.util.Log.d("GALLERY_DEBUG", "Media[$index]: mediaId=${media.mediaId}, sessionId=${media.sessionId}, patientId=${media.patientId}, state=${media.state}, fileName=${media.fileName}")
-                        }
-
-                        // 1️⃣ Log RAW DB RESULTS
-                        android.util.Log.d("MEDIA_DEBUG", "DB returned media count = ${mediaList.size}")
-
-                        // Check for duplicates by canonical ID
-                        val mediaIds = mediaList.map { it.mediaId }
-                        val uniqueMediaIds = mediaIds.distinct()
-                        android.util.Log.d("MEDIA_DEBUG", "Unique mediaIds: ${uniqueMediaIds.size} out of ${mediaIds.size} total")
-
-                        val cloudNames = mediaList.mapNotNull { it.cloudFileName }
-                        val uniqueCloudNames = cloudNames.distinct()
-                        android.util.Log.d("MEDIA_DEBUG", "Unique cloudFileNames: ${uniqueCloudNames.size} out of ${cloudNames.size} total")
-
-                        mediaList.forEachIndexed { index, media ->
-                            android.util.Log.d(
-                                "MEDIA_DEBUG",
-                                "DB[$index] mediaId=${media.mediaId}, patientId=${media.patientId}, " +
-                                "state=${media.state}, arch=${media.dentalArch}, cloudName=${media.cloudFileName}, " +
-                                "fileName=${media.fileName}, sessionId=${media.sessionId}, " +
-                                "filePath=${media.filePath}"
-                            )
+                            android.util.Log.d("GALLERY_DEBUG", "SessionMedia[$index]: mediaId=${media.mediaId}, sessionId=${media.sessionId}, patientId=${media.patientId}, state=${media.state}, fileName=${media.fileName}")
                         }
 
                         allMedia = mediaList
@@ -398,12 +380,21 @@ class GalleryActivity : AppCompatActivity() {
                         updateTabContent()
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("GalleryActivity", "Error observing media: ${e.message}")
+                    android.util.Log.e("GalleryActivity", "Error observing session media: ${e.message}")
                     binding.mediaRecyclerView.visibility = View.GONE
                     binding.mediaEmptyState.visibility = View.VISIBLE
                 }
             }
         }
+    }
+
+    private fun showSessionEmptyState() {
+        android.util.Log.d("GalleryActivity", "Showing session empty state")
+        allMedia = emptyList()
+        binding.mediaRecyclerView.visibility = View.GONE
+        binding.mediaEmptyState.visibility = View.VISIBLE
+        // Update empty state text to be session-specific
+        binding.mediaEmptyState.findViewById<TextView>(android.R.id.text1)?.text = "No media captured in this session yet"
     }
 
     private fun redirectToPatientSelection() {
@@ -503,7 +494,7 @@ class GalleryActivity : AppCompatActivity() {
         }
 
         if (filteredMedia.isEmpty()) {
-            android.util.Log.d("GalleryActivity", "No media found for current arch tab, returning empty list")
+            android.util.Log.d("GalleryActivity", "No media found for current arch tab")
             return emptyList()
         }
         

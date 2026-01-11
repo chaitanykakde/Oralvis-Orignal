@@ -319,6 +319,13 @@ class MediaRepository(private val context: Context) {
         mediaDaoV2.getVisibleMediaForPatient(patientId)
 
     /**
+     * Get media captured in current active session (for Gallery display only).
+     * This excludes cloud downloads and provides session-scoped filtering.
+     */
+    fun getMediaForCurrentSession(patientId: Long, sessionId: String) =
+        mediaDaoV2.getMediaForSession(patientId, sessionId)
+
+    /**
      * Get media ready for upload.
      */
     suspend fun getUploadableMedia(patientId: Long): List<MediaRecordV2> = withContext(Dispatchers.IO) {

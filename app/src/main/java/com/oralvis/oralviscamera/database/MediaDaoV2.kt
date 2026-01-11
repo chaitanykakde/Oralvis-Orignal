@@ -77,6 +77,20 @@ interface MediaDaoV2 {
     fun getAllMediaForPatient(patientId: Long): Flow<List<MediaRecordV2>>
 
     /**
+     * Get media captured in current active session for Gallery display.
+     * Only shows locally captured media from current session.
+     * Excludes cloud downloads and file recovery states.
+     */
+    @Query("""
+        SELECT * FROM media_v2
+        WHERE patientId = :patientId
+        AND sessionId = :sessionId
+        AND state IN ('DB_COMMITTED', 'SYNCED')
+        ORDER BY captureTime DESC
+    """)
+    fun getMediaForSession(patientId: Long, sessionId: String): Flow<List<MediaRecordV2>>
+
+    /**
      * Check if media exists by canonical ID (for deduplication).
      */
     @Query("SELECT COUNT(*) > 0 FROM media_v2 WHERE mediaId = :mediaId")
