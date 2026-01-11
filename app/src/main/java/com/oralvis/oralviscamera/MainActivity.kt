@@ -307,9 +307,11 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onGuidedSessionComplete(guidedSessionId: String?) {
-                    // Session completed - save the current session
-                    android.util.Log.d("GuidedCapture", "Guided session completed: $guidedSessionId")
-                    saveCurrentSession()
+                    // Guided capture sequence completed - keep patient selected and session active
+                    android.util.Log.d("GuidedCapture", "Guided session completed: $guidedSessionId - keeping patient selected")
+                    // Don't call saveCurrentSession() as that clears patient and session
+                    // Just show completion message and keep session active for gallery
+                    Toast.makeText(this@MainActivity, "Guided capture completed!", Toast.LENGTH_SHORT).show()
                 }
 
                 override fun onRecaptureLower(guidedSessionId: String) {
