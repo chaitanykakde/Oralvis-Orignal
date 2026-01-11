@@ -541,35 +541,112 @@ class GalleryActivity : AppCompatActivity() {
             }
         }
 
-        // Process unguided media (create individual sequence cards)
-        unguidedMedia.forEach { media ->
-            val arch = media.dentalArch ?: "LOWER"  // Use actual arch if available, default to LOWER
-            val sessionId = "unguided_${media.mediaId}"  // Unique session ID for each unguided media
-            val sequenceNum = media.sequenceNumber ?: 1  // Use sequence number if available, otherwise 1
+        // Process unguided media (group by capture time proximity and pair normal + fluorescence)
+        val timeWindowMillis = 30000L // 30 seconds window for pairing
 
-            android.util.Log.d("GalleryActivity", "Processing unguided media: mediaId=${media.mediaId}, mode=${media.mode}, fileName=${media.fileName}")
+        // Group unguided media by capture time proximity
+        val unguidedGroups = mutableMapOf<String, MutableList<com.oralvis.oralviscamera.database.MediaRecordV2>>()
 
-            val key = "$sessionId|$arch"
+        unguidedMedia.sortedBy { it.captureTime }.forEach { media ->
+            val arch = media.dentalArch ?: "LOWER"
 
-            sequenceMap[key] = mutableMapOf()
-            val sequenceMapForSession = sequenceMap[key]!!
+            // Find existing group within time window, or create new group
+            var groupKey: String? = null
+            for ((key, group) in unguidedGroups) {
+                if (group.isNotEmpty()) {
+                    val timeDiff = Math.abs(media.captureTime.time - group[0].captureTime.time)
+                    if (timeDiff <= timeWindowMillis && key.endsWith("|$arch")) {
+                        groupKey = key
+                        break
+                    }
+                }
+            }
 
-            // Create a sequence card for this single unguided media
-            val rgbImage = if (media.mode == "Normal") media else null
-            val fluorescenceImage = if (media.mode == "Fluorescence") media else null
+            if (groupKey == null) {
+                // Create new group key based on timestamp and arch
+                val timestamp = media.captureTime.time / 1000 // Convert to seconds for grouping
+                groupKey = "unguided_${timestamp}|$arch"
+                unguidedGroups[groupKey] = mutableListOf()
+            }
 
-            android.util.Log.d("GalleryActivity", "Unguided media assignment: rgbImage=${rgbImage?.fileName}, fluorescenceImage=${fluorescenceImage?.fileName}")
+            unguidedGroups[groupKey]!!.add(media)
+        }
 
-            val card = SequenceCard(
-                sequenceNumber = sequenceNum,
-                dentalArch = arch,
-                guidedSessionId = null,
-                rgbImage = rgbImage,
-                fluorescenceImage = fluorescenceImage
-            )
+        // Process each group to create paired sequence cards
+        unguidedGroups.forEach { (groupKey, mediaList) ->
+            val arch = groupKey.substringAfterLast("|")
+            val sequenceNum = 1 // All unguided pairs get sequence number 1
 
-            sequenceMapForSession[sequenceNum] = card
-            android.util.Log.d("GalleryActivity", "Created unguided card: ${card.getTitle()}, rgb=${card.rgbImage?.fileName}, fluo=${card.fluorescenceImage?.fileName}")
+            android.util.Log.d("GalleryActivity", "Processing unguided group: $groupKey with ${mediaList.size} media items")
+
+            // Separate normal and fluorescence images
+            val normalImages = mediaList.filter { it.mode == "Normal" }
+            val fluorescenceImages = mediaList.filter { it.mode == "Fluorescence" }
+
+            // Create paired cards
+            val maxPairs = maxOf(normalImages.size, fluorescenceImages.size)
+
+            for (i in 0 until maxPairs) {
+                val rgbImage = normalImages.getOrNull(i)
+                val fluorescenceImage = fluorescenceImages.getOrNull(i)
+
+                // Only create card if at least one image exists
+                if (rgbImage != null || fluorescenceImage != null) {
+                    val cardKey = "$groupKey|$arch"
+
+                    if (!sequenceMap.containsKey(cardKey)) {
+                        sequenceMap[cardKey] = mutableMapOf()
+                    }
+
+                    val sequenceMapForSession = sequenceMap[cardKey]!!
+                    val cardSequenceNum = sequenceNum + i // Increment sequence for multiple pairs in same group
+
+                    val card = SequenceCard(
+                        sequenceNumber = cardSequenceNum,
+                        dentalArch = arch,
+                        guidedSessionId = null,
+                        rgbImage = rgbImage,
+                        fluorescenceImage = fluorescenceImage
+                    )
+
+                    sequenceMapForSession[cardSequenceNum] = card
+                    android.util.Log.d("GalleryActivity", "Created paired unguided card: ${card.getTitle()}, rgb=${card.rgbImage?.fileName}, fluo=${card.fluorescenceImage?.fileName}")
+                }
+            }
+
+            // Handle unpaired images (create separate cards for leftovers)
+            val unpairedNormals = normalImages.drop(maxPairs)
+            val unpairedFluorescences = fluorescenceImages.drop(maxPairs)
+
+            unpairedNormals.forEachIndexed { index, media ->
+                val cardKey = "${groupKey}_extra_normal_$index|$arch"
+                sequenceMap[cardKey] = mutableMapOf()
+                val sequenceMapForSession = sequenceMap[cardKey]!!
+                val card = SequenceCard(
+                    sequenceNumber = sequenceNum,
+                    dentalArch = arch,
+                    guidedSessionId = null,
+                    rgbImage = media,
+                    fluorescenceImage = null
+                )
+                sequenceMapForSession[sequenceNum] = card
+                android.util.Log.d("GalleryActivity", "Created unpaired normal card: ${card.getTitle()}")
+            }
+
+            unpairedFluorescences.forEachIndexed { index, media ->
+                val cardKey = "${groupKey}_extra_fluo_$index|$arch"
+                sequenceMap[cardKey] = mutableMapOf()
+                val sequenceMapForSession = sequenceMap[cardKey]!!
+                val card = SequenceCard(
+                    sequenceNumber = sequenceNum,
+                    dentalArch = arch,
+                    guidedSessionId = null,
+                    rgbImage = null,
+                    fluorescenceImage = media
+                )
+                sequenceMapForSession[sequenceNum] = card
+                android.util.Log.d("GalleryActivity", "Created unpaired fluorescence card: ${card.getTitle()}")
+            }
         }
         
         // Flatten and sort by sequence number

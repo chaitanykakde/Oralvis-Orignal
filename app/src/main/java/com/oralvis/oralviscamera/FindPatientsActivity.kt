@@ -80,8 +80,8 @@ class FindPatientsActivity : AppCompatActivity() {
     private fun setupRecyclers() {
         // Patient list adapter
         patientAdapter = PatientListAdapter { patient ->
-            // Select patient globally when clicked in Find Patient
-            selectPatient(patient, updateGlobal = true)
+            // Show patient media locally without affecting global selection
+            selectPatient(patient, updateGlobal = false)
         }
         binding.patientsRecyclerView.layoutManager = LinearLayoutManager(this)
         binding.patientsRecyclerView.adapter = patientAdapter

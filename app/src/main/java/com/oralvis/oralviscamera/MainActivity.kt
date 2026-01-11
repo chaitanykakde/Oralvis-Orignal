@@ -309,8 +309,11 @@ class MainActivity : AppCompatActivity() {
                 override fun onGuidedSessionComplete(guidedSessionId: String?) {
                     // Guided capture sequence completed - keep patient selected and session active
                     android.util.Log.d("GuidedCapture", "Guided session completed: $guidedSessionId - keeping patient selected")
-                    // Don't call saveCurrentSession() as that clears patient and session
-                    // Just show completion message and keep session active for gallery
+
+                    // Clear session media from camera preview (but keep in gallery via database)
+                    clearSessionMediaPreview()
+
+                    // Show completion message
                     Toast.makeText(this@MainActivity, "Guided capture completed!", Toast.LENGTH_SHORT).show()
                 }
 
@@ -830,10 +833,10 @@ class MainActivity : AppCompatActivity() {
     
     private fun updateSessionMediaUI() {
         sessionMediaAdapter?.submitList(sessionMediaList.toList())
-        
+
         // Update media count
         binding.sessionMediaCount.text = sessionMediaList.size.toString()
-        
+
         // Show/hide empty state
         if (sessionMediaList.isEmpty()) {
             binding.emptyMediaState.visibility = View.VISIBLE
@@ -842,6 +845,22 @@ class MainActivity : AppCompatActivity() {
             binding.emptyMediaState.visibility = View.GONE
             binding.sessionMediaRecycler.visibility = View.VISIBLE
         }
+    }
+
+    /**
+     * Clear session media from camera preview UI (but keep in gallery database)
+     * Called when guided session completes to reset camera view while preserving gallery data
+     */
+    private fun clearSessionMediaPreview() {
+        android.util.Log.d("SessionMedia", "Clearing session media preview after guided session completion")
+
+        // Clear the session media list (this affects only the camera preview)
+        sessionMediaList.clear()
+
+        // Update UI to show empty state
+        updateSessionMediaUI()
+
+        android.util.Log.d("SessionMedia", "Session media preview cleared - media remains in gallery database")
     }
     
     private fun openMediaPreview(filePath: String, isVideo: Boolean) {
