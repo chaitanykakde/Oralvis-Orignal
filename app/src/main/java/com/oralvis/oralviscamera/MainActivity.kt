@@ -220,6 +220,18 @@ class MainActivity : AppCompatActivity() {
         
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Immediate test - check if settings button exists and add basic click listener
+        android.util.Log.d("SettingsDebug", "Binding initialized - btnSettings exists: ${binding.btnSettings != null}")
+        if (binding.btnSettings != null) {
+            binding.btnSettings.setOnClickListener {
+                android.util.Log.d("SettingsDebug", "BASIC TEST: Settings button clicked!")
+                android.widget.Toast.makeText(this, "Settings button works!", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            android.util.Log.d("SettingsDebug", "Basic click listener set on btnSettings")
+        } else {
+            android.util.Log.e("SettingsDebug", "ERROR: btnSettings is null after binding initialization!")
+        }
         
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
