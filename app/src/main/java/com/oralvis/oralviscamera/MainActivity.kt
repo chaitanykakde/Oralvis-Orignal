@@ -251,10 +251,14 @@ class MainActivity : AppCompatActivity() {
         // Apply saved theme
         applyTheme()
         
+        android.util.Log.d("SettingsDebug", "About to call setupUI() in onCreate")
         setupUI()
+        android.util.Log.d("SettingsDebug", "setupUI() completed in onCreate")
         observeGlobalPatient()
         initializeFromGlobalPatient()
+        android.util.Log.d("SettingsDebug", "About to call checkPermissions() in onCreate")
         checkPermissions()
+        android.util.Log.d("SettingsDebug", "checkPermissions() completed in onCreate")
         
         // Auto-open patient dialog on every app start (mandatory selection)
         // Post to ensure UI is fully initialized
@@ -357,6 +361,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
+        android.util.Log.d("SettingsDebug", "setupUI() method called - BEGIN")
         binding.navCamera.setOnClickListener {
             // Already on camera screen; no action required
         }
@@ -517,7 +522,9 @@ class MainActivity : AppCompatActivity() {
         setupCameraControlSeekBars()
         
         // New UI elements
+        android.util.Log.d("SettingsDebug", "About to call setupNewUI() from setupUI()")
         setupNewUI()
+        android.util.Log.d("SettingsDebug", "setupNewUI() returned to setupUI()")
         
         // Initialize recording timer
         recordingHandler = android.os.Handler(android.os.Looper.getMainLooper())
