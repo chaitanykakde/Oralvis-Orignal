@@ -362,10 +362,14 @@ class MainActivity : AppCompatActivity() {
         }
         
         binding.navGallery.setOnClickListener {
+            android.util.Log.d("NavigationDebug", "navGallery clicked")
+            android.util.Log.d("NavigationDebug", "hasPatientSelected: ${GlobalPatientManager.hasPatientSelected()}")
             if (GlobalPatientManager.hasPatientSelected()) {
+                android.util.Log.d("NavigationDebug", "Opening GalleryActivity")
                 val intent = Intent(this, GalleryActivity::class.java)
                 startActivity(intent)
             } else {
+                android.util.Log.d("NavigationDebug", "Showing patient selection toast")
                 Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
             }
         }
