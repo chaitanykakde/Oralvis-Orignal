@@ -233,28 +233,68 @@ class MainActivity : AppCompatActivity() {
         }
         
         // Initialize new features
-        GlobalPatientManager.initialize(this)
-        LocalPatientIdManager.initialize(this)
-        sessionManager = SessionManager(this)
-        mediaDatabase = MediaDatabase.getDatabase(this)
-        mediaRepository = MediaRepository(this)
-        patientDao = mediaDatabase.patientDao()
-        themeManager = ThemeManager(this)
-        // Derive client and patient context:
-        // - ClientId comes from LoginManager (user-entered Client ID from login)
-        // - GlobalPatientId is resolved from the currently selected Patient when saving/uploading
-        clinicId = LoginManager(this).getClientId()
-        globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
+        try {
+            android.util.Log.d("SettingsDebug", "Initializing GlobalPatientManager...")
+            GlobalPatientManager.initialize(this)
+            android.util.Log.d("SettingsDebug", "GlobalPatientManager initialized")
 
-        if (isGuidedCaptureEnabled) {
-            initializeGuidedCapture()
+            android.util.Log.d("SettingsDebug", "Initializing LocalPatientIdManager...")
+            LocalPatientIdManager.initialize(this)
+            android.util.Log.d("SettingsDebug", "LocalPatientIdManager initialized")
+
+            android.util.Log.d("SettingsDebug", "Creating SessionManager...")
+            sessionManager = SessionManager(this)
+            android.util.Log.d("SettingsDebug", "SessionManager created")
+
+            android.util.Log.d("SettingsDebug", "Getting MediaDatabase...")
+            mediaDatabase = MediaDatabase.getDatabase(this)
+            android.util.Log.d("SettingsDebug", "MediaDatabase obtained")
+
+            android.util.Log.d("SettingsDebug", "Creating MediaRepository...")
+            mediaRepository = MediaRepository(this)
+            android.util.Log.d("SettingsDebug", "MediaRepository created")
+
+            android.util.Log.d("SettingsDebug", "Getting patientDao...")
+            patientDao = mediaDatabase.patientDao()
+            android.util.Log.d("SettingsDebug", "patientDao obtained")
+
+            android.util.Log.d("SettingsDebug", "Creating ThemeManager...")
+            themeManager = ThemeManager(this)
+            android.util.Log.d("SettingsDebug", "ThemeManager created")
+
+            // Derive client and patient context:
+            // - ClientId comes from LoginManager (user-entered Client ID from login)
+            // - GlobalPatientId is resolved from the currently selected Patient when saving/uploading
+            android.util.Log.d("SettingsDebug", "Getting clinicId from LoginManager...")
+            clinicId = LoginManager(this).getClientId()
+            android.util.Log.d("SettingsDebug", "clinicId obtained: $clinicId")
+
+            android.util.Log.d("SettingsDebug", "Getting globalPatientId from intent...")
+            globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
+            android.util.Log.d("SettingsDebug", "globalPatientId obtained: $globalPatientId")
+
+            if (isGuidedCaptureEnabled) {
+                android.util.Log.d("SettingsDebug", "Guided capture is enabled, initializing...")
+                initializeGuidedCapture()
+                android.util.Log.d("SettingsDebug", "Guided capture initialized")
+            }
+
+            // Clear previous patient selection on app start
+            android.util.Log.d("SettingsDebug", "Clearing current patient...")
+            GlobalPatientManager.clearCurrentPatient()
+            android.util.Log.d("SettingsDebug", "Current patient cleared")
+
+            // Apply saved theme
+            android.util.Log.d("SettingsDebug", "Applying theme...")
+            applyTheme()
+            android.util.Log.d("SettingsDebug", "Theme applied")
+
+        } catch (e: Exception) {
+            android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "EXCEPTION during initialization: ${e.message}", e)
+            android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "Stack trace:", e)
+            // Re-throw to crash the app so we can see the error
+            throw e
         }
-
-        // Clear previous patient selection on app start
-        GlobalPatientManager.clearCurrentPatient()
-        
-        // Apply saved theme
-        applyTheme()
         
         android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "=== ABOUT TO CALL setupUI() ===")
         android.util.Log.d("SettingsDebug", "About to call setupUI() in onCreate")
