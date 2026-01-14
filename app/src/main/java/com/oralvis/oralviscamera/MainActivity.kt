@@ -275,8 +275,15 @@ class MainActivity : AppCompatActivity() {
 
             if (isGuidedCaptureEnabled) {
                 android.util.Log.d("SettingsDebug", "Guided capture is enabled, initializing...")
-                initializeGuidedCapture()
-                android.util.Log.d("SettingsDebug", "Guided capture initialized")
+                android.util.Log.d("SettingsDebug", "binding.cameraFrame exists: ${binding.cameraFrame != null}")
+                android.util.Log.d("SettingsDebug", "binding.cameraFrame isAttachedToWindow: ${binding.cameraFrame.isAttachedToWindow}")
+                try {
+                    initializeGuidedCapture()
+                    android.util.Log.d("SettingsDebug", "Guided capture initialized successfully")
+                } catch (e: Exception) {
+                    android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "EXCEPTION in initializeGuidedCapture: ${e.message}", e)
+                    throw e
+                }
             }
 
             // Clear previous patient selection on app start
@@ -331,7 +338,10 @@ class MainActivity : AppCompatActivity() {
     // Removed startNewSession() - sessions are now auto-created by GlobalPatientManager
     
     private fun initializeGuidedCapture() {
+        android.util.Log.d("SettingsDebug", "initializeGuidedCapture() method started")
         val cameraFrame = binding.cameraFrame
+        android.util.Log.d("SettingsDebug", "cameraFrame obtained: $cameraFrame")
+        android.util.Log.d("SettingsDebug", "Creating GuidedCaptureManager...")
         guidedCaptureManager = GuidedCaptureManager(
             context = this,
             rootContainer = cameraFrame,
