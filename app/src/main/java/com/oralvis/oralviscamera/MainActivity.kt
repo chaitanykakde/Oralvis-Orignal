@@ -279,8 +279,6 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.d("SettingsDebug", "About to check guided capture condition: false")
             if (false) {  // Completely disabled
                 android.util.Log.d("SettingsDebug", "Guided capture condition is false - SKIPPING guided capture initialization")
-            }
-            android.util.Log.d("SettingsDebug", "Guided capture check completed - continuing with initialization")
                 android.util.Log.d("SettingsDebug", "Guided capture is enabled, initializing...")
                 android.util.Log.d("SettingsDebug", "binding.cameraFrame exists: ${binding.cameraFrame != null}")
                 android.util.Log.d("SettingsDebug", "binding.cameraFrame isAttachedToWindow: ${binding.cameraFrame.isAttachedToWindow}")
@@ -294,6 +292,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 android.util.Log.d("SettingsDebug", "Guided capture temporarily disabled to fix settings button")
             }
+            android.util.Log.d("SettingsDebug", "Guided capture check completed - continuing with initialization")
 
             // Clear previous patient selection on app start
             android.util.Log.d("SettingsDebug", "Clearing current patient...")
