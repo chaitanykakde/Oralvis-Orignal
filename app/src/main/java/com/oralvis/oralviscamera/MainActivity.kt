@@ -950,6 +950,60 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.d("SessionMedia", "Session media preview cleared - media remains in gallery database")
     }
     
+    private fun proceedWithSettingsPanelAnimation(panelWidth: Int) {
+        // Show scrim (dim background)
+        android.util.Log.d("SettingsDebug", "Setting scrim visibility to VISIBLE")
+        binding.settingsScrim.visibility = View.VISIBLE
+        binding.settingsScrim.alpha = 0f
+        binding.settingsScrim.animate()
+            .alpha(1f)
+            .setDuration(300)
+            .start()
+
+        // Show settings panel
+        android.util.Log.d("SettingsDebug", "Setting panel visibility to VISIBLE")
+        binding.settingsPanel.visibility = View.VISIBLE
+        binding.settingsPanel.alpha = 0f
+        binding.settingsPanel.translationX = panelWidth.toFloat()
+
+        android.util.Log.d("SettingsDebug", "Starting panel animation with translationX: ${panelWidth.toFloat()}")
+
+        val animator = binding.settingsPanel.animate()
+            .alpha(1f)
+            .translationX(0f)
+            .setDuration(300)
+
+        animator.withEndAction {
+            android.util.Log.d("SettingsDebug", "=== ANIMATION END ACTION ===")
+            android.util.Log.d("SettingsDebug", "Final panel visibility: ${binding.settingsPanel.visibility}")
+            android.util.Log.d("SettingsDebug", "Final panel alpha: ${binding.settingsPanel.alpha}")
+            android.util.Log.d("SettingsDebug", "Final panel translationX: ${binding.settingsPanel.translationX}")
+            android.util.Log.d("SettingsDebug", "Final scrim visibility: ${binding.settingsScrim.visibility}")
+            android.util.Log.d("SettingsDebug", "Final scrim alpha: ${binding.settingsScrim.alpha}")
+
+            // Check if panel is actually visible on screen
+            val panelRect = android.graphics.Rect()
+            binding.settingsPanel.getGlobalVisibleRect(panelRect)
+            android.util.Log.d("SettingsDebug", "Panel global visible rect: $panelRect")
+            android.util.Log.d("SettingsDebug", "Panel should now be visible to user!")
+
+            // #region agent log
+            writeDebugLog("A", "MainActivity.kt:851", "settingsPanel animation complete - setting up spinner", mapOf("timestamp" to System.currentTimeMillis()))
+            // #endregion
+            android.util.Log.d("ResolutionClick", "Settings panel animation complete - setting up resolution spinner")
+
+            // CRITICAL FIX: Setup resolution spinner when side panel is shown
+            // The spinner exists in the side panel but listener was never attached
+            android.util.Log.d("SettingsDebug", "About to call setupResolutionSpinnerWithRetry")
+            setupResolutionSpinnerWithRetry(binding.settingsPanel, 0)
+            android.util.Log.d("SettingsDebug", "setupResolutionSpinnerWithRetry completed")
+        }
+
+        android.util.Log.d("SettingsDebug", "Starting animation...")
+        animator.start()
+        android.util.Log.d("SettingsDebug", "Animation started")
+    }
+
     private fun openMediaPreview(filePath: String, isVideo: Boolean) {
         try {
             val intent = Intent(this, MediaViewerActivity::class.java).apply {
@@ -1013,57 +1067,23 @@ class MainActivity : AppCompatActivity() {
                 val panelWidth = (screenWidth * 0.45f).toInt()
                 android.util.Log.d("SettingsDebug", "Screen width: $screenWidth, calculated panel width: $panelWidth")
 
-                // Show scrim (dim background)
-                android.util.Log.d("SettingsDebug", "Setting scrim visibility to VISIBLE")
-                binding.settingsScrim.visibility = View.VISIBLE
-                binding.settingsScrim.alpha = 0f
-                binding.settingsScrim.animate()
-                    .alpha(1f)
-                    .setDuration(300)
-                    .start()
-
-                // Show settings panel
-                android.util.Log.d("SettingsDebug", "Setting panel visibility to VISIBLE")
-                binding.settingsPanel.visibility = View.VISIBLE
-                binding.settingsPanel.alpha = 0f
-                binding.settingsPanel.translationX = panelWidth.toFloat()
-
-                android.util.Log.d("SettingsDebug", "Starting panel animation with translationX: ${panelWidth.toFloat()}")
-
-                val animator = binding.settingsPanel.animate()
-                    .alpha(1f)
-                    .translationX(0f)
-                    .setDuration(300)
-
-                animator.withEndAction {
-                    android.util.Log.d("SettingsDebug", "=== ANIMATION END ACTION ===")
-                    android.util.Log.d("SettingsDebug", "Final panel visibility: ${binding.settingsPanel.visibility}")
-                    android.util.Log.d("SettingsDebug", "Final panel alpha: ${binding.settingsPanel.alpha}")
-                    android.util.Log.d("SettingsDebug", "Final panel translationX: ${binding.settingsPanel.translationX}")
-                    android.util.Log.d("SettingsDebug", "Final scrim visibility: ${binding.settingsScrim.visibility}")
-                    android.util.Log.d("SettingsDebug", "Final scrim alpha: ${binding.settingsScrim.alpha}")
-
-                    // Check if panel is actually visible on screen
-                    val panelRect = android.graphics.Rect()
-                    binding.settingsPanel.getGlobalVisibleRect(panelRect)
-                    android.util.Log.d("SettingsDebug", "Panel global visible rect: $panelRect")
-                    android.util.Log.d("SettingsDebug", "Panel should now be visible to user!")
-
-                    // #region agent log
-                    writeDebugLog("A", "MainActivity.kt:851", "settingsPanel animation complete - setting up spinner", mapOf("timestamp" to System.currentTimeMillis()))
-                    // #endregion
-                    android.util.Log.d("ResolutionClick", "Settings panel animation complete - setting up resolution spinner")
-
-                    // CRITICAL FIX: Setup resolution spinner when side panel is shown
-                    // The spinner exists in the side panel but listener was never attached
-                    android.util.Log.d("SettingsDebug", "About to call setupResolutionSpinnerWithRetry")
-                    setupResolutionSpinnerWithRetry(binding.settingsPanel, 0)
-                    android.util.Log.d("SettingsDebug", "setupResolutionSpinnerWithRetry completed")
+                // FORCE LAYOUT: Set the panel width programmatically since percentage constraints might not work
+                val layoutParams = binding.settingsPanel.layoutParams
+                if (layoutParams is androidx.constraintlayout.widget.ConstraintLayout.LayoutParams) {
+                    layoutParams.width = panelWidth
+                    layoutParams.height = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT
+                    binding.settingsPanel.layoutParams = layoutParams
+                    android.util.Log.d("SettingsDebug", "Forced panel layout params - width: $panelWidth, height: MATCH_PARENT")
                 }
 
-                android.util.Log.d("SettingsDebug", "Starting animation...")
-                animator.start()
-                android.util.Log.d("SettingsDebug", "Animation started")
+                // Wait for layout to complete, then start animation
+                binding.settingsPanel.post {
+                    android.util.Log.d("SettingsDebug", "=== SECOND POST BLOCK - AFTER LAYOUT ===")
+                    android.util.Log.d("SettingsDebug", "Panel after layout - width: ${binding.settingsPanel.width}, height: ${binding.settingsPanel.height}")
+
+                    // Now proceed with animation
+                    proceedWithSettingsPanelAnimation(panelWidth)
+                }
             }
 
             android.util.Log.d("SettingsDebug", "=== SHOW SETTINGS PANEL END ===")
