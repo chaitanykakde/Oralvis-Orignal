@@ -223,6 +223,14 @@ class MainActivity : AppCompatActivity() {
 
         // Verify settings button exists
         android.util.Log.d("SettingsDebug", "Binding initialized - btnSettings exists: ${binding.btnSettings != null}")
+
+        // TEMPORARY TEST: Add immediate click listener to verify button works
+        android.util.Log.d("SettingsDebug", "Setting TEMPORARY click listener on btnSettings")
+        binding.btnSettings.setOnClickListener {
+            android.util.Log.d("SettingsDebug", "TEMPORARY TEST: Settings button clicked!")
+            android.widget.Toast.makeText(this, "TEMPORARY TEST: Settings button works!", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        android.util.Log.d("SettingsDebug", "TEMPORARY click listener set successfully")
         
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
