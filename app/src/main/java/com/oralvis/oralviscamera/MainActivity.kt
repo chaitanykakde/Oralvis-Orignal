@@ -79,8 +79,12 @@ import kotlinx.coroutines.withContext
 import com.jiangdg.ausbc.camera.bean.PreviewSize
 import com.oralvis.oralviscamera.guidedcapture.GuidedCaptureManager
 import com.oralvis.oralviscamera.guidedcapture.SessionBridge
+import kotlin.math.abs
+import com.oralvis.oralviscamera.usbserial.CameraCommandReceiver
+import com.oralvis.oralviscamera.usbserial.UsbSerialManager
+import java.util.concurrent.atomic.AtomicBoolean
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     
     // #region agent log
     private fun writeDebugLog(hypothesisId: String, location: String, message: String, data: Map<String, Any> = emptyMap()) {
@@ -115,6 +119,10 @@ class MainActivity : AppCompatActivity() {
     private var isCameraReady: Boolean = false
     private val mCameraMap = hashMapOf<Int, MultiCameraClient.ICamera>()
     private var isRecording = false
+    
+    // USB hardware integration
+    private var usbSerialManager: UsbSerialManager? = null
+    private val captureLock = AtomicBoolean(false)
 
     // No-op preview callback to enable CameraUVC parameter application
     private var hasRegisteredBasePreviewCallback = false
@@ -330,18 +338,56 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
         android.util.Log.d("SettingsDebug", "checkPermissions() completed in onCreate")
 
-        // Auto-open patient dialog on every app start (mandatory selection)
-        // Post to ensure UI is fully initialized
-        Handler(Looper.getMainLooper()).post {
-            openPatientDialogForSession()
-        }
+        // Initialize USB serial manager for hardware control
+        usbSerialManager = UsbSerialManager(
+            context = this,
+            commandReceiver = this,
+            onConnectionStateChanged = { isConnected ->
+                updateUsbConnectionStatus(isConnected)
+            }
+        )
+        android.util.Log.i("UsbSerial", "USB serial manager initialized")
     }
     
     override fun onResume() {
         super.onResume()
         // Reapply theme when returning from other activities to sync theme changes
         applyTheme()
+
+        // Start USB serial manager to listen for hardware commands
+        usbSerialManager?.start()
+        android.util.Log.d("UsbSerial", "USB serial manager started in onResume")
+
+        // Check if patient selection is needed (moved from onCreate to avoid lifecycle issues)
+        checkAndPromptForPatientSelection()
     }
+
+    /**
+     * Check if patient selection is required and prompt user if needed.
+     * Called from onResume() to ensure proper lifecycle timing.
+     */
+    private fun checkAndPromptForPatientSelection() {
+        // Only prompt if no patient is currently selected
+        if (!GlobalPatientManager.hasPatientSelected()) {
+            // Use post to ensure UI is fully ready
+            Handler(Looper.getMainLooper()).post {
+                if (!isFinishing && !isDestroyed) {
+                    android.util.Log.d("PatientSelection", "No patient selected - prompting user")
+                    openPatientDialogForSession()
+                }
+            }
+        }
+    }
+    
+    override fun onPause() {
+        super.onPause()
+        
+        // Stop USB serial manager to release USB connection and threads
+        usbSerialManager?.stop()
+        android.util.Log.d("UsbSerial", "USB serial manager stopped in onPause")
+    }
+    
+    // Duplicate onDestroy removed - merged into the existing onDestroy at bottom of file
     
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -612,6 +658,174 @@ class MainActivity : AppCompatActivity() {
         
         android.util.Log.d("GuidedSessionUI", "setupGuidedSessionUI() - Complete")
     }
+
+    // ======================================================================
+    // CameraCommandReceiver Interface Implementation (USB Hardware Control)
+    // ======================================================================
+    
+    /**
+     * Trigger a photo capture from USB hardware command.
+     * Implements safety guards: camera readiness, capture lock, activity lifecycle.
+     */
+    override fun triggerCapture(): Boolean {
+        // Guard: Check camera readiness
+        if (!isCameraReady) {
+            android.util.Log.w("UsbCommand", "CAPTURE ignored: camera not ready")
+            return false
+        }
+
+        // Guard: Check activity lifecycle
+        if (isFinishing || isDestroyed) {
+            android.util.Log.w("UsbCommand", "CAPTURE ignored: activity finishing")
+            return false
+        }
+
+        // Guard: Prevent double-capture with atomic lock
+        if (!captureLock.compareAndSet(false, true)) {
+            android.util.Log.w("UsbCommand", "CAPTURE ignored: already capturing")
+            return false
+        }
+
+        try {
+            // Execute capture on main thread
+            runOnUiThread {
+                try {
+                    // Check patient selection
+                    if (!GlobalPatientManager.hasPatientSelected()) {
+                        android.util.Log.w("UsbCommand", "CAPTURE ignored: no patient selected")
+                        showPatientSelectionPrompt()
+                        return@runOnUiThread
+                    }
+
+                    // Execute capture
+                    if (guidedCaptureManager?.isEnabled == true) {
+                        // Guided capture: delegate to guided manager
+                        if (guidedCaptureManager?.handleManualCapture() == true) {
+                            android.util.Log.i("UsbCommand", "CAPTURE handled by guided capture manager")
+                        } else {
+                            android.util.Log.w("UsbCommand", "CAPTURE rejected by guided capture manager")
+                        }
+                    } else {
+                        // Regular capture: use camera directly
+                        if (mCurrentCamera != null) {
+                            capturePhotoWithRetry()
+                            android.util.Log.i("UsbCommand", "CAPTURE executed via direct camera capture")
+                        } else {
+                            android.util.Log.w("UsbCommand", "CAPTURE ignored: camera not available")
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("UsbCommand", "Error during capture: ${e.message}", e)
+                } finally {
+                    // ALWAYS reset the capture lock, even on error
+                    captureLock.set(false)
+                }
+            }
+
+            return true
+
+        } catch (e: Exception) {
+            android.util.Log.e("UsbCommand", "Error dispatching capture: ${e.message}", e)
+            // Reset lock on error
+            captureLock.set(false)
+            return false
+        }
+    }
+    
+    /**
+     * Switch to Normal (RGB) mode from USB hardware command.
+     * Blocks mode switch during guided session to prevent inconsistent parameters.
+     */
+    override fun switchToNormalMode(): Boolean {
+        // Guard: Check camera exists
+        if (mCurrentCamera == null) {
+            android.util.Log.w("UsbCommand", "RGB mode switch ignored: camera not available")
+            return false
+        }
+
+        // Execute on main thread
+        runOnUiThread {
+            try {
+                switchToMode("Normal")
+                android.util.Log.i("UsbCommand", "RGB (Normal) mode command executed successfully")
+            } catch (e: Exception) {
+                android.util.Log.e("UsbCommand", "Error switching to Normal mode: ${e.message}", e)
+            }
+        }
+
+        return true
+    }
+    
+    /**
+     * Switch to Fluorescence (UV) mode from USB hardware command.
+     * Blocks mode switch during guided session to prevent inconsistent parameters.
+     */
+    override fun switchToFluorescenceMode(): Boolean {
+        // Guard: Check camera exists
+        if (mCurrentCamera == null) {
+            android.util.Log.w("UsbCommand", "UV mode switch ignored: camera not available")
+            return false
+        }
+
+        // Execute on main thread
+        runOnUiThread {
+            try {
+                switchToMode("Fluorescence")
+                android.util.Log.i("UsbCommand", "UV (Fluorescence) mode command executed successfully")
+            } catch (e: Exception) {
+                android.util.Log.e("UsbCommand", "Error switching to Fluorescence mode: ${e.message}", e)
+            }
+        }
+
+        return true
+    }
+    
+    /**
+     * Check if a guided capture session is currently active.
+     */
+    override fun isGuidedSessionActive(): Boolean {
+        return guidedCaptureManager?.isEnabled == true
+    }
+    
+    /**
+     * Update USB connection status UI.
+     * Shows connection status feedback to user.
+     */
+    private fun updateUsbConnectionStatus(isConnected: Boolean) {
+        runOnUiThread {
+            try {
+                if (isConnected) {
+                    android.util.Log.i("UsbSerial", "🎉 OralVis hardware connected - Remote control active!")
+                    Toast.makeText(this, "🎮 OralVis hardware connected - Remote control ready!", Toast.LENGTH_SHORT).show()
+                } else {
+                    android.util.Log.w("UsbSerial", "⚠️ OralVis hardware disconnected")
+                    Toast.makeText(this, "⚠️ OralVis hardware disconnected", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("UsbSerial", "Error updating connection status: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Show a prompt to user to select a patient when USB capture is attempted without one.
+     */
+    private fun showPatientSelectionPrompt() {
+        runOnUiThread {
+            try {
+                if (!isFinishing && !isDestroyed) {
+                    Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
+                    // Don't automatically open dialog for USB commands to avoid lifecycle issues
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("UsbCommand", "Error showing patient selection prompt: ${e.message}")
+            }
+        }
+    }
+
+    // ======================================================================
+    // End of CameraCommandReceiver Implementation
+    // ======================================================================
 
     /**
      * PHASE B — GUIDED CAPTURE SESSION: Start user-triggered guided capture session.
@@ -4025,6 +4239,11 @@ class MainActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+
+        // Destroy USB serial manager
+        usbSerialManager?.destroy()
+        usbSerialManager = null
+        android.util.Log.d("UsbSerial", "USB serial manager destroyed in onDestroy")
 
         // Remove the observer to prevent memory leaks and duplicate observer crashes
         globalPatientObserver?.let {

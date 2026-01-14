@@ -10,4 +10,8 @@
     <usb-device vendor-id="1118" />  <!-- Microsoft -->
     <usb-device vendor-id="1390" />  <!-- ASUS -->
     <usb-device vendor-id="1204" />  <!-- Creative -->
+    
+    <!-- OralVis Hardware Device -->
+    <usb-device vendor-id="4617" product-id="50512" />  <!-- VID=0x1209, PID=0xC550 -->
 </resources>
+
