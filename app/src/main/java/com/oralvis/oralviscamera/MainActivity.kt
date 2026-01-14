@@ -273,7 +273,9 @@ class MainActivity : AppCompatActivity() {
             globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
             android.util.Log.d("SettingsDebug", "globalPatientId obtained: $globalPatientId")
 
-            if (isGuidedCaptureEnabled) {
+            // TEMPORARILY DISABLE GUIDED CAPTURE TO FIX SETTINGS BUTTON
+            // The GuidedCaptureManager constructor fails when cameraFrame is not attached to window
+            if (false && isGuidedCaptureEnabled) {  // Disabled with false &&
                 android.util.Log.d("SettingsDebug", "Guided capture is enabled, initializing...")
                 android.util.Log.d("SettingsDebug", "binding.cameraFrame exists: ${binding.cameraFrame != null}")
                 android.util.Log.d("SettingsDebug", "binding.cameraFrame isAttachedToWindow: ${binding.cameraFrame.isAttachedToWindow}")
@@ -284,6 +286,8 @@ class MainActivity : AppCompatActivity() {
                     android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "EXCEPTION in initializeGuidedCapture: ${e.message}", e)
                     throw e
                 }
+            } else {
+                android.util.Log.d("SettingsDebug", "Guided capture temporarily disabled to fix settings button")
             }
 
             // Clear previous patient selection on app start
