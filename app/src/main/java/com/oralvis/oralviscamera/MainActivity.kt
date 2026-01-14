@@ -221,17 +221,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Immediate test - check if settings button exists and add basic click listener
+        // Verify settings button exists
         android.util.Log.d("SettingsDebug", "Binding initialized - btnSettings exists: ${binding.btnSettings != null}")
-        if (binding.btnSettings != null) {
-            binding.btnSettings.setOnClickListener {
-                android.util.Log.d("SettingsDebug", "BASIC TEST: Settings button clicked!")
-                android.widget.Toast.makeText(this, "Settings button works!", android.widget.Toast.LENGTH_SHORT).show()
-            }
-            android.util.Log.d("SettingsDebug", "Basic click listener set on btnSettings")
-        } else {
-            android.util.Log.e("SettingsDebug", "ERROR: btnSettings is null after binding initialization!")
-        }
         
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -938,6 +929,7 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.d("SettingsDebug", "toggleSettingsPanel() called")
         android.util.Log.d("SettingsDebug", "settingsPanel visibility: ${binding.settingsPanel.visibility}")
         android.util.Log.d("SettingsDebug", "View.VISIBLE = ${View.VISIBLE}")
+        android.util.Log.d("SettingsDebug", "settingsPanel is null: ${binding.settingsPanel == null}")
 
         if (binding.settingsPanel.visibility == View.VISIBLE) {
             android.util.Log.d("SettingsDebug", "Calling hideSettingsPanel()")
@@ -949,6 +941,7 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showSettingsPanel() {
+        android.util.Log.d("SettingsDebug", "showSettingsPanel() START")
         // #region agent log
         writeDebugLog("A", "MainActivity.kt:800", "showSettingsPanel() called", mapOf("timestamp" to System.currentTimeMillis()))
         // #endregion
@@ -980,6 +973,10 @@ class MainActivity : AppCompatActivity() {
                 .translationX(0f)
                 .setDuration(300)
                 .withEndAction {
+                    android.util.Log.d("SettingsDebug", "Settings panel animation completed - panel should be visible")
+                    android.util.Log.d("SettingsDebug", "Final panel visibility: ${binding.settingsPanel.visibility}")
+                    android.util.Log.d("SettingsDebug", "Final panel alpha: ${binding.settingsPanel.alpha}")
+                    android.util.Log.d("SettingsDebug", "Final panel translationX: ${binding.settingsPanel.translationX}")
                     // #region agent log
                     writeDebugLog("A", "MainActivity.kt:851", "settingsPanel animation complete - setting up spinner", mapOf("timestamp" to System.currentTimeMillis()))
                     // #endregion
