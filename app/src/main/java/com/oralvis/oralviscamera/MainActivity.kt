@@ -589,8 +589,10 @@ class MainActivity : AppCompatActivity() {
         
         // New UI elements
         android.util.Log.d("SettingsDebug", "About to call setupNewUI() from setupUI()")
+        android.util.Log.d("SettingsDebug", "setupUI() is about to call setupNewUI() - this is critical")
         setupNewUI()
         android.util.Log.d("SettingsDebug", "setupNewUI() returned to setupUI()")
+        android.util.Log.d("SettingsDebug", "setupUI() completed successfully")
         
         // Initialize recording timer
         recordingHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -824,6 +826,9 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.d("SettingsDebug", "setupNewUI() method called - BEGIN - THIS SHOULD APPEAR")
         // Settings button - toggle side panel
         android.util.Log.d("SettingsDebug", "Setting up btnSettings click listener")
+        android.util.Log.d("SettingsDebug", "binding.btnSettings is null: ${binding.btnSettings == null}")
+        android.util.Log.d("SettingsDebug", "binding.settingsPanel is null: ${binding.settingsPanel == null}")
+        android.util.Log.d("SettingsDebug", "binding.settingsScrim is null: ${binding.settingsScrim == null}")
 
         // Simple, safe click listener setup
         binding.btnSettings.setOnClickListener {
