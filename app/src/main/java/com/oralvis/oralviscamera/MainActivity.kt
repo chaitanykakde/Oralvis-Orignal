@@ -27,6 +27,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -34,6 +35,7 @@ import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.ICaptureCallBack
+import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.jiangdg.ausbc.callback.IPlayCallBack
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.camera.CameraUVC
@@ -110,8 +112,17 @@ class MainActivity : AppCompatActivity() {
     private var mCameraClient: MultiCameraClient? = null
     private var mCurrentCamera: MultiCameraClient.ICamera? = null
     private var fluorescenceEffect: com.oralvis.oralviscamera.camera.FluorescenceEffect? = null
+    private var isCameraReady: Boolean = false
     private val mCameraMap = hashMapOf<Int, MultiCameraClient.ICamera>()
     private var isRecording = false
+
+    // No-op preview callback to enable CameraUVC parameter application
+    private var hasRegisteredBasePreviewCallback = false
+    private val noOpPreviewCallback = object : IPreviewDataCallBack {
+        override fun onPreviewData(data: ByteArray?, width: Int, height: Int, format: IPreviewDataCallBack.DataFormat) {
+            // Intentionally empty - exists only to enable CameraUVC parameter application
+        }
+    }
     
     // New features
     private lateinit var sessionManager: SessionManager
@@ -275,22 +286,12 @@ class MainActivity : AppCompatActivity() {
             globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
             android.util.Log.d("SettingsDebug", "globalPatientId obtained: $globalPatientId")
 
-            // COMPLETELY DISABLE GUIDED CAPTURE FOR TESTING
-            android.util.Log.d("SettingsDebug", "About to check guided capture condition: false")
-            if (false) {  // Completely disabled
-                android.util.Log.d("SettingsDebug", "Guided capture condition is false - SKIPPING guided capture initialization")
-                android.util.Log.d("SettingsDebug", "Guided capture is enabled, initializing...")
-                android.util.Log.d("SettingsDebug", "binding.cameraFrame exists: ${binding.cameraFrame != null}")
-                android.util.Log.d("SettingsDebug", "binding.cameraFrame isAttachedToWindow: ${binding.cameraFrame.isAttachedToWindow}")
-                try {
-                    initializeGuidedCapture()
-                    android.util.Log.d("SettingsDebug", "Guided capture initialized successfully")
-                } catch (e: Exception) {
-                    android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "EXCEPTION in initializeGuidedCapture: ${e.message}", e)
-                    throw e
-                }
-            } else {
-                android.util.Log.d("SettingsDebug", "Guided capture temporarily disabled to fix settings button")
+            // Initialize guided capture unconditionally for proper UI state
+            try {
+                initializeGuidedCapture()
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Failed to initialize guided capture: ${e.message}", e)
+                throw e
             }
             android.util.Log.d("SettingsDebug", "Guided capture check completed - continuing with initialization")
 
@@ -316,12 +317,19 @@ class MainActivity : AppCompatActivity() {
         setupUI()
         android.util.Log.d("SettingsDebug", "setupUI() completed in onCreate")
         android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "=== setupUI() COMPLETED ===")
+        
+        // Initialize camera core UI (settings panel, controls, seekbars, spinners)
+        // This ensures camera controls work on cold start, before any guided session
+        android.util.Log.d("CameraCoreUI", "About to call setupCameraCoreUI() in onCreate")
+        setupCameraCoreUI()
+        android.util.Log.d("CameraCoreUI", "setupCameraCoreUI() completed in onCreate")
+        
         observeGlobalPatient()
         initializeFromGlobalPatient()
         android.util.Log.d("SettingsDebug", "About to call checkPermissions() in onCreate")
         checkPermissions()
         android.util.Log.d("SettingsDebug", "checkPermissions() completed in onCreate")
-        
+
         // Auto-open patient dialog on every app start (mandatory selection)
         // Post to ensure UI is fully initialized
         Handler(Looper.getMainLooper()).post {
@@ -540,58 +548,97 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnStartSession.setOnClickListener(startSessionClickListener)
         binding.btnStartGuidedSession.setOnClickListener(startSessionClickListener)
+
+        // DEBUG: Settings button to test panel logic
+        binding.btnDebugSettings.setOnClickListener {
+            android.util.Log.e("DEBUG_SETTINGS_BUTTON", "DEBUG_SETTINGS_BUTTON_CLICKED - Testing settings panel logic")
+            toggleSettingsPanel()
+        }
+    }
+    
+    /**
+     * Setup Camera Core UI - Must work on cold start (before any guided session)
+     * Initializes settings panel, camera controls, seekbars, and spinners
+     * Called from onCreate() to ensure camera controls are functional immediately
+     */
+    private fun setupCameraCoreUI() {
+        android.util.Log.d("CameraCoreUI", "setupCameraCoreUI() - Initializing camera core UI")
+        
+        // Settings button - toggle side panel
+        binding.btnSettings.setOnClickListener {
+            android.util.Log.d("SettingsDebug", "Settings button clicked")
+            toggleSettingsPanel()
+        }
+        
+        // Close settings panel
+        binding.btnCloseSettings.setOnClickListener {
+            hideSettingsPanel()
+        }
+        
+        // Click on scrim to close settings
+        binding.settingsScrim.setOnClickListener {
+            hideSettingsPanel()
+        }
+        
+        // Edit patient button in top info bar - opens Find Patients screen
+        binding.btnEditPatient.setOnClickListener {
+            val intent = Intent(this, FindPatientsActivity::class.java)
+            startActivity(intent)
+        }
+        
+        // Setup resolution and mode spinners
+        setupSpinners()
+        
+        // Setup all settings panel button actions (includes seekbar listeners)
+        setupSettingsPanelActions()
+        
+        android.util.Log.d("CameraCoreUI", "setupCameraCoreUI() - Complete")
+    }
+    
+    /**
+     * Setup Guided Session UI - Only needed during guided capture session
+     * Initializes session-specific UI components like media recycler
+     * Called from proceedWithSessionStart() when user starts guided session
+     */
+    private fun setupGuidedSessionUI() {
+        android.util.Log.d("GuidedSessionUI", "setupGuidedSessionUI() - Initializing session UI")
+        
+        // Always show capture buttons - patient selection is global
+        binding.sessionButtonsContainer.visibility = View.VISIBLE
+        binding.btnStartSession.visibility = View.GONE
+        
+        // Setup session media RecyclerView
+        setupSessionMediaRecycler()
+        
+        android.util.Log.d("GuidedSessionUI", "setupGuidedSessionUI() - Complete")
     }
 
     /**
-     * Proceeds with starting the guided capture session
+     * PHASE B — GUIDED CAPTURE SESSION: Start user-triggered guided capture session.
+     * This is separate from camera activation (Phase A) and adds session-specific logic.
      */
     private fun proceedWithSessionStart() {
         if (guidedCaptureManager == null) {
             android.util.Log.e("Guided", "GuidedCaptureManager is null, initializing now")
             initializeGuidedCapture()
         }
-        android.util.Log.e("Guided", "Calling guidedCaptureManager.enable()")
+        android.util.Log.e("Guided", "PHASE B: Starting guided capture session")
         guidedCaptureManager?.enable()
 
         // Register GuidedCaptureManager as preview callback to receive NV21 frames
+        // This is ADDITIONAL to the base callback registered in Phase A
         mCurrentCamera?.let { camera ->
             camera.addPreviewDataCallBack(guidedCaptureManager!!)
-            android.util.Log.e("Guided", "Registered GuidedCaptureManager as preview callback")
+            android.util.Log.e("Guided", "PHASE B: Registered GuidedCaptureManager as preview callback")
         } ?: run {
-            android.util.Log.w("Guided", "Camera not available, will register callback when camera opens")
+            android.util.Log.w("Guided", "PHASE B: Camera not available, will register callback when camera opens")
         }
 
-        // Reset controls
-        binding.btnResetControls.setOnClickListener {
-            resetCameraControls()
-        }
-        
-        binding.btnShareLogs.setOnClickListener {
-            shareRecentLogs()
-        }
-        
-        // Auto control buttons
-        binding.btnAutoFocus.setOnClickListener {
-            toggleAutoFocus()
-        }
-        
-        binding.btnAutoExposure.setOnClickListener {
-            toggleAutoExposure()
-        }
-        
-        binding.btnAutoWhiteBalance.setOnClickListener {
-            toggleAutoWhiteBalance()
-        }
-        
-        // Setup camera control seekbars
-        setupCameraControlSeekBars()
-        
-        // New UI elements
-        android.util.Log.d("SettingsDebug", "About to call setupNewUI() from setupUI()")
-        android.util.Log.d("SettingsDebug", "setupUI() is about to call setupNewUI() - this is critical")
-        setupNewUI()
-        android.util.Log.d("SettingsDebug", "setupNewUI() returned to setupUI()")
-        android.util.Log.d("SettingsDebug", "setupUI() completed successfully")
+        // Setup guided session UI (session media recycler, session buttons)
+        // Camera core UI already initialized in onCreate via setupCameraCoreUI()
+        android.util.Log.d("GuidedSessionUI", "About to call setupGuidedSessionUI() from proceedWithSessionStart")
+        setupGuidedSessionUI()
+        android.util.Log.d("GuidedSessionUI", "setupGuidedSessionUI() completed")
         
         // Initialize recording timer
         recordingHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -821,60 +868,63 @@ class MainActivity : AppCompatActivity() {
         })
     }
     
-    private fun setupNewUI() {
-        android.util.Log.d("SettingsDebug", "setupNewUI() method called - BEGIN - THIS SHOULD APPEAR")
-        // Settings button - toggle side panel
-        android.util.Log.d("SettingsDebug", "Setting up btnSettings click listener")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings is null: ${binding.btnSettings == null}")
-        android.util.Log.d("SettingsDebug", "binding.settingsPanel is null: ${binding.settingsPanel == null}")
-        android.util.Log.d("SettingsDebug", "binding.settingsScrim is null: ${binding.settingsScrim == null}")
 
-        // Simple, safe click listener setup
-        binding.btnSettings.setOnClickListener {
-            android.util.Log.d("SettingsDebug", "=== SETTINGS BUTTON CLICKED - START ===")
-            android.util.Log.d("SettingsDebug", "Current time: ${System.currentTimeMillis()}")
-            android.util.Log.d("SettingsDebug", "guidedCaptureManager: $guidedCaptureManager")
-            android.util.Log.d("SettingsDebug", "guidedCaptureManager?.isEnabled: ${guidedCaptureManager?.isEnabled}")
-            android.util.Log.d("SettingsDebug", "isGuidedCaptureEnabled: $isGuidedCaptureEnabled")
-            android.widget.Toast.makeText(this@MainActivity, "Settings panel should open!", android.widget.Toast.LENGTH_SHORT).show()
-            android.util.Log.d("SettingsDebug", "About to call toggleSettingsPanel()")
-            toggleSettingsPanel()
-            android.util.Log.d("SettingsDebug", "=== SETTINGS BUTTON CLICKED - END ===")
+    /**
+     * PHASE A — CAMERA ACTIVATION: Put camera into processing mode to enable parameter application.
+     * This is called automatically when camera opens and is separate from guided capture sessions.
+     *
+     * Purpose: Enable CameraUVC parameter application by registering a base preview callback.
+     * CameraUVC requires at least one preview callback to be registered for setXXX() methods to work.
+     */
+    private fun activateCameraPipeline() {
+        if (mCurrentCamera == null) {
+            android.util.Log.w("CameraActivation", "Cannot activate camera pipeline - mCurrentCamera is null")
+            return
         }
-        android.util.Log.d("SettingsDebug", "btnSettings click listener set successfully")
-        
-        // Close settings panel
-        binding.btnCloseSettings.setOnClickListener {
-            hideSettingsPanel()
-        }
-        
-        // Click on scrim to close settings
-        binding.settingsScrim.setOnClickListener {
-            hideSettingsPanel()
-        }
-        
-        // Top toolbar resolution spinner will be set up after camera is ready
-        // See setupTopToolbarResolutionSpinner() called from loadAvailableResolutions()
 
-        // Edit patient button in top info bar - opens Find Patients screen
-        binding.btnEditPatient.setOnClickListener {
-            val intent = Intent(this, FindPatientsActivity::class.java)
-            startActivity(intent)
+        // Register base preview callback to enable CameraUVC parameter application
+        if (!hasRegisteredBasePreviewCallback) {
+            mCurrentCamera?.addPreviewDataCallBack(noOpPreviewCallback)
+            hasRegisteredBasePreviewCallback = true
+            android.util.Log.d("CameraActivation", "PHASE A COMPLETE: Camera pipeline activated - parameter application enabled")
+        } else {
+            android.util.Log.d("CameraActivation", "Camera pipeline already activated")
         }
-        
-        // Always show capture buttons - patient selection is global
-        binding.sessionButtonsContainer.visibility = View.VISIBLE
-        binding.btnStartSession.visibility = View.GONE
-        
-        // Setup resolution and mode spinners
-        setupSpinners()
-        
-        // Setup session media RecyclerView
-        setupSessionMediaRecycler()
-
-        android.util.Log.d("SettingsDebug", "setupNewUI() method completed - END")
     }
-    
+
+    /**
+     * Sets up all settings panel button click listeners.
+     * Called during normal UI initialization to ensure settings work on cold launch.
+     */
+    private fun setupSettingsPanelActions() {
+        android.util.Log.d("SettingsDebug", "Setting up settings panel actions")
+
+        // Reset controls
+        binding.btnResetControls.setOnClickListener {
+            resetCameraControls()
+        }
+
+        binding.btnShareLogs.setOnClickListener {
+            shareRecentLogs()
+        }
+
+        // Auto control buttons
+        binding.btnAutoFocus.setOnClickListener {
+            toggleAutoFocus()
+        }
+
+        binding.btnAutoExposure.setOnClickListener {
+            toggleAutoExposure()
+        }
+
+        binding.btnAutoWhiteBalance.setOnClickListener {
+            toggleAutoWhiteBalance()
+        }
+
+        // Setup camera control seekbars (brightness, contrast, etc.)
+        setupCameraControlSeekBars()
+    }
+
     private fun setupSessionMediaRecycler() {
         sessionMediaAdapter = SessionMediaAdapter(
             onMediaClick = { media ->
@@ -990,6 +1040,13 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.d("SettingsDebug", "Final scrim visibility: ${binding.settingsScrim.visibility}")
             android.util.Log.d("SettingsDebug", "Final scrim alpha: ${binding.settingsScrim.alpha}")
 
+            // DIAGNOSTIC LOGGING: Capture final state after animation
+            android.util.Log.e("SETTINGS_DIAGNOSTIC",
+                "ANIMATION_COMPLETE: attached=${binding.settingsPanel.isAttachedToWindow}, " +
+                "w=${binding.settingsPanel.width}, h=${binding.settingsPanel.height}, " +
+                "focus=${binding.settingsPanel.hasWindowFocus()}, visibility=${binding.settingsPanel.visibility}, " +
+                "alpha=${binding.settingsPanel.alpha}, translationX=${binding.settingsPanel.translationX}")
+
             // Check if panel is actually visible on screen
             val panelRect = android.graphics.Rect()
             binding.settingsPanel.getGlobalVisibleRect(panelRect)
@@ -1029,6 +1086,13 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.d("SettingsDebug", "=== TOGGLE SETTINGS PANEL START ===")
         android.util.Log.d("SettingsDebug", "toggleSettingsPanel() called at ${System.currentTimeMillis()}")
 
+        // DIAGNOSTIC LOGGING: Capture state when toggle is called
+        android.util.Log.e("SETTINGS_DIAGNOSTIC",
+            "TOGGLE_CALLED: attached=${binding.settingsPanel.isAttachedToWindow}, " +
+            "w=${binding.settingsPanel.width}, h=${binding.settingsPanel.height}, " +
+            "focus=${binding.settingsPanel.hasWindowFocus()}, visibility=${binding.settingsPanel.visibility}, " +
+            "hasWindowFocus=${hasWindowFocus()}, activityFocus=${window?.decorView?.hasWindowFocus()}")
+
         try {
             android.util.Log.d("SettingsDebug", "settingsPanel is null: ${binding.settingsPanel == null}")
             if (binding.settingsPanel == null) {
@@ -1058,41 +1122,81 @@ class MainActivity : AppCompatActivity() {
         android.util.Log.d("SettingsDebug", "=== SHOW SETTINGS PANEL START ===")
         android.util.Log.d("SettingsDebug", "showSettingsPanel() called at ${System.currentTimeMillis()}")
 
+        val panel = binding.settingsPanel
+
+        // DIAGNOSTIC LOGGING: Capture view state before animation
+        android.util.Log.e("SETTINGS_DIAGNOSTIC",
+            "BEFORE_ANIMATION: attached=${panel.isAttachedToWindow}, " +
+            "w=${panel.width}, h=${panel.height}, visibility=${panel.visibility}")
+
         try {
             // #region agent log
             writeDebugLog("A", "MainActivity.kt:800", "showSettingsPanel() called", mapOf("timestamp" to System.currentTimeMillis()))
             // #endregion
             android.util.Log.d("ResolutionClick", "showSettingsPanel() called")
 
-            android.util.Log.d("SettingsDebug", "About to call binding.settingsPanel.post")
+            // 1. If panel is GONE → set to INVISIBLE (MANDATORY)
+            if (panel.visibility == View.GONE) {
+                android.util.Log.d("SettingsDebug", "Panel was GONE, setting to INVISIBLE")
+                panel.visibility = View.INVISIBLE
+            }
 
-            // Use post to ensure view is measured before animation
-            binding.settingsPanel.post {
-                android.util.Log.d("SettingsDebug", "=== INSIDE POST BLOCK ===")
-                android.util.Log.d("SettingsDebug", "Settings panel measured - width: ${binding.settingsPanel.width}, height: ${binding.settingsPanel.height}")
+            // 2. Wait for layout using doOnLayout
+            panel.doOnLayout { view ->
+                android.util.Log.d("SettingsDebug", "=== DO ON LAYOUT CALLED ===")
+                android.util.Log.d("SettingsDebug", "Settings panel measured - width: ${view.width}, height: ${view.height}")
 
-                // Calculate panel width (45% of screen width as defined in layout)
-                val screenWidth = resources.displayMetrics.widthPixels
-                val panelWidth = (screenWidth * 0.45f).toInt()
-                android.util.Log.d("SettingsDebug", "Screen width: $screenWidth, calculated panel width: $panelWidth")
-
-                // FORCE LAYOUT: Set the panel width programmatically since percentage constraints might not work
-                val layoutParams = binding.settingsPanel.layoutParams
-                if (layoutParams is androidx.constraintlayout.widget.ConstraintLayout.LayoutParams) {
-                    layoutParams.width = panelWidth
-                    layoutParams.height = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.MATCH_PARENT
-                    binding.settingsPanel.layoutParams = layoutParams
-                    android.util.Log.d("SettingsDebug", "Forced panel layout params - width: $panelWidth, height: MATCH_PARENT")
+                // 3. Read width AFTER layout
+                val width = view.width
+                if (width == 0) {
+                    android.util.Log.e("SettingsDebug", "Width still 0, abort animation")
+                    return@doOnLayout
                 }
 
-                // Wait for layout to complete, then start animation
-                binding.settingsPanel.post {
-                    android.util.Log.d("SettingsDebug", "=== SECOND POST BLOCK - AFTER LAYOUT ===")
-                    android.util.Log.d("SettingsDebug", "Panel after layout - width: ${binding.settingsPanel.width}, height: ${binding.settingsPanel.height}")
+                android.util.Log.d("SettingsDebug", "Panel width measured as: $width")
 
-                    // Now proceed with animation
-                    proceedWithSettingsPanelAnimation(panelWidth)
-                }
+                // 4. Set translationX = width (start off-screen to the right)
+                view.translationX = width.toFloat()
+                android.util.Log.d("SettingsDebug", "Set translationX to $width")
+                
+                // 4.5. Reset alpha to 1f (fully visible state)
+                // CRITICAL FIX: hideSettingsPanel() animates alpha to 0f, 
+                // so we must reset it to 1f on every open to ensure panel is visible
+                view.alpha = 1f
+                android.util.Log.d("SettingsDebug", "Reset alpha to 1f (fix for reopen bug)")
+
+                // 5. Set visibility = VISIBLE
+                view.visibility = View.VISIBLE
+                android.util.Log.d("SettingsDebug", "Set visibility to VISIBLE")
+                
+                // 5.5. Show scrim (background overlay)
+                binding.settingsScrim.visibility = View.VISIBLE
+                binding.settingsScrim.alpha = 0f  // Start transparent
+                binding.settingsScrim.animate()
+                    .alpha(1f)  // Fade in to visible
+                    .setDuration(300)
+                    .start()
+                android.util.Log.d("SettingsDebug", "Showing scrim with fade-in animation")
+
+                // 5.6. Bring to front and ensure touch priority
+                view.bringToFront()
+                view.isClickable = true
+                view.isFocusable = true
+
+                // Disable touch interception on camera views to ensure settings panel gets all touches
+                binding.cameraFrame.isClickable = false
+                binding.cameraFrame.isFocusable = false
+                binding.cameraFrame.setOnTouchListener { _, _ -> false } // Don't consume touches
+
+                android.util.Log.d("SettingsDebug", "Brought panel to front, enabled touch, disabled camera touch interception")
+
+                // 6. Animate translationX → 0
+                view.animate()
+                    .translationX(0f)
+                    .setDuration(300)
+                    .start()
+
+                android.util.Log.d("SettingsDebug", "Started slide-in animation")
             }
 
             android.util.Log.d("SettingsDebug", "=== SHOW SETTINGS PANEL END ===")
@@ -1110,16 +1214,39 @@ class MainActivity : AppCompatActivity() {
                 binding.settingsScrim.visibility = View.GONE
             }
             .start()
-        
-        // Hide settings panel
-        binding.settingsPanel.animate()
-            .alpha(0f)
-            .translationX(binding.settingsPanel.width.toFloat())
-            .setDuration(300)
-            .withEndAction {
-                binding.settingsPanel.visibility = View.GONE
+
+        // Hide settings panel - ensure we have the measured width
+        if (binding.settingsPanel.width > 0) {
+            // View is already measured, animate directly
+            binding.settingsPanel.animate()
+                .alpha(0f)
+                .translationX(binding.settingsPanel.width.toFloat())
+                .setDuration(300)
+                .withEndAction {
+                    binding.settingsPanel.visibility = View.GONE
+                    // Restore camera touch behavior
+                    binding.cameraFrame.isClickable = true
+                    binding.cameraFrame.isFocusable = true
+                    binding.cameraFrame.setOnTouchListener(null) // Remove touch listener
+                }
+                .start()
+        } else {
+            // View not measured yet, use doOnLayout
+            binding.settingsPanel.doOnLayout { view ->
+                view.animate()
+                    .alpha(0f)
+                    .translationX(view.width.toFloat())
+                    .setDuration(300)
+                    .withEndAction {
+                        view.visibility = View.GONE
+                        // Restore camera touch behavior
+                        binding.cameraFrame.isClickable = true
+                        binding.cameraFrame.isFocusable = true
+                        binding.cameraFrame.setOnTouchListener(null) // Remove touch listener
+                    }
+                    .start()
             }
-            .start()
+        }
     }
     
     private fun showResolutionDropdown() {
@@ -2523,6 +2650,10 @@ class MainActivity : AppCompatActivity() {
         } else {
             ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSION)
         }
+
+        // FORCE camera initialization on cold launch regardless of permission status
+        // USB cameras may work without Android CAMERA permission
+        initializeCamera()
     }
     
     private fun showPermissionExplanationDialog(missingPermissions: List<String>) {
@@ -2615,6 +2746,8 @@ class MainActivity : AppCompatActivity() {
                             runOnUiThread {
                                 when (code) {
                                     ICameraStateCallBack.State.OPENED -> {
+                                        android.util.Log.d("CameraState", "Camera opened - setting isCameraReady = true")
+                                        isCameraReady = true
                                         binding.statusText.text = "Camera opened successfully"
                                         binding.statusText.visibility = View.GONE
                                         
@@ -2645,19 +2778,26 @@ class MainActivity : AppCompatActivity() {
                         
                         // Refresh resolution list if settings dialog is open
                         refreshResolutionSpinnerIfOpen()
-                        
-                        // Register GuidedCaptureManager as preview callback if enabled
+
+                        // PHASE A — CAMERA ACTIVATION: Enable parameter application immediately
+                        activateCameraPipeline()
+
+                        // PHASE B — GUIDED CAPTURE SESSION: Add guided callback if session is active
+                        // This is separate from camera activation and happens only during guided sessions
                         guidedCaptureManager?.let { manager ->
                             if (manager.isEnabled) {
                                 camera.addPreviewDataCallBack(manager)
-                                android.util.Log.e("Guided", "Registered GuidedCaptureManager as preview callback (camera opened)")
+                                android.util.Log.e("Guided", "PHASE B: Registered GuidedCaptureManager as preview callback (session active)")
                             }
                         }
                                     }
                                     ICameraStateCallBack.State.CLOSED -> {
+                                        android.util.Log.d("CameraState", "Camera closed - setting isCameraReady = false")
+                                        isCameraReady = false
+                                        hasRegisteredBasePreviewCallback = false
                                         binding.statusText.text = "Camera closed"
                                         binding.statusText.visibility = View.VISIBLE
-                                        
+
                                         // Don't reset flag here - camera closing is expected during resolution change
                                         // The delayed handler will manage the flag after camera reopens
                                         // Only reset if this is an unexpected close (not during resolution change)
@@ -3330,6 +3470,11 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun resetCameraControls() {
+        if (!isCameraReady) {
+            Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
@@ -3344,10 +3489,10 @@ class MainActivity : AppCompatActivity() {
                     camera.resetExposure()
                     // Note: resetFocus, resetWhiteBalance methods don't exist in CameraUVC
                     camera.resetAutoFocus()
-                    
+
                     // Update UI to reflect reset values
                     updateCameraControlValues()
-                    
+
                     Toast.makeText(this, "All camera controls reset to default", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(this, "Reset failed: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -3453,22 +3598,29 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun toggleAutoFocus() {
+        if (!isCameraReady) {
+            Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     val currentAutoFocus = camera.getAutoFocus() ?: false
                     camera.setAutoFocus(!currentAutoFocus)
-                    
+
                     val newState = !currentAutoFocus
                     // binding.btnAutoFocus.text = if (newState) "Auto Focus ON" else "Auto Focus OFF" // Text not needed for icon button
                     binding.btnAutoFocus.setBackgroundColor(
                         ContextCompat.getColor(this, if (newState) android.R.color.holo_green_dark else android.R.color.darker_gray)
                     )
-                    
+
                     Toast.makeText(this, "Auto Focus: ${if (newState) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(this, "Auto Focus control failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
+            } else {
+                Toast.makeText(this, "Camera type not supported", Toast.LENGTH_SHORT).show()
             }
         } ?: run {
             Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
@@ -3476,19 +3628,24 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun toggleAutoExposure() {
+        if (!isCameraReady) {
+            Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     if (camera.isAutoExposureSupported()) {
                         val currentAutoExposure = camera.getAutoExposure()
                         camera.setAutoExposure(!currentAutoExposure)
-                        
+
                         val newState = !currentAutoExposure
                         // binding.btnAutoExposure.text = if (newState) "Auto Exposure ON" else "Auto Exposure OFF" // Text not needed for icon button
                         binding.btnAutoExposure.setBackgroundColor(
                             ContextCompat.getColor(this, if (newState) android.R.color.holo_green_dark else android.R.color.darker_gray)
                         )
-                        
+
                         Toast.makeText(this, "Auto Exposure: ${if (newState) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(this, "Auto Exposure not supported by this camera", Toast.LENGTH_SHORT).show()
@@ -3496,6 +3653,8 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Toast.makeText(this, "Auto Exposure control failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
+            } else {
+                Toast.makeText(this, "Camera type not supported", Toast.LENGTH_SHORT).show()
             }
         } ?: run {
             Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
@@ -3503,22 +3662,29 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun toggleAutoWhiteBalance() {
+        if (!isCameraReady) {
+            Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     val currentAutoWB = camera.getAutoWhiteBalance() ?: false
                     camera.setAutoWhiteBalance(!currentAutoWB)
-                    
+
                     val newState = !currentAutoWB
                     // binding.btnAutoWhiteBalance.text = if (newState) "Auto WB ON" else "Auto WB OFF" // Text not needed for icon button
                     binding.btnAutoWhiteBalance.setBackgroundColor(
                         ContextCompat.getColor(this, if (newState) android.R.color.holo_green_dark else android.R.color.darker_gray)
                     )
-                    
+
                     Toast.makeText(this, "Auto White Balance: ${if (newState) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(this, "Auto White Balance control failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
+            } else {
+                Toast.makeText(this, "Camera type not supported", Toast.LENGTH_SHORT).show()
             }
         } ?: run {
             Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
