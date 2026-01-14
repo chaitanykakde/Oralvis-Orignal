@@ -211,6 +211,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "=== MAINACTIVITY ONCREATE STARTED ===")
         android.util.Log.d("SettingsDebug", "ONCREATE_START - MainActivity onCreate called")
         super.onCreate(savedInstanceState)
 
@@ -255,9 +256,11 @@ class MainActivity : AppCompatActivity() {
         // Apply saved theme
         applyTheme()
         
+        android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "=== ABOUT TO CALL setupUI() ===")
         android.util.Log.d("SettingsDebug", "About to call setupUI() in onCreate")
         setupUI()
         android.util.Log.d("SettingsDebug", "setupUI() completed in onCreate")
+        android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "=== setupUI() COMPLETED ===")
         observeGlobalPatient()
         initializeFromGlobalPatient()
         android.util.Log.d("SettingsDebug", "About to call checkPermissions() in onCreate")
