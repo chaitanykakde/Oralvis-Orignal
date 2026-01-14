@@ -764,9 +764,12 @@ class MainActivity : AppCompatActivity() {
 
         // Simple, safe click listener setup
         binding.btnSettings.setOnClickListener {
-            android.util.Log.d("SettingsDebug", "SETTINGS BUTTON CLICKED - SIMPLE TEST")
+            android.util.Log.d("SettingsDebug", "=== SETTINGS BUTTON CLICKED - START ===")
+            android.util.Log.d("SettingsDebug", "Current time: ${System.currentTimeMillis()}")
             android.widget.Toast.makeText(this@MainActivity, "Settings panel should open!", android.widget.Toast.LENGTH_SHORT).show()
+            android.util.Log.d("SettingsDebug", "About to call toggleSettingsPanel()")
             toggleSettingsPanel()
+            android.util.Log.d("SettingsDebug", "=== SETTINGS BUTTON CLICKED - END ===")
         }
         android.util.Log.d("SettingsDebug", "btnSettings click listener set successfully")
         
@@ -899,67 +902,106 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun toggleSettingsPanel() {
-        android.util.Log.d("SettingsDebug", "toggleSettingsPanel() called")
-        android.util.Log.d("SettingsDebug", "settingsPanel visibility: ${binding.settingsPanel.visibility}")
-        android.util.Log.d("SettingsDebug", "View.VISIBLE = ${View.VISIBLE}")
-        android.util.Log.d("SettingsDebug", "settingsPanel is null: ${binding.settingsPanel == null}")
+        android.util.Log.d("SettingsDebug", "=== TOGGLE SETTINGS PANEL START ===")
+        android.util.Log.d("SettingsDebug", "toggleSettingsPanel() called at ${System.currentTimeMillis()}")
 
-        if (binding.settingsPanel.visibility == View.VISIBLE) {
-            android.util.Log.d("SettingsDebug", "Calling hideSettingsPanel()")
-            hideSettingsPanel()
-        } else {
-            android.util.Log.d("SettingsDebug", "Calling showSettingsPanel()")
-            showSettingsPanel()
+        try {
+            android.util.Log.d("SettingsDebug", "settingsPanel is null: ${binding.settingsPanel == null}")
+            if (binding.settingsPanel == null) {
+                android.util.Log.e("SettingsDebug", "ERROR: settingsPanel is null!")
+                return
+            }
+
+            android.util.Log.d("SettingsDebug", "settingsPanel visibility: ${binding.settingsPanel.visibility}")
+            android.util.Log.d("SettingsDebug", "View.VISIBLE constant: ${View.VISIBLE}")
+            android.util.Log.d("SettingsDebug", "View.GONE constant: ${View.GONE}")
+
+            if (binding.settingsPanel.visibility == View.VISIBLE) {
+                android.util.Log.d("SettingsDebug", "Panel is VISIBLE, calling hideSettingsPanel()")
+                hideSettingsPanel()
+            } else {
+                android.util.Log.d("SettingsDebug", "Panel is NOT VISIBLE, calling showSettingsPanel()")
+                showSettingsPanel()
+            }
+
+            android.util.Log.d("SettingsDebug", "=== TOGGLE SETTINGS PANEL END ===")
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsDebug", "EXCEPTION in toggleSettingsPanel: ${e.message}", e)
         }
     }
     
     private fun showSettingsPanel() {
-        android.util.Log.d("SettingsDebug", "showSettingsPanel() START")
-        // #region agent log
-        writeDebugLog("A", "MainActivity.kt:800", "showSettingsPanel() called", mapOf("timestamp" to System.currentTimeMillis()))
-        // #endregion
-        android.util.Log.d("ResolutionClick", "showSettingsPanel() called")
+        android.util.Log.d("SettingsDebug", "=== SHOW SETTINGS PANEL START ===")
+        android.util.Log.d("SettingsDebug", "showSettingsPanel() called at ${System.currentTimeMillis()}")
 
-        // Use post to ensure view is measured before animation
-        binding.settingsPanel.post {
-            android.util.Log.d("SettingsDebug", "Settings panel measured in post, width: ${binding.settingsPanel.width}")
+        try {
+            // #region agent log
+            writeDebugLog("A", "MainActivity.kt:800", "showSettingsPanel() called", mapOf("timestamp" to System.currentTimeMillis()))
+            // #endregion
+            android.util.Log.d("ResolutionClick", "showSettingsPanel() called")
 
-            // Calculate panel width (45% of screen width as defined in layout)
-            val screenWidth = resources.displayMetrics.widthPixels
-            val panelWidth = (screenWidth * 0.45f).toInt()
+            android.util.Log.d("SettingsDebug", "About to call binding.settingsPanel.post")
 
-            // Show scrim (dim background)
-            binding.settingsScrim.visibility = View.VISIBLE
-            binding.settingsScrim.alpha = 0f
-            binding.settingsScrim.animate()
-                .alpha(1f)
-                .setDuration(300)
-                .start()
+            // Use post to ensure view is measured before animation
+            binding.settingsPanel.post {
+                android.util.Log.d("SettingsDebug", "=== INSIDE POST BLOCK ===")
+                android.util.Log.d("SettingsDebug", "Settings panel measured - width: ${binding.settingsPanel.width}, height: ${binding.settingsPanel.height}")
 
-            // Show settings panel
-            binding.settingsPanel.visibility = View.VISIBLE
-            binding.settingsPanel.alpha = 0f
-            binding.settingsPanel.translationX = panelWidth.toFloat()
-            android.util.Log.d("SettingsDebug", "Starting animation with translationX: ${panelWidth.toFloat()}")
-            binding.settingsPanel.animate()
-                .alpha(1f)
-                .translationX(0f)
-                .setDuration(300)
-                .withEndAction {
-                    android.util.Log.d("SettingsDebug", "Settings panel animation completed - panel should be visible")
+                // Calculate panel width (45% of screen width as defined in layout)
+                val screenWidth = resources.displayMetrics.widthPixels
+                val panelWidth = (screenWidth * 0.45f).toInt()
+                android.util.Log.d("SettingsDebug", "Screen width: $screenWidth, calculated panel width: $panelWidth")
+
+                // Show scrim (dim background)
+                android.util.Log.d("SettingsDebug", "Setting scrim visibility to VISIBLE")
+                binding.settingsScrim.visibility = View.VISIBLE
+                binding.settingsScrim.alpha = 0f
+                binding.settingsScrim.animate()
+                    .alpha(1f)
+                    .setDuration(300)
+                    .start()
+
+                // Show settings panel
+                android.util.Log.d("SettingsDebug", "Setting panel visibility to VISIBLE")
+                binding.settingsPanel.visibility = View.VISIBLE
+                binding.settingsPanel.alpha = 0f
+                binding.settingsPanel.translationX = panelWidth.toFloat()
+
+                android.util.Log.d("SettingsDebug", "Starting panel animation with translationX: ${panelWidth.toFloat()}")
+
+                val animator = binding.settingsPanel.animate()
+                    .alpha(1f)
+                    .translationX(0f)
+                    .setDuration(300)
+
+                animator.withEndAction {
+                    android.util.Log.d("SettingsDebug", "=== ANIMATION END ACTION ===")
                     android.util.Log.d("SettingsDebug", "Final panel visibility: ${binding.settingsPanel.visibility}")
                     android.util.Log.d("SettingsDebug", "Final panel alpha: ${binding.settingsPanel.alpha}")
                     android.util.Log.d("SettingsDebug", "Final panel translationX: ${binding.settingsPanel.translationX}")
+
                     // #region agent log
                     writeDebugLog("A", "MainActivity.kt:851", "settingsPanel animation complete - setting up spinner", mapOf("timestamp" to System.currentTimeMillis()))
                     // #endregion
                     android.util.Log.d("ResolutionClick", "Settings panel animation complete - setting up resolution spinner")
+
                     // CRITICAL FIX: Setup resolution spinner when side panel is shown
                     // The spinner exists in the side panel but listener was never attached
+                    android.util.Log.d("SettingsDebug", "About to call setupResolutionSpinnerWithRetry")
                     setupResolutionSpinnerWithRetry(binding.settingsPanel, 0)
+                    android.util.Log.d("SettingsDebug", "setupResolutionSpinnerWithRetry completed")
                 }
-                .start()
+
+                android.util.Log.d("SettingsDebug", "Starting animation...")
+                animator.start()
+                android.util.Log.d("SettingsDebug", "Animation started")
+            }
+
+            android.util.Log.d("SettingsDebug", "=== SHOW SETTINGS PANEL END ===")
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsDebug", "EXCEPTION in showSettingsPanel: ${e.message}", e)
         }
+    }
     }
     
     private fun hideSettingsPanel() {
