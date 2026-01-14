@@ -213,7 +213,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         android.util.Log.e("SETTINGS_DEBUG_CRITICAL", "=== MAINACTIVITY ONCREATE STARTED ===")
         android.util.Log.d("SettingsDebug", "ONCREATE_START - MainActivity onCreate called")
+        android.util.Log.d("SettingsDebug", "isGuidedCaptureEnabled: $isGuidedCaptureEnabled")
         super.onCreate(savedInstanceState)
+        android.util.Log.d("SettingsDebug", "super.onCreate() completed")
 
         // Force landscape orientation - lock to horizontal
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -273,9 +275,12 @@ class MainActivity : AppCompatActivity() {
             globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
             android.util.Log.d("SettingsDebug", "globalPatientId obtained: $globalPatientId")
 
-            // TEMPORARILY DISABLE GUIDED CAPTURE TO FIX SETTINGS BUTTON
-            // The GuidedCaptureManager constructor fails when cameraFrame is not attached to window
-            if (false && isGuidedCaptureEnabled) {  // Disabled with false &&
+            // COMPLETELY DISABLE GUIDED CAPTURE FOR TESTING
+            android.util.Log.d("SettingsDebug", "About to check guided capture condition: false")
+            if (false) {  // Completely disabled
+                android.util.Log.d("SettingsDebug", "Guided capture condition is false - SKIPPING guided capture initialization")
+            }
+            android.util.Log.d("SettingsDebug", "Guided capture check completed - continuing with initialization")
                 android.util.Log.d("SettingsDebug", "Guided capture is enabled, initializing...")
                 android.util.Log.d("SettingsDebug", "binding.cameraFrame exists: ${binding.cameraFrame != null}")
                 android.util.Log.d("SettingsDebug", "binding.cameraFrame isAttachedToWindow: ${binding.cameraFrame.isAttachedToWindow}")
