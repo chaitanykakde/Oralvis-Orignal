@@ -748,37 +748,43 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupNewUI() {
+        android.util.Log.d("SettingsDebug", "setupNewUI() method called - BEGIN")
         // Settings button - toggle side panel
         android.util.Log.d("SettingsDebug", "Setting up btnSettings click listener")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings is null: ${binding.btnSettings == null}")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings has parent: ${binding.btnSettings.parent != null}")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings isAttachedToWindow: ${binding.btnSettings.isAttachedToWindow}")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings visibility: ${binding.btnSettings.visibility}")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings isClickable: ${binding.btnSettings.isClickable}")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings isEnabled: ${binding.btnSettings.isEnabled}")
-        android.util.Log.d("SettingsDebug", "binding.btnSettings position: [${binding.btnSettings.left}, ${binding.btnSettings.top}, ${binding.btnSettings.right}, ${binding.btnSettings.bottom}]")
-        android.util.Log.d("SettingsDebug", "binding.topInfoBar visibility: ${binding.topInfoBar.visibility}")
-        android.util.Log.d("SettingsDebug", "binding.topInfoBar width: ${binding.topInfoBar.width}, height: ${binding.topInfoBar.height}")
-        android.util.Log.d("SettingsDebug", "binding.topInfoBar position: [${binding.topInfoBar.left}, ${binding.topInfoBar.top}, ${binding.topInfoBar.right}, ${binding.topInfoBar.bottom}]")
-        android.util.Log.d("SettingsDebug", "binding.navigationRailCard width: ${binding.navigationRailCard.width}, position: [${binding.navigationRailCard.left}, ${binding.navigationRailCard.top}]")
-        android.util.Log.d("SettingsDebug", "binding.settingsScrim visibility: ${binding.settingsScrim.visibility}")
-        android.util.Log.d("SettingsDebug", "binding.settingsPanel visibility: ${binding.settingsPanel.visibility}")
-        android.util.Log.d("SettingsDebug", "Screen size: ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}")
+        try {
+            android.util.Log.d("SettingsDebug", "binding.btnSettings is null: ${binding.btnSettings == null}")
+            android.util.Log.d("SettingsDebug", "binding.btnSettings has parent: ${binding.btnSettings.parent != null}")
+            android.util.Log.d("SettingsDebug", "binding.btnSettings isAttachedToWindow: ${binding.btnSettings.isAttachedToWindow}")
+            android.util.Log.d("SettingsDebug", "binding.btnSettings visibility: ${binding.btnSettings.visibility}")
+            android.util.Log.d("SettingsDebug", "binding.btnSettings isClickable: ${binding.btnSettings.isClickable}")
+            android.util.Log.d("SettingsDebug", "binding.btnSettings isEnabled: ${binding.btnSettings.isEnabled}")
+            android.util.Log.d("SettingsDebug", "binding.btnSettings position: [${binding.btnSettings.left}, ${binding.btnSettings.top}, ${binding.btnSettings.right}, ${binding.btnSettings.bottom}]")
+            android.util.Log.d("SettingsDebug", "binding.topInfoBar visibility: ${binding.topInfoBar.visibility}")
+            android.util.Log.d("SettingsDebug", "binding.topInfoBar width: ${binding.topInfoBar.width}, height: ${binding.topInfoBar.height}")
+            android.util.Log.d("SettingsDebug", "binding.topInfoBar position: [${binding.topInfoBar.left}, ${binding.topInfoBar.top}, ${binding.topInfoBar.right}, ${binding.topInfoBar.bottom}]")
+            android.util.Log.d("SettingsDebug", "binding.navigationRailCard width: ${binding.navigationRailCard.width}, position: [${binding.navigationRailCard.left}, ${binding.navigationRailCard.top}]")
+            android.util.Log.d("SettingsDebug", "binding.settingsScrim visibility: ${binding.settingsScrim.visibility}")
+            android.util.Log.d("SettingsDebug", "binding.settingsPanel visibility: ${binding.settingsPanel.visibility}")
+            android.util.Log.d("SettingsDebug", "Screen size: ${resources.displayMetrics.widthPixels}x${resources.displayMetrics.heightPixels}")
 
-        // Check if settings button is actually hit by touch coordinates
-        val touchX = 1841.8037f  // From user's log
-        val touchY = 143.08789f  // From user's log
-        val buttonRect = android.graphics.Rect(
-            binding.btnSettings.left,
-            binding.btnSettings.top,
-            binding.btnSettings.right,
-            binding.btnSettings.bottom
-        )
-        android.util.Log.d("SettingsDebug", "Touch coordinates (${touchX.toInt()}, ${touchY.toInt()}) in button rect ${buttonRect}: ${buttonRect.contains(touchX.toInt(), touchY.toInt())}")
+            // Check if settings button is actually hit by touch coordinates
+            val touchX = 1841.8037f  // From user's log
+            val touchY = 143.08789f  // From user's log
+            val buttonRect = android.graphics.Rect(
+                binding.btnSettings.left,
+                binding.btnSettings.top,
+                binding.btnSettings.right,
+                binding.btnSettings.bottom
+            )
+            android.util.Log.d("SettingsDebug", "Touch coordinates (${touchX.toInt()}, ${touchY.toInt()}) in button rect ${buttonRect}: ${buttonRect.contains(touchX.toInt(), touchY.toInt())}")
 
-        binding.btnSettings.setOnClickListener {
-            android.util.Log.d("SettingsDebug", "btnSettings clicked - calling toggleSettingsPanel()")
-            toggleSettingsPanel()
+            binding.btnSettings.setOnClickListener {
+                android.util.Log.d("SettingsDebug", "btnSettings clicked - calling toggleSettingsPanel()")
+                toggleSettingsPanel()
+            }
+            android.util.Log.d("SettingsDebug", "btnSettings click listener set successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsDebug", "Exception setting up btnSettings: ${e.message}", e)
         }
         
         // Close settings panel
@@ -809,6 +815,8 @@ class MainActivity : AppCompatActivity() {
         
         // Setup session media RecyclerView
         setupSessionMediaRecycler()
+
+        android.util.Log.d("SettingsDebug", "setupNewUI() method completed - END")
     }
     
     private fun setupSessionMediaRecycler() {
