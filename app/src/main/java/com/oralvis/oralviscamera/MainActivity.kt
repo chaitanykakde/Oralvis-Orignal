@@ -824,6 +824,9 @@ class MainActivity : AppCompatActivity() {
         binding.btnSettings.setOnClickListener {
             android.util.Log.d("SettingsDebug", "=== SETTINGS BUTTON CLICKED - START ===")
             android.util.Log.d("SettingsDebug", "Current time: ${System.currentTimeMillis()}")
+            android.util.Log.d("SettingsDebug", "guidedCaptureManager: $guidedCaptureManager")
+            android.util.Log.d("SettingsDebug", "guidedCaptureManager?.isEnabled: ${guidedCaptureManager?.isEnabled}")
+            android.util.Log.d("SettingsDebug", "isGuidedCaptureEnabled: $isGuidedCaptureEnabled")
             android.widget.Toast.makeText(this@MainActivity, "Settings panel should open!", android.widget.Toast.LENGTH_SHORT).show()
             android.util.Log.d("SettingsDebug", "About to call toggleSettingsPanel()")
             toggleSettingsPanel()
@@ -1037,6 +1040,14 @@ class MainActivity : AppCompatActivity() {
                     android.util.Log.d("SettingsDebug", "Final panel visibility: ${binding.settingsPanel.visibility}")
                     android.util.Log.d("SettingsDebug", "Final panel alpha: ${binding.settingsPanel.alpha}")
                     android.util.Log.d("SettingsDebug", "Final panel translationX: ${binding.settingsPanel.translationX}")
+                    android.util.Log.d("SettingsDebug", "Final scrim visibility: ${binding.settingsScrim.visibility}")
+                    android.util.Log.d("SettingsDebug", "Final scrim alpha: ${binding.settingsScrim.alpha}")
+
+                    // Check if panel is actually visible on screen
+                    val panelRect = android.graphics.Rect()
+                    binding.settingsPanel.getGlobalVisibleRect(panelRect)
+                    android.util.Log.d("SettingsDebug", "Panel global visible rect: $panelRect")
+                    android.util.Log.d("SettingsDebug", "Panel should now be visible to user!")
 
                     // #region agent log
                     writeDebugLog("A", "MainActivity.kt:851", "settingsPanel animation complete - setting up spinner", mapOf("timestamp" to System.currentTimeMillis()))
