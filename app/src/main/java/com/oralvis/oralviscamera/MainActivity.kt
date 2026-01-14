@@ -211,8 +211,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        android.util.Log.d("SettingsDebug", "ONCREATE_START - MainActivity onCreate called")
         super.onCreate(savedInstanceState)
-        
+
         // Force landscape orientation - lock to horizontal
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         
@@ -223,14 +224,6 @@ class MainActivity : AppCompatActivity() {
 
         // Verify settings button exists
         android.util.Log.d("SettingsDebug", "Binding initialized - btnSettings exists: ${binding.btnSettings != null}")
-
-        // TEMPORARY TEST: Add immediate click listener to verify button works
-        android.util.Log.d("SettingsDebug", "Setting TEMPORARY click listener on btnSettings")
-        binding.btnSettings.setOnClickListener {
-            android.util.Log.d("SettingsDebug", "TEMPORARY TEST: Settings button clicked!")
-            android.widget.Toast.makeText(this, "TEMPORARY TEST: Settings button works!", android.widget.Toast.LENGTH_SHORT).show()
-        }
-        android.util.Log.d("SettingsDebug", "TEMPORARY click listener set successfully")
         
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -372,7 +365,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        android.util.Log.d("SettingsDebug", "setupUI() method called - BEGIN")
+        android.util.Log.d("SettingsDebug", "SETUP_UI_CALLED - setupUI() method called - BEGIN")
         binding.navCamera.setOnClickListener {
             // Already on camera screen; no action required
         }
@@ -1009,7 +1002,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             android.util.Log.e("SettingsDebug", "EXCEPTION in showSettingsPanel: ${e.message}", e)
         }
-    }
     }
     
     private fun hideSettingsPanel() {
