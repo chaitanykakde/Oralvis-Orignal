@@ -151,6 +151,21 @@
                 app:backgroundTint="@null"
                 android:stateListAnimator="@null" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnShareLogs"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="Share Full Logs (ZIP)"
+                android:textSize="14sp"
+                android:textColor="#FFFFFF"
+                android:background="@drawable/button_outline_white"
+                app:cornerRadius="8dp"
+                app:strokeColor="#E2E8F0"
+                app:strokeWidth="1dp"
+                android:layout_marginTop="16dp"
+                app:backgroundTint="#1E293B"
+                android:stateListAnimator="@null" />
+
             <ProgressBar
                 android:id="@+id/progressBar"
                 android:layout_width="wrap_content"

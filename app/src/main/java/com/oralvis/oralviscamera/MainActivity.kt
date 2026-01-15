@@ -188,6 +188,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     // Guided auto-capture (currently forced ON for development/demo; no flags)
     private val isGuidedCaptureEnabled: Boolean = true // kept for future use but ignored for now
     private var guidedCaptureManager: GuidedCaptureManager? = null
+
+    // Log collection for debugging
+    private lateinit var logCollector: LogCollector
     
     /**
      * Get the current Global Patient ID for S3 folder structure
@@ -347,6 +350,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             }
         )
         android.util.Log.i("UsbSerial", "USB serial manager initialized")
+
+        // Initialize log collector for debugging
+        logCollector = LogCollector(this)
     }
     
     override fun onResume() {
@@ -1119,7 +1125,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
 
         binding.btnShareLogs.setOnClickListener {
-            shareRecentLogs()
+            shareFullLogs()
         }
 
         // Auto control buttons
@@ -4289,155 +4295,33 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     
     /**
-     * Collects and shares recent logs from the last 1 hour
+     * Collects and shares full app logs as a ZIP file
      */
-    private fun shareRecentLogs() {
-        try {
-            android.util.Log.d("LogSharing", "Starting to collect recent logs...")
-            Toast.makeText(this, "Collecting logs from last 1 hour...", Toast.LENGTH_SHORT).show()
-            
-            val logBuilder = StringBuilder()
-            logBuilder.append("=== OralVis Camera Logs (Last 1 Hour) ===\n")
-            logBuilder.append("Collected at: ${android.text.format.DateFormat.format("yyyy-MM-dd HH:mm:ss", System.currentTimeMillis())}\n")
-            logBuilder.append("Package: com.oralvis.oralviscamera\n")
-            logBuilder.append("App Version: ${packageManager.getPackageInfo(packageName, 0).versionName}\n")
-            logBuilder.append("=============================================\n\n")
-            
-            // Try to get logs using logcat -d (dump current buffer)
-            // Filter by our package name and important tags
-            val process = Runtime.getRuntime().exec("logcat -d")
-            val inputStream = process.inputStream
-            val reader = java.io.BufferedReader(java.io.InputStreamReader(inputStream))
-            
-            // Calculate cutoff time (1 hour ago)
-            val cutoffTime = System.currentTimeMillis() - (60 * 60 * 1000)
-            
-            var line: String?
-            var lineCount = 0
-            val maxLines = 1000 // Limit to prevent huge files
-            
-            while (reader.readLine().also { line = it } != null && lineCount < maxLines) {
-                line?.let { logLine ->
-                    // Filter to only include our app's logs or important system logs
-                    val isRelevant = logLine.contains("com.oralvis.oralviscamera") || 
-                                     logLine.contains("Resolution") || 
-                                     logLine.contains("ResolutionManager") ||
-                                     logLine.contains("ResolutionTopSpinner") ||
-                                     logLine.contains("ResolutionChange") ||
-                                     logLine.contains("CameraUVC") || 
-                                     logLine.contains("MultiCamera") ||
-                                     logLine.contains("UVCCamera") ||
-                                     logLine.contains("libUVCCamera") ||
-                                     logLine.contains("libusb") ||
-                                     logLine.contains("libuvc") ||
-                                     logLine.contains("Camera") ||
-                                     logLine.contains("Guided") ||
-                                     logLine.contains("MotionAnalyzer") ||
-                                     logLine.contains("AutoCapture")
-                    
-                    if (isRelevant) {
-                        // Try to parse timestamp from log line (format: MM-DD HH:MM:SS.mmm)
-                        // If we can't parse, include it anyway (better to have more logs)
-                        try {
-                            val parts = logLine.split(" ")
-                            if (parts.size >= 2) {
-                                val datePart = parts[0]
-                                val timePart = parts[1]
-                                val dateTimeStr = "$datePart $timePart"
-                                
-                                // Parse date/time (format: MM-DD HH:MM:SS.mmm)
-                                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-                                val sdf = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.getDefault())
-                                val logTime = sdf.parse("$dateTimeStr")
-                                
-                                if (logTime != null) {
-                                    val calendar = java.util.Calendar.getInstance()
-                                    calendar.time = logTime
-                                    calendar.set(java.util.Calendar.YEAR, currentYear)
-                                    
-                                    if (calendar.timeInMillis >= cutoffTime) {
-                                        logBuilder.append(logLine).append("\n")
-                                        lineCount++
-                                    }
-                                } else {
-                                    // Can't parse time, include it anyway if it's recent
-                                    logBuilder.append(logLine).append("\n")
-                                    lineCount++
-                                }
-                            } else {
-                                // No timestamp, include it
-                                logBuilder.append(logLine).append("\n")
-                                lineCount++
-                            }
-                        } catch (e: Exception) {
-                            // Parsing failed, include the line anyway
-                            logBuilder.append(logLine).append("\n")
-                            lineCount++
-                        }
-                    }
-                }
-            }
-            
-            reader.close()
-            inputStream.close()
-            process.destroy()
-            
-            // If we didn't get many logs, try getting last N lines without time filter
-            if (lineCount < 50) {
-                logBuilder.append("\n=== Additional Recent Logs (Last 300 lines, no time filter) ===\n\n")
-                
-                val process2 = Runtime.getRuntime().exec("logcat -d -t 300")
-                val inputStream2 = process2.inputStream
-                val reader2 = java.io.BufferedReader(java.io.InputStreamReader(inputStream2))
-                
-                var line2: String?
-                var lineCount2 = 0
-                while (reader2.readLine().also { line2 = it } != null && lineCount2 < 300) {
-                    line2?.let {
-                        if (it.contains("com.oralvis.oralviscamera") || 
-                            it.contains("Resolution") || 
-                            it.contains("Camera") || 
-                            it.contains("MultiCamera") ||
-                            it.contains("UVCCamera")) {
-                            logBuilder.append(it).append("\n")
-                            lineCount2++
-                        }
-                    }
-                }
-                reader2.close()
-                inputStream2.close()
-                process2.destroy()
-            }
-            
-            logBuilder.append("\n=== End of Logs ===\n")
-            logBuilder.append("Total lines collected: $lineCount\n")
-            
-            val logText = logBuilder.toString()
-            
-            if (logText.length < 200) {
-                Toast.makeText(this, "No recent logs found. Try again after using the app.", Toast.LENGTH_LONG).show()
-                android.util.Log.w("LogSharing", "No logs collected (length: ${logText.length})")
-                return
-            }
-            
-            // Share via Intent
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "OralVis Camera Logs - Last 1 Hour")
-                putExtra(Intent.EXTRA_TEXT, logText)
-            }
-            
-            startActivity(Intent.createChooser(shareIntent, "Share Logs"))
-            
-            android.util.Log.d("LogSharing", "Logs shared successfully (${logText.length} characters, $lineCount lines)")
-            Toast.makeText(this, "Logs ready to share! ($lineCount lines)", Toast.LENGTH_SHORT).show()
-            
-        } catch (e: Exception) {
-            android.util.Log.e("LogSharing", "Failed to collect logs: ${e.message}", e)
-            Toast.makeText(this, "Failed to collect logs: ${e.message}", Toast.LENGTH_LONG).show()
+    private fun shareFullLogs() {
+        // Show progress indicator
+        Toast.makeText(this, "Collecting full logs...", Toast.LENGTH_SHORT).show()
 
-            // Show error details
-            e.printStackTrace()
+        lifecycleScope.launch {
+            try {
+                android.util.Log.d("LogSharing", "Starting full log collection...")
+
+                val zipFile = logCollector.collectAndZipLogs()
+
+                if (zipFile != null && zipFile.exists()) {
+                    android.util.Log.d("LogSharing", "Log collection successful: ${zipFile.absolutePath} (${zipFile.length()} bytes)")
+                    Toast.makeText(this@MainActivity, "Full logs collected successfully!", Toast.LENGTH_SHORT).show()
+
+                    // Share the ZIP file
+                    logCollector.shareLogZip(zipFile)
+                } else {
+                    android.util.Log.e("LogSharing", "Log collection failed - no ZIP file created")
+                    Toast.makeText(this@MainActivity, "Failed to collect logs. Please try again.", Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                android.util.Log.e("LogSharing", "Exception during log collection", e)
+                Toast.makeText(this@MainActivity, "Error collecting logs: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

@@ -12,6 +12,7 @@ import com.oralvis.oralviscamera.api.ApiClient
 import com.oralvis.oralviscamera.api.LoginRequest
 import com.oralvis.oralviscamera.databinding.ActivityLoginBinding
 import kotlinx.coroutines.launch
+import android.util.Log
 
 /**
  * Login Activity - UI-level gating only.
@@ -23,9 +24,10 @@ import kotlinx.coroutines.launch
  * - Login is independent of ClinicId
  */
 class LoginActivity : AppCompatActivity() {
-    
+
     private lateinit var binding: ActivityLoginBinding
     private lateinit var loginManager: LoginManager
+    private lateinit var logCollector: LogCollector
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,9 +38,10 @@ class LoginActivity : AppCompatActivity() {
         
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        
+
         loginManager = LoginManager(this)
-        
+        logCollector = LogCollector(this)
+
         setupUI()
     }
     
@@ -46,7 +49,11 @@ class LoginActivity : AppCompatActivity() {
         binding.btnLogin.setOnClickListener {
             performLogin()
         }
-        
+
+        binding.btnShareLogs.setOnClickListener {
+            shareLogs()
+        }
+
         // Hide error text initially
         binding.errorText.visibility = View.GONE
     }
@@ -143,6 +150,45 @@ class LoginActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 android.util.Log.e("LoginActivity", "Exception during patient sync", e)
+            }
+        }
+    }
+
+    private fun shareLogs() {
+        // Show progress indicator
+        binding.btnShareLogs.isEnabled = false
+        binding.btnShareLogs.text = "Collecting Logs..."
+        binding.progressBar.visibility = View.VISIBLE
+
+        lifecycleScope.launch {
+            try {
+                Log.d("LoginActivity", "Starting full log collection process")
+
+                // First run a test to see what's available
+                logCollector.testLogCollection()
+
+                val zipFile = logCollector.collectAndZipLogs()
+
+                if (zipFile != null && zipFile.exists()) {
+                    Log.d("LoginActivity", "Log collection successful: ${zipFile.absolutePath} (${zipFile.length()} bytes)")
+                    val sizeKB = zipFile.length() / 1024
+                    Toast.makeText(this@LoginActivity, "Full logs collected successfully (${sizeKB} KB)!", Toast.LENGTH_LONG).show()
+
+                    // Share the ZIP file
+                    logCollector.shareLogZip(zipFile)
+                } else {
+                    Log.e("LoginActivity", "Log collection failed - no ZIP file created")
+                    Toast.makeText(this@LoginActivity, "Failed to collect logs. Please try again.", Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                Log.e("LoginActivity", "Exception during log collection", e)
+                Toast.makeText(this@LoginActivity, "Error collecting logs: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                // Reset UI state
+                binding.btnShareLogs.isEnabled = true
+                binding.btnShareLogs.text = "Share Full Logs"
+                binding.progressBar.visibility = View.GONE
             }
         }
     }
