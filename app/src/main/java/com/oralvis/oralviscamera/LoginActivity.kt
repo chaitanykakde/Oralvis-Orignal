@@ -131,8 +131,17 @@ class LoginActivity : AppCompatActivity() {
     }
     
     private fun navigateToMain() {
-        val intent = Intent(this, MainActivity::class.java)
-        startActivity(intent)
+        val mainIntent = Intent(this, MainActivity::class.java)
+
+        // If there was a pending intent (e.g., USB device attachment that triggered the auth gate),
+        // pass it along so MainActivity can handle it after authentication
+        val pendingIntent = intent.getParcelableExtra<Intent>("pending_intent")
+        if (pendingIntent != null) {
+            android.util.Log.d("LoginActivity", "Forwarding pending intent to MainActivity: ${pendingIntent.action}")
+            mainIntent.putExtra("pending_usb_intent", pendingIntent)
+        }
+
+        startActivity(mainIntent)
         finish()
     }
 

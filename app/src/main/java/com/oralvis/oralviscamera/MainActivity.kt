@@ -239,6 +239,32 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         super.onCreate(savedInstanceState)
         android.util.Log.d("SettingsDebug", "super.onCreate() completed")
 
+        // AUTHENTICATION GATE: Check login status for ALL entry paths (normal + USB)
+        // This prevents USB-triggered launches from bypassing login validation
+        val loginManager = LoginManager(this)
+        if (!loginManager.isLoggedIn()) {
+            android.util.Log.d("AuthGate", "User not logged in - redirecting to LoginActivity")
+            android.util.Log.d("AuthGate", "Launch intent action: ${intent?.action}")
+            android.util.Log.d("AuthGate", "Launch intent extras: ${intent?.extras}")
+
+            // Redirect to login screen, preserving the original intent for post-login handling if needed
+            val loginIntent = Intent(this, LoginActivity::class.java)
+            // Pass the original intent as extra so LoginActivity can handle USB-triggered launches after login
+            loginIntent.putExtra("pending_intent", intent)
+            startActivity(loginIntent)
+            finish() // Close MainActivity to prevent back navigation exposing inner app
+            return
+        }
+        android.util.Log.d("AuthGate", "User authenticated - proceeding with MainActivity initialization")
+
+        // Handle any pending USB intents that were preserved during authentication
+        val pendingUsbIntent = intent.getParcelableExtra<Intent>("pending_usb_intent")
+        if (pendingUsbIntent != null) {
+            android.util.Log.d("AuthGate", "Processing pending USB intent after login: ${pendingUsbIntent.action}")
+            // The USB device attachment will be handled by the existing USB callbacks
+            // Camera detection and USB serial initialization will proceed normally
+        }
+
         // Force landscape orientation - lock to horizontal
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         
@@ -354,7 +380,35 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         // Initialize log collector for debugging
         logCollector = LogCollector(this)
     }
-    
+
+    /**
+     * Handle new intents, including USB device attachment while app is running.
+     * Since user is already in MainActivity, they must be authenticated.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        android.util.Log.d("AuthGate", "onNewIntent received - action: ${intent.action}")
+        android.util.Log.d("AuthGate", "onNewIntent extras: ${intent.extras}")
+
+        // Handle USB device attachment while app is already running
+        if (intent.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+            android.util.Log.d("AuthGate", "USB device attached while MainActivity running - camera will auto-detect")
+            // Camera detection will happen through the existing USB callbacks
+            // No need to redirect - user is already authenticated and in the app
+        }
+
+        // Handle pending USB intents that were forwarded after login
+        val pendingUsbIntent = intent.getParcelableExtra<Intent>("pending_usb_intent")
+        if (pendingUsbIntent != null) {
+            android.util.Log.d("AuthGate", "Received pending USB intent via onNewIntent: ${pendingUsbIntent.action}")
+            // The USB device attachment will be handled by existing callbacks
+            // No additional action needed - authentication gate has already passed
+        }
+
+        // Update the current intent
+        setIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         // Reapply theme when returning from other activities to sync theme changes
