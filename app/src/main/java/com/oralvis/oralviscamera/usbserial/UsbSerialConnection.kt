@@ -1,5 +1,6 @@
 package com.oralvis.oralviscamera.usbserial
 
+import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
@@ -31,7 +32,7 @@ class UsbSerialConnection(
     @Volatile private var isRunning = false
     
     /**
-     * Open the USB connection and claim the interface.
+     * Open the USB connection and claim the CDC DATA interface.
      * @return true if connection opened successfully
      */
     fun open(): Boolean {
@@ -41,27 +42,36 @@ class UsbSerialConnection(
                 Log.e(TAG, "Failed to open USB device")
                 return false
             }
-            
-            // Claim the first interface
-            if (device.interfaceCount == 0) {
-                Log.e(TAG, "No interfaces available on device")
+
+            // Find CDC DATA interface (USB_CLASS_CDC_DATA = 10)
+            var cdcDataInterface: android.hardware.usb.UsbInterface? = null
+            for (i in 0 until device.interfaceCount) {
+                val intf = device.getInterface(i)
+                if (intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA) {
+                    cdcDataInterface = intf
+                    break
+                }
+            }
+
+            if (cdcDataInterface == null) {
+                Log.e(TAG, "No CDC DATA interface found on device")
                 conn.close()
                 return false
             }
-            
-            val intf = device.getInterface(0)
-            if (!conn.claimInterface(intf, true)) {
-                Log.e(TAG, "Failed to claim interface")
+
+            // Claim the CDC DATA interface only
+            if (!conn.claimInterface(cdcDataInterface, true)) {
+                Log.e(TAG, "Failed to claim CDC DATA interface (index ${cdcDataInterface.id})")
                 conn.close()
                 return false
             }
-            
+
             connection = conn
-            Log.i(TAG, "USB connection opened successfully")
+            Log.i(TAG, "✅ USB connection opened successfully - using CDC DATA interface index ${cdcDataInterface.id}")
             return true
-            
+
         } catch (e: Exception) {
-            Log.e(TAG, "Error opening USB connection: ${e.message}", e)
+            Log.e(TAG, "❌ Error opening USB connection: ${e.message}", e)
             return false
         }
     }
@@ -75,34 +85,53 @@ class UsbSerialConnection(
             Log.e(TAG, "Cannot start reading: connection not open")
             return
         }
-        
+
         isRunning = true
         readThread = Thread({
             Log.i(TAG, "USB read thread started")
             val buffer = ByteArray(BUFFER_SIZE)
             val commandBuffer = StringBuilder()
-            
+
             try {
-                // Find the IN endpoint (bulk transfer for reading)
-                val intf = device.getInterface(0)
-                var inEndpoint: android.hardware.usb.UsbEndpoint? = null
-                
-                for (i in 0 until intf.endpointCount) {
-                    val endpoint = intf.getEndpoint(i)
-                    if (endpoint.direction == android.hardware.usb.UsbConstants.USB_DIR_IN &&
-                        endpoint.type == android.hardware.usb.UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                        inEndpoint = endpoint
+                // Find the CDC DATA interface that was claimed
+                var cdcDataInterface: android.hardware.usb.UsbInterface? = null
+                for (i in 0 until device.interfaceCount) {
+                    val intf = device.getInterface(i)
+                    if (intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA) {
+                        cdcDataInterface = intf
                         break
                     }
                 }
-                
-                if (inEndpoint == null) {
-                    Log.e(TAG, "No bulk IN endpoint found")
+
+                if (cdcDataInterface == null) {
+                    Log.e(TAG, "❌ No CDC DATA interface found")
                     return@Thread
                 }
-                
-                Log.d(TAG, "Using IN endpoint: address=${inEndpoint.address}, maxPacketSize=${inEndpoint.maxPacketSize}")
-                
+
+                // Find BULK IN and BULK OUT endpoints on the CDC DATA interface
+                var inEndpoint: android.hardware.usb.UsbEndpoint? = null
+                var outEndpoint: android.hardware.usb.UsbEndpoint? = null
+
+                for (i in 0 until cdcDataInterface.endpointCount) {
+                    val endpoint = cdcDataInterface.getEndpoint(i)
+                    if (endpoint.type == UsbConstants.USB_ENDPOINT_XFER_BULK) {
+                        if (endpoint.direction == UsbConstants.USB_DIR_IN) {
+                            inEndpoint = endpoint
+                        } else if (endpoint.direction == UsbConstants.USB_DIR_OUT) {
+                            outEndpoint = endpoint
+                        }
+                    }
+                }
+
+                if (inEndpoint == null) {
+                    Log.e(TAG, "❌ No bulk IN endpoint found on CDC DATA interface")
+                    return@Thread
+                }
+
+                // Log endpoint information for diagnostics
+                Log.i(TAG, "📡 Using CDC DATA interface index ${cdcDataInterface.id}")
+                Log.i(TAG, "📡 CDC DATA endpoints: IN=${inEndpoint.address}, OUT=${outEndpoint?.address ?: "N/A"}")
+
                 while (isRunning) {
                     try {
                         // Blocking bulk transfer

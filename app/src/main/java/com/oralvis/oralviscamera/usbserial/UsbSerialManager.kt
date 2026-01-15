@@ -152,7 +152,7 @@ class UsbSerialManager(
         closeConnection()
 
         // Log detailed device information for the connection
-        Log.i(TAG, "Attempting to connect to OralVis device:")
+        Log.i(TAG, "🔌 Attempting to connect to OralVis device:")
         Log.i(TAG, "  Device Name: ${device.deviceName}")
         Log.i(TAG, "  Vendor ID: ${device.vendorId} (0x${device.vendorId.toString(16)})")
         Log.i(TAG, "  Product ID: ${device.productId} (0x${device.productId.toString(16)})")
@@ -161,6 +161,12 @@ class UsbSerialManager(
         Log.i(TAG, "  Product Name: ${device.productName ?: "N/A"}")
         Log.i(TAG, "  Device Class: ${device.deviceClass}")
         Log.i(TAG, "  Interfaces: ${device.interfaceCount}")
+
+        // Log interface details for debugging
+        for (i in 0 until device.interfaceCount) {
+            val intf = device.getInterface(i)
+            Log.i(TAG, "  Interface $i: class=${intf.interfaceClass}, subclass=${intf.interfaceSubclass}, protocol=${intf.interfaceProtocol}, endpoints=${intf.endpointCount}")
+        }
 
         try {
             val connection = UsbSerialConnection(
