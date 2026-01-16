@@ -41,33 +41,40 @@ class UsbSerialManager(
      * CRITICAL: Only starts if camera is ready to ensure camera-exclusive device ownership.
      */
     fun start() {
-        if (isStarted) {
-            Log.d(TAG, "Already started")
-            return
-        }
+        try {
+            if (isStarted) {
+                Log.d(TAG, "Already started")
+                return
+            }
 
-        // ENFORCE CAMERA-FIRST RULE: Serial only starts after camera is ready
-        if (!isCameraReady()) {
-            Log.i(TAG, "⚠️ Camera not ready - USB serial start deferred until camera opens")
-            return
-        }
+            // ENFORCE CAMERA-FIRST RULE: Serial only starts after camera is ready
+            if (!isCameraReady()) {
+                Log.i(TAG, "⚠️ Camera not ready - USB serial start deferred until camera opens")
+                return
+            }
 
-        Log.i(TAG, "Starting USB serial manager (camera is ready)")
-        isStarted = true
+            Log.i(TAG, "Starting USB serial manager (camera is ready)")
+            isStarted = true
 
-        // Try to find and connect to the OralVis device
-        // Camera has already opened the device, so we just need to find it
-        val deviceList = usbManager.deviceList
-        val oralvisDevice = deviceList.values.find { device ->
-            device.vendorId == 0x1209 && device.productId == 0xC550
-        }
+            // Try to find and connect to the OralVis device
+            // Camera has already opened the device, so we just need to find it
+            val deviceList = usbManager.deviceList
+            val oralvisDevice = deviceList.values.find { device ->
+                device.vendorId == 0x1209 && device.productId == 0xC550
+            }
 
-        if (oralvisDevice != null) {
-            Log.i(TAG, "Found OralVis device for serial connection: ${oralvisDevice.deviceName}")
-            currentDevice = oralvisDevice
-            openConnection(oralvisDevice)
-        } else {
-            Log.w(TAG, "No OralVis device found for serial connection")
+            if (oralvisDevice != null) {
+                Log.i(TAG, "Found OralVis device for serial connection: ${oralvisDevice.deviceName}")
+                currentDevice = oralvisDevice
+                openConnection(oralvisDevice)
+            } else {
+                Log.w(TAG, "No OralVis device found for serial connection")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error starting USB serial manager: ${e.message}", e)
+            // Reset state on error
+            isStarted = false
+            currentDevice = null
         }
     }
     
@@ -116,8 +123,7 @@ class UsbSerialManager(
             return
         }
 
-        // Get the camera's device connection via reflection
-        // CameraUVC has mCtrlBlock field that contains UsbControlBlock
+        // Get the camera's device connection
         val cameraConnection = getCameraDeviceConnection()
         if (cameraConnection == null) {
             Log.e(TAG, "❌ Cannot access camera's device connection")
@@ -128,6 +134,12 @@ class UsbSerialManager(
         Log.i(TAG, "🔌 Opening serial using camera's device connection")
 
         try {
+            if (cameraConnection == null) {
+                Log.e(TAG, "❌ Cannot establish serial connection: camera device connection is null")
+                onConnectionStateChanged(false)
+                return
+            }
+
             val connection = UsbSerialConnection(
                 usbManager = usbManager,
                 device = device,
@@ -151,6 +163,8 @@ class UsbSerialManager(
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error establishing serial connection: ${e.message}", e)
             onConnectionStateChanged(false)
+            // Reset state on error
+            serialConnection = null
         }
     }
     
@@ -211,14 +225,21 @@ class UsbSerialManager(
      * This allows serial to start if it was deferred.
      */
     fun onCameraOpened(cameraConnection: android.hardware.usb.UsbDeviceConnection) {
-        cameraDeviceConnection = cameraConnection
-        isCameraReady = true
-        Log.i(TAG, "📷 Camera opened - serial can now use camera's device connection")
+        try {
+            cameraDeviceConnection = cameraConnection
+            isCameraReady = true
+            Log.i(TAG, "📷 Camera opened - serial can now use camera's device connection")
 
-        // If serial was deferred due to camera not being ready, start it now
-        if (!isStarted) {
-            Log.i(TAG, "🔄 Starting deferred USB serial after camera opened")
-            start()
+            // If serial was deferred due to camera not being ready, start it now
+            if (!isStarted) {
+                Log.i(TAG, "🔄 Starting deferred USB serial after camera opened")
+                start()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error in onCameraOpened: ${e.message}", e)
+            // Reset state on error to prevent inconsistent state
+            isCameraReady = false
+            cameraDeviceConnection = null
         }
     }
 
@@ -227,12 +248,21 @@ class UsbSerialManager(
      * Serial should stop when camera stops.
      */
     fun onCameraClosed() {
-        isCameraReady = false
-        cameraDeviceConnection = null
-        Log.i(TAG, "📷 Camera closed - stopping USB serial and clearing device connection")
+        try {
+            isCameraReady = false
+            cameraDeviceConnection = null
+            Log.i(TAG, "📷 Camera closed - stopping USB serial and clearing device connection")
 
-        // Stop serial when camera closes
-        stop()
+            // Stop serial when camera closes
+            stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error in onCameraClosed: ${e.message}", e)
+            // Force reset state even on error
+            isCameraReady = false
+            cameraDeviceConnection = null
+            isStarted = false
+            serialConnection = null
+        }
     }
 
     /**

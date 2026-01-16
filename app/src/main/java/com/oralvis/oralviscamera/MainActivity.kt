@@ -213,6 +213,29 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             Intent(context, MainActivity::class.java)
     }
 
+    // Lifecycle-safe dialog management
+    private var pendingPatientDialog = false
+
+    /**
+     * Shows a DialogFragment safely, respecting Android lifecycle.
+     * Prevents IllegalStateException crashes from showing dialogs after onSaveInstanceState.
+     */
+    private fun showDialogSafely(dialog: androidx.fragment.app.DialogFragment, tag: String) {
+        if (isFinishing || isDestroyed) {
+            android.util.Log.w("MainActivity", "Skipping dialog show: Activity finishing or destroyed")
+            return
+        }
+        if (supportFragmentManager.isStateSaved) {
+            android.util.Log.w("MainActivity", "Deferring dialog show: Activity state already saved")
+            // Defer to onResume if this is a patient dialog
+            if (dialog is com.oralvis.oralviscamera.PatientSessionDialogFragment) {
+                pendingPatientDialog = true
+            }
+            return
+        }
+        dialog.show(supportFragmentManager, tag)
+    }
+
     private fun getRequiredPermissions(): Array<String> {
         val permissions = mutableListOf(
             Manifest.permission.CAMERA,
@@ -420,6 +443,13 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
 
         // Check if patient selection is needed (moved from onCreate to avoid lifecycle issues)
         checkAndPromptForPatientSelection()
+
+        // Show any pending dialogs that were deferred due to lifecycle state
+        if (pendingPatientDialog) {
+            pendingPatientDialog = false
+            android.util.Log.d("MainActivity", "Showing deferred patient dialog in onResume")
+            showDialogSafely(com.oralvis.oralviscamera.PatientSessionDialogFragment(), "PatientSessionDialog")
+        }
     }
 
     /**
@@ -950,10 +980,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 }
             }
         }
-        PatientSessionDialogFragment().show(
-            supportFragmentManager,
-            "PatientSessionDialog"
-        )
+        showDialogSafely(PatientSessionDialogFragment(), "PatientSessionDialog")
     }
     
     private fun setupCameraControlSeekBars() {
@@ -3057,25 +3084,17 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         activateCameraPipeline()
 
                         // PHASE C — NOTIFY SERIAL: Camera is ready, serial can now start safely
-                        // Get camera's device connection and pass it to serial manager
-                        try {
-                            val ctrlBlockField = camera.javaClass.getDeclaredField("mCtrlBlock")
-                            ctrlBlockField.isAccessible = true
-                            val ctrlBlock = ctrlBlockField.get(camera) as? com.jiangdg.usb.USBMonitor.UsbControlBlock
-
-                            if (ctrlBlock != null) {
-                                val deviceConnection = ctrlBlock.connection
-                                if (deviceConnection != null) {
-                                    usbSerialManager?.onCameraOpened(deviceConnection)
-                                    android.util.Log.d("CameraSerial", "✅ Passed camera's device connection to serial manager")
-                                } else {
-                                    android.util.Log.e("CameraSerial", "❌ Camera control block has null connection")
-                                }
-                            } else {
-                                android.util.Log.e("CameraSerial", "❌ Cannot access camera's control block")
+                        // Device connection is passed from onConnectDev callback (see below)
+                        val deviceConnection = ctrlBlock.connection
+                        if (deviceConnection != null) {
+                            try {
+                                usbSerialManager?.onCameraOpened(deviceConnection)
+                                android.util.Log.d("CameraSerial", "✅ Passed camera's device connection to serial manager")
+                            } catch (e: Exception) {
+                                android.util.Log.e("CameraSerial", "❌ Error starting serial with camera connection: ${e.message}", e)
                             }
-                        } catch (e: Exception) {
-                            android.util.Log.e("CameraSerial", "❌ Error getting camera device connection: ${e.message}", e)
+                        } else {
+                            android.util.Log.w("CameraSerial", "⚠️ Camera control block has null connection - serial cannot start")
                         }
 
                         // PHASE B — GUIDED CAPTURE SESSION: Add guided callback if session is active
