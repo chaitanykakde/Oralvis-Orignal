@@ -119,6 +119,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private var isCameraReady: Boolean = false
     private val mCameraMap = hashMapOf<Int, MultiCameraClient.ICamera>()
     private var isRecording = false
+
+    // SurfaceTexture readiness gate (demo compatibility)
+    private var isSurfaceTextureReady: Boolean = false
+    private var hasReceivedFirstFrame: Boolean = false
     
     // USB hardware integration
     private var usbSerialManager: UsbSerialManager? = null
@@ -298,7 +302,36 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
 
         // Verify settings button exists
         android.util.Log.d("SettingsDebug", "Binding initialized - btnSettings exists: ${binding.btnSettings != null}")
-        
+
+        // CRITICAL: Add SurfaceTexture listener to match demo behavior
+        // Camera must NOT open until SurfaceTexture is ready (demo compatibility)
+        binding.cameraTextureView.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                android.util.Log.d("SurfaceTexture", "SurfaceTexture available - camera can now be initialized")
+                isSurfaceTextureReady = true
+                initializeCameraIfReady()
+            }
+
+            override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
+                android.util.Log.d("SurfaceTexture", "SurfaceTexture size changed: ${width}x${height}")
+            }
+
+            override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
+                android.util.Log.d("SurfaceTexture", "SurfaceTexture destroyed")
+                isSurfaceTextureReady = false
+                return true
+            }
+
+            override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {
+                // First frame arrived - this is our signal that camera is working
+                if (!hasReceivedFirstFrame) {
+                    hasReceivedFirstFrame = true
+                    android.util.Log.d("CameraPipeline", "✅ FIRST FRAME ARRIVED - pipeline working")
+                    onFirstFrameReceived()
+                }
+            }
+        }
+
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
@@ -346,14 +379,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         globalPatientId = intent.getStringExtra(EXTRA_GLOBAL_PATIENT_ID)
             android.util.Log.d("SettingsDebug", "globalPatientId obtained: $globalPatientId")
 
-            // Initialize guided capture unconditionally for proper UI state
-            try {
-            initializeGuidedCapture()
-            } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Failed to initialize guided capture: ${e.message}", e)
-                throw e
-        }
-            android.util.Log.d("SettingsDebug", "Guided capture check completed - continuing with initialization")
+            // DEFERRAL: Initialize guided capture AFTER camera is ready (moved to onFirstFrameReceived)
+            // This prevents OpenCV initialization from starving camera startup
+            android.util.Log.d("SettingsDebug", "Guided capture initialization deferred until camera ready")
 
         // Clear previous patient selection on app start
             android.util.Log.d("SettingsDebug", "Clearing current patient...")
@@ -400,8 +428,52 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         )
         android.util.Log.i("UsbSerial", "USB serial manager initialized")
 
+        // DEFERRAL: Move heavy initialization to after camera ready
+        // Remove the immediate initializeGuidedCapture() call from onCreate
+
         // Initialize log collector for debugging
         logCollector = LogCollector(this)
+    }
+
+    /**
+     * SURFACETEXTURE READINESS GATE - Match demo behavior
+     * Camera initialization only happens AFTER SurfaceTexture is ready
+     */
+    private fun initializeCameraIfReady() {
+        if (!isSurfaceTextureReady) {
+            android.util.Log.d("CameraGate", "Camera initialization deferred - SurfaceTexture not ready")
+            return
+        }
+
+        if (mCameraClient != null) {
+            android.util.Log.d("CameraGate", "Camera already initialized")
+            return
+        }
+
+        android.util.Log.d("CameraGate", "✅ SurfaceTexture ready - initializing camera now")
+        initializeCamera()
+    }
+
+    /**
+     * FIRST-FRAME SAFETY GUARANTEE - Match demo behavior
+     * Called when first frame arrives from SurfaceTexture update
+     */
+    private fun onFirstFrameReceived() {
+        android.util.Log.d("CameraPipeline", "🎯 FIRST FRAME RECEIVED - safe to initialize heavy components")
+
+        // DEFERRAL: Initialize heavy components now that camera is proven working
+        try {
+            if (guidedCaptureManager == null) {
+                android.util.Log.d("CameraPipeline", "Initializing GuidedCaptureManager (with OpenCV)")
+                initializeGuidedCapture()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CameraPipeline", "Failed to initialize guided capture: ${e.message}", e)
+        }
+
+        // CONTROL TRANSFER TIMING: Safe to update camera parameters now
+        updateCameraControlValues()
+        android.util.Log.d("CameraPipeline", "✅ Camera pipeline fully initialized and stable")
     }
 
     /**
@@ -2941,7 +3013,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
 
         if (missingPermissions.isEmpty()) {
-            initializeCamera()
+            initializeCameraIfReady()
             return
         }
 
@@ -2954,7 +3026,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
 
         // FORCE camera initialization on cold launch regardless of permission status
         // USB cameras may work without Android CAMERA permission
-        initializeCamera()
+        initializeCameraIfReady()
     }
     
     private fun showPermissionExplanationDialog(missingPermissions: List<String>) {
@@ -2982,7 +3054,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 binding.statusText.text = "Permissions denied. Some features may not work."
                 binding.statusText.visibility = View.VISIBLE
                 // Still try to initialize camera - USB camera might work without all permissions
-                initializeCamera()
+                initializeCameraIfReady()
             }
             .setCancelable(false)
             .show()
@@ -3066,8 +3138,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                             android.util.Log.d("ResolutionManager", "Camera opened after resolution change - resetting flag")
                             isResolutionChanging = false
                         }
-                                        updateCameraControlValues()
-                        
+
+                        // CONTROL TRANSFER TIMING: Defer updateCameraControlValues() until first frame arrives
+                        // This prevents parameter updates from interfering with initial frame delivery
+
                         // Ensure Normal mode is applied when camera opens (default mode)
                         // This prevents fluorescence mode from being active by default
                         currentMode = "Normal"
@@ -3842,7 +3916,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             
             if (deniedPermissions.isEmpty()) {
                 Toast.makeText(this, "Permissions granted! Initializing camera...", Toast.LENGTH_SHORT).show()
-                initializeCamera()
+                initializeCameraIfReady()
             } else {
                 // Check if storage permission is permanently denied
                 val hasStoragePermissionDenied = permanentlyDeniedPermissions.any { 
@@ -3880,7 +3954,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 binding.statusText.visibility = View.VISIBLE
                 
                 // Still try to initialize camera in case USB camera doesn't need all permissions
-                initializeCamera()
+                initializeCameraIfReady()
             }
         }
     }
