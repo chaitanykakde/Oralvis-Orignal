@@ -24,7 +24,7 @@ import android.util.Log
  * - Login is independent of ClinicId
  */
 class LoginActivity : AppCompatActivity() {
-
+    
     private lateinit var binding: ActivityLoginBinding
     private lateinit var loginManager: LoginManager
     private lateinit var logCollector: LogCollector
@@ -38,10 +38,10 @@ class LoginActivity : AppCompatActivity() {
         
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
+        
         loginManager = LoginManager(this)
         logCollector = LogCollector(this)
-
+        
         setupUI()
     }
     
@@ -53,7 +53,7 @@ class LoginActivity : AppCompatActivity() {
         binding.btnShareLogs.setOnClickListener {
             shareLogs()
         }
-
+        
         // Hide error text initially
         binding.errorText.visibility = View.GONE
     }
