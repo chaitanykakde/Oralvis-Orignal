@@ -3088,8 +3088,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         val deviceConnection = ctrlBlock.connection
                         if (deviceConnection != null) {
                             try {
-                                usbSerialManager?.onCameraOpened(deviceConnection)
-                                android.util.Log.d("CameraSerial", "✅ Passed camera's device connection to serial manager")
+                                usbSerialManager?.onCameraOpened(deviceConnection, device!!)
+                                android.util.Log.d("CameraSerial", "✅ Passed camera's device connection and device to serial manager")
                             } catch (e: Exception) {
                                 android.util.Log.e("CameraSerial", "❌ Error starting serial with camera connection: ${e.message}", e)
                             }
