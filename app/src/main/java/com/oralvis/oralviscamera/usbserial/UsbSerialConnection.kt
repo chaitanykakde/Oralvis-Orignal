@@ -31,17 +31,17 @@ class UsbSerialConnection(
     private var readThread: Thread? = null
     @Volatile private var isRunning = false
     
-    /**
-     * Open the USB connection and claim the CDC DATA interface.
-     * @return true if connection opened successfully
-     */
-    fun open(): Boolean {
-        try {
-            val conn = usbManager.openDevice(device)
-            if (conn == null) {
-                Log.e(TAG, "Failed to open USB device")
-                return false
-            }
+/**
+ * Open the USB connection using the camera's already-open device connection.
+ * @param existingConnection The camera's UsbDeviceConnection (must already be open)
+ * @return true if connection established successfully
+ */
+fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean {
+    try {
+        if (existingConnection == null) {
+            Log.e(TAG, "Failed to get camera's USB device connection")
+            return false
+        }
 
             // Find CDC DATA interface (USB_CLASS_CDC_DATA = 10)
             var cdcDataInterface: android.hardware.usb.UsbInterface? = null
@@ -55,18 +55,16 @@ class UsbSerialConnection(
 
             if (cdcDataInterface == null) {
                 Log.e(TAG, "No CDC DATA interface found on device")
-                conn.close()
                 return false
             }
 
             // Claim the CDC DATA interface only
-            if (!conn.claimInterface(cdcDataInterface, true)) {
+            if (!existingConnection.claimInterface(cdcDataInterface, true)) {
                 Log.e(TAG, "Failed to claim CDC DATA interface (index ${cdcDataInterface.id})")
-                conn.close()
                 return false
             }
 
-            connection = conn
+            connection = existingConnection
             Log.i(TAG, "✅ USB connection opened successfully - using CDC DATA interface index ${cdcDataInterface.id}")
             return true
 
