@@ -210,20 +210,21 @@ class UsbSerialManager(
 
     /**
      * Notify that camera has opened successfully.
-     * This allows serial to start if it was deferred.
+     * Stores camera connection and device reference for later CDC startup.
+     * 
+     * CRITICAL: CDC will NOT start here. It will start only after first frame received.
+     * This ensures UVC enumeration is complete before CDC interface claiming.
      */
     fun onCameraOpened(cameraConnection: android.hardware.usb.UsbDeviceConnection, device: UsbDevice) {
         try {
             cameraDeviceConnection = cameraConnection
             cameraDevice = device  // Store the device reference
             isCameraReady = true
-            Log.i(TAG, "📷 Camera opened - serial can now use camera's device (VID=${cameraDevice?.vendorId}, PID=${cameraDevice?.productId})")
+            Log.i(TAG, "📷 Camera opened - stored device connection (VID=${cameraDevice?.vendorId}, PID=${cameraDevice?.productId})")
+            Log.i(TAG, "⏳ CDC serial will start after first video frame received (UVC streaming must be stable)")
 
-            // If serial was deferred due to camera not being ready, start it now
-            if (!isStarted) {
-                Log.i(TAG, "🔄 Starting deferred USB serial after camera opened")
-                start()
-            }
+            // DO NOT start serial here - wait for first frame confirmation
+            // Serial will be started from MainActivity.onFirstFrameReceived()
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error in onCameraOpened: ${e.message}", e)
             // Reset state on error to prevent inconsistent state

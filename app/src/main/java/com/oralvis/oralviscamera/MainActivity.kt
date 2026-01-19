@@ -128,6 +128,11 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private var usbSerialManager: UsbSerialManager? = null
     private val captureLock = AtomicBoolean(false)
 
+    // CDC 20-second stability gate (diagnostic/isolation)
+    private val cdcStabilityHandler = Handler(Looper.getMainLooper())
+    private var cdcStabilityRunnable: Runnable? = null
+    private val CDC_STABILITY_DELAY_MS = 20_000L // 20 seconds
+
     // No-op preview callback to enable CameraUVC parameter application
     private var hasRegisteredBasePreviewCallback = false
     private val noOpPreviewCallback = object : IPreviewDataCallBack {
@@ -457,9 +462,31 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     /**
      * FIRST-FRAME SAFETY GUARANTEE - Match demo behavior
      * Called when first frame arrives from SurfaceTexture update
+     * 
+     * CRITICAL: This is the ONLY safe time to:
+     * - Start CDC serial communication
+     * - Apply camera mode presets (control transfers)
+     * 
+     * First frame arrival proves:
+     * - UVC streaming is active
+     * - USB endpoints are stable
+     * - Interface enumeration is complete
+     * - Control transfers cannot stall isochronous endpoints
      */
     private fun onFirstFrameReceived() {
         android.util.Log.d("CameraPipeline", "🎯 FIRST FRAME RECEIVED - safe to initialize heavy components")
+
+        // CRITICAL: Apply mode preset ONLY after first frame confirms streaming is stable
+        // This prevents 9 control transfers from stalling isochronous endpoints during startup
+        // Advanced cameras are timing-sensitive and require this delay
+        try {
+            if (currentMode == "Normal") {
+                android.util.Log.d("CameraPipeline", "Applying Normal mode preset after first frame (streaming stable)")
+                applyModePreset("Normal")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CameraPipeline", "Failed to apply mode preset: ${e.message}", e)
+        }
 
         // DEFERRAL: Initialize heavy components now that camera is proven working
         try {
@@ -473,7 +500,55 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
 
         // CONTROL TRANSFER TIMING: Safe to update camera parameters now
         updateCameraControlValues()
+        
+        // CDC 20-SECOND STABILITY GATE: Schedule CDC start after 20 seconds of stable streaming
+        // This diagnostic gate isolates CDC interference and proves causality if issues occur
+        scheduleCdcStartAfterStability()
+        
         android.util.Log.d("CameraPipeline", "✅ Camera pipeline fully initialized and stable")
+    }
+
+    /**
+     * Schedule CDC startup after 20 seconds of stable UVC streaming.
+     * This is a diagnostic/isolation gate to prove CDC causality if issues occur.
+     * 
+     * CDC will only start if:
+     * - Camera remains open for 20 continuous seconds
+     * - Camera has not been closed/reopened during that window
+     * 
+     * If camera closes before 20s → CDC start is cancelled.
+     */
+    private fun scheduleCdcStartAfterStability() {
+        // Cancel any existing scheduled CDC start
+        cancelCdcStartSchedule()
+        
+        android.util.Log.i("CdcStability", "First frame received — scheduling CDC start in 20 seconds")
+        
+        // Create runnable that will start CDC after stability period
+        cdcStabilityRunnable = Runnable {
+            // Verify camera is still open before starting CDC
+            if (isCameraReady && mCurrentCamera != null) {
+                android.util.Log.i("CdcStability", "✅ CDC started after 20 seconds of stable UVC streaming")
+                usbSerialManager?.start()
+            } else {
+                android.util.Log.w("CdcStability", "CDC start cancelled — camera closed before delay elapsed")
+            }
+            cdcStabilityRunnable = null
+        }
+        
+        // Schedule CDC start after 20 seconds
+        cdcStabilityHandler.postDelayed(cdcStabilityRunnable!!, CDC_STABILITY_DELAY_MS)
+    }
+
+    /**
+     * Cancel scheduled CDC start if camera closes or Activity pauses.
+     */
+    private fun cancelCdcStartSchedule() {
+        cdcStabilityRunnable?.let { runnable ->
+            cdcStabilityHandler.removeCallbacks(runnable)
+            android.util.Log.d("CdcStability", "CDC start cancelled — camera closed or Activity paused before delay elapsed")
+            cdcStabilityRunnable = null
+        }
     }
 
     /**
@@ -509,9 +584,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         // Reapply theme when returning from other activities to sync theme changes
         applyTheme()
 
-        // Start USB serial manager to listen for hardware commands
-        usbSerialManager?.start()
-        android.util.Log.d("UsbSerial", "USB serial manager started in onResume")
+        // CDC START REMOVED: CDC now starts only after first frame received
+        // This ensures UVC streaming is fully stable before claiming CDC interface
+        // See onFirstFrameReceived() for CDC startup
 
         // Check if patient selection is needed (moved from onCreate to avoid lifecycle issues)
         checkAndPromptForPatientSelection()
@@ -543,6 +618,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     
     override fun onPause() {
         super.onPause()
+        
+        // Cancel scheduled CDC start if Activity is pausing
+        cancelCdcStartSchedule()
         
         // Stop USB serial manager to release USB connection and threads
         usbSerialManager?.stop()
@@ -3080,6 +3158,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             }
             
             override fun onDetachDec(device: UsbDevice?) {
+                // Cancel scheduled CDC start (camera detached)
+                cancelCdcStartSchedule()
+                
                 mCameraMap.remove(device?.deviceId)
                 mCurrentCamera = null
                 binding.statusText.text = "USB Camera removed"
@@ -3142,11 +3223,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         // CONTROL TRANSFER TIMING: Defer updateCameraControlValues() until first frame arrives
                         // This prevents parameter updates from interfering with initial frame delivery
 
-                        // Ensure Normal mode is applied when camera opens (default mode)
-                        // This prevents fluorescence mode from being active by default
+                        // Set mode state (but DO NOT apply preset yet - control transfers must wait for first frame)
+                        // Mode preset will be applied in onFirstFrameReceived() after streaming is proven stable
                         currentMode = "Normal"
-                        applyModePreset("Normal")
-                        android.util.Log.d("CameraMode", "Applied Normal mode on camera open")
+                        android.util.Log.d("CameraMode", "Normal mode set (preset will be applied after first frame)")
                         
                         // Verify and log current resolution after camera restart
                         verifyCurrentResolution()
@@ -3157,18 +3237,19 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         // PHASE A — CAMERA ACTIVATION: Enable parameter application immediately
                         activateCameraPipeline()
 
-                        // PHASE C — NOTIFY SERIAL: Camera is ready, serial can now start safely
-                        // Device connection is passed from onConnectDev callback (see below)
+                        // PHASE C — NOTIFY SERIAL: Store camera connection for later CDC startup
+                        // CDC will start ONLY after first frame received (see onFirstFrameReceived)
+                        // This ensures UVC enumeration is complete before CDC interface claiming
                         val deviceConnection = ctrlBlock.connection
                         if (deviceConnection != null) {
                             try {
                                 usbSerialManager?.onCameraOpened(deviceConnection, device!!)
-                                android.util.Log.d("CameraSerial", "✅ Passed camera's device connection and device to serial manager")
+                                android.util.Log.d("CameraSerial", "✅ Stored camera's device connection - CDC will start after first frame")
                             } catch (e: Exception) {
-                                android.util.Log.e("CameraSerial", "❌ Error starting serial with camera connection: ${e.message}", e)
+                                android.util.Log.e("CameraSerial", "❌ Error storing camera connection: ${e.message}", e)
                             }
                         } else {
-                            android.util.Log.w("CameraSerial", "⚠️ Camera control block has null connection - serial cannot start")
+                            android.util.Log.w("CameraSerial", "⚠️ Camera control block has null connection - CDC cannot start")
                         }
 
                         // PHASE B — GUIDED CAPTURE SESSION: Add guided callback if session is active
@@ -3184,6 +3265,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                                         android.util.Log.d("CameraState", "Camera closed - setting isCameraReady = false")
                                         isCameraReady = false
                                         hasRegisteredBasePreviewCallback = false
+                                        
+                                        // Cancel scheduled CDC start (camera closed before stability period)
+                                        cancelCdcStartSchedule()
+                                        
+                                        // Reset first frame flag for next camera open
+                                        // This ensures CDC will wait for first frame again on reopen
+                                        hasReceivedFirstFrame = false
+                                        
                                         binding.statusText.text = "Camera closed"
                                         binding.statusText.visibility = View.VISIBLE
                                         
@@ -3217,7 +3306,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                                             android.util.Log.e("Guided", "Unregistered GuidedCaptureManager preview callback (camera closed)")
                                         }
 
-                                        // Notify serial that camera closed
+                                        // Notify serial that camera closed (CDC will stop)
                                         usbSerialManager?.onCameraClosed()
                                     }
                                     ICameraStateCallBack.State.ERROR -> {
@@ -3261,6 +3350,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             }
             
             override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
+                // Cancel scheduled CDC start (camera disconnected)
+                cancelCdcStartSchedule()
+                
                 mCurrentCamera?.closeCamera()
                 mCurrentCamera = null
                 binding.statusText.text = "Camera disconnected"
@@ -4417,6 +4509,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     
     override fun onDestroy() {
         super.onDestroy()
+
+        // Cancel any scheduled CDC start
+        cancelCdcStartSchedule()
 
         // Destroy USB serial manager
         usbSerialManager?.destroy()
