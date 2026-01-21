@@ -501,6 +501,20 @@ public final class USBMonitor {
 	}
 
 	/**
+	 * API-safe extraction of UsbDevice from Intent.
+	 * On Android 13+ (API 33) getParcelableExtra(String) can return null for Parcelables;
+	 * use getParcelableExtra(String, Class) for correct behavior.
+	 */
+	private static UsbDevice getUsbDeviceExtra(Intent intent) {
+		if (intent == null) return null;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+			return intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice.class);
+		} else {
+			return intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+		}
+	}
+
+	/**
 	 * BroadcastReceiver for USB permission
 	 */
 	private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
@@ -512,13 +526,16 @@ public final class USBMonitor {
 			if (ACTION_USB_PERMISSION.equals(action)) {
 				// when received the result of requesting USB permission
 				synchronized (USBMonitor.this) {
-					final UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+					final UsbDevice device = getUsbDeviceExtra(intent);
 					if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
 						if (device != null) {
 							// get permission, call onConnect
 							if (DEBUG)
 								XLogWrapper.w(TAG, "get permission success in mUsbReceiver");
 							processConnect(device);
+						} else {
+							XLogWrapper.e(TAG, "ACTION_USB_PERMISSION: EXTRA_DEVICE null after API-safe extraction (API 33+); calling onCancel(null) to unblock.");
+							processCancel(null);
 						}
 					} else {
 						// failed to get permission
@@ -528,12 +545,12 @@ public final class USBMonitor {
 					}
 				}
 			} else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
-				final UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+				final UsbDevice device = getUsbDeviceExtra(intent);
 				updatePermission(device, hasPermission(device));
 				processAttach(device);
 			} else if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
 				// when device removed
-				final UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+				final UsbDevice device = getUsbDeviceExtra(intent);
 				if (device != null) {
 					UsbControlBlock ctrlBlock = mCtrlBlocks.remove(device);
 					if (ctrlBlock != null) {

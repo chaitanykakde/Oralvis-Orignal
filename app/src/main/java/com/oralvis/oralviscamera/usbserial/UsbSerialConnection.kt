@@ -43,27 +43,45 @@ fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean
             return false
         }
 
+            Log.i("CDC_TRACE", "CDC ENUM START | deviceId=${device.deviceId} | interfaceCount=${device.interfaceCount}")
+
             // Find CDC DATA interface (USB_CLASS_CDC_DATA = 10)
             var cdcDataInterface: android.hardware.usb.UsbInterface? = null
             for (i in 0 until device.interfaceCount) {
                 val intf = device.getInterface(i)
+                Log.i("CDC_TRACE", """
+Interface[$i]:
+class=${intf.interfaceClass}
+subclass=${intf.interfaceSubclass}
+protocol=${intf.interfaceProtocol}
+endpointCount=${intf.endpointCount}
+""".trimIndent())
+                for (e in 0 until intf.endpointCount) {
+                    val ep = intf.getEndpoint(e)
+                    Log.i("CDC_TRACE", "  Endpoint[$e]: type=${ep.type}, dir=${ep.direction}, addr=${ep.address}")
+                }
                 if (intf.interfaceClass == UsbConstants.USB_CLASS_CDC_DATA) {
+                    Log.i("CDC_TRACE", "CDC DATA interface FOUND at index=$i")
                     cdcDataInterface = intf
                     break
                 }
             }
 
             if (cdcDataInterface == null) {
+                Log.e("CDC_TRACE", "CDC DATA interface NOT FOUND on deviceId=${device.deviceId}")
                 Log.e(TAG, "No CDC DATA interface found on device")
                 return false
             }
 
             // Claim the CDC DATA interface only
+            Log.i("CDC_TRACE", "Attempting claimInterface() | force=true | interfaceId=${cdcDataInterface.id}")
             if (!existingConnection.claimInterface(cdcDataInterface, true)) {
+                Log.e("CDC_TRACE", "claimInterface FAILED | interfaceId=${cdcDataInterface.id}")
                 Log.e(TAG, "Failed to claim CDC DATA interface (index ${cdcDataInterface.id})")
                 return false
             }
 
+            Log.i("CDC_TRACE", "CDC connection OPEN | baud=$BAUD_RATE | thread=${Thread.currentThread().name}")
             connection = existingConnection
             Log.i(TAG, "✅ USB connection opened successfully - using CDC DATA interface index ${cdcDataInterface.id}")
             return true
@@ -86,6 +104,7 @@ fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean
 
         isRunning = true
         readThread = Thread({
+            Log.i("CDC_TRACE", "CDC READ THREAD STARTED")
             Log.i(TAG, "USB read thread started")
             val buffer = ByteArray(BUFFER_SIZE)
             val commandBuffer = StringBuilder()
@@ -121,7 +140,9 @@ fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean
                     }
                 }
 
+                Log.i("CDC_TRACE", "CDC endpoint selected | IN=${inEndpoint?.address} | OUT=${outEndpoint?.address}")
                 if (inEndpoint == null) {
+                    Log.e("CDC_TRACE", "CDC endpoints missing or invalid")
                     Log.e(TAG, "❌ No bulk IN endpoint found on CDC DATA interface")
                     return@Thread
                 }
@@ -132,10 +153,12 @@ fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean
 
                 while (isRunning) {
                     try {
+                        Log.d("CDC_TRACE", "CDC READ attempt...")
                         // Blocking bulk transfer
                         val length = connection?.bulkTransfer(inEndpoint, buffer, buffer.size, TIMEOUT_MS) ?: -1
 
                         if (length > 0) {
+                            Log.i("CDC_TRACE", "CDC READ bytes=$length data=${buffer.take(length).joinToString("") { "%02x".format(it.toInt().and(0xFF)) }.let { if (it.length > 128) it.take(128) + "..." else it }}")
                             // Convert bytes to string
                             val data = String(buffer, 0, length, StandardCharsets.UTF_8)
                             commandBuffer.append(data)
@@ -175,12 +198,14 @@ fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean
 
                     } catch (e: Exception) {
                         if (isRunning) {
+                            Log.e("CDC_TRACE", "CDC READ ERROR", e)
                             Log.e(TAG, "Error during bulk transfer: ${e.message}")
                         }
                     }
                 }
                 
             } catch (e: Exception) {
+                Log.e("CDC_TRACE", "CDC READ ERROR", e)
                 Log.e(TAG, "Error in read thread: ${e.message}", e)
             } finally {
                 Log.i(TAG, "USB read thread stopped")
@@ -194,6 +219,7 @@ fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean
      * Stop the reading thread and close the connection.
      */
     fun stop() {
+        Log.i("CDC_TRACE", "CDC STOP | UsbSerialConnection.stop | reason=stop")
         Log.i(TAG, "Stopping USB serial connection")
         isRunning = false
 

@@ -27,13 +27,18 @@ class UsbSerialManager(
     private val usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
 
     private val commandParser = UsbCommandParser()
+
     private val commandDispatcher = UsbCommandDispatcher(commandReceiver)
 
     private var serialConnection: UsbSerialConnection? = null
 
     private var isStarted = false
     private var isCameraReady = false
-    
+
+    init {
+        Log.i("CDC_TRACE", "UsbSerialManager created | thread=${Thread.currentThread().name} | usbManager=${usbManager != null} | isStarted=$isStarted | isCameraReady=$isCameraReady")
+    }
+
     /**
      * Start the USB serial manager.
      * No longer handles device detection or permissions - camera owns that.
@@ -60,11 +65,20 @@ class UsbSerialManager(
                 return
             }
 
+            Log.i("CDC_TRACE", "CDC start (UsbSerialManager.start) | cameraReady=$isCameraReady | hasConnection=${cameraDeviceConnection != null} | hasDevice=${cameraDevice != null}")
             Log.i(TAG, "Starting USB serial manager (camera is ready)")
             isStarted = true
 
-            // Use camera's device directly - no rediscovery needed
-            openConnection(cameraDevice!!)
+            // PROBLEM 2 FIX: Use fresh UsbDevice from UsbManager at CDC start time.
+            // Cached device from camera open can be a stale snapshot; interfaces may
+            // be enumerated later. Fresh lookup ensures CDC DATA is found when present.
+            val deviceForCdc = getFreshUsbDevice()
+            if (deviceForCdc == null) {
+                Log.e(TAG, "Cannot get UsbDevice for CDC — cameraDevice is null")
+                isStarted = false
+                return
+            }
+            openConnection(deviceForCdc)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error starting USB serial manager: ${e.message}", e)
             // Reset state on error
@@ -82,6 +96,7 @@ class UsbSerialManager(
             return
         }
 
+        Log.i("CDC_TRACE", "CDC STOP | reason=UsbSerialManager.stop")
         Log.i(TAG, "Stopping USB serial manager")
         isStarted = false
 
@@ -160,6 +175,7 @@ class UsbSerialManager(
      * Close the active USB serial connection.
      */
     private fun closeConnection() {
+        Log.i("CDC_TRACE", "CDC STOP | closeConnection | stopping serialConnection")
         serialConnection?.stop()
         serialConnection = null
     }
@@ -175,6 +191,7 @@ class UsbSerialManager(
                 return
             }
 
+            Log.i("CDC_TRACE", "HARDWARE BUTTON EVENT received | raw=$rawCommand")
             Log.d(TAG, "📥 Received raw command: '$rawCommand'")
 
             val command = commandParser.parse(rawCommand)
@@ -220,6 +237,14 @@ class UsbSerialManager(
             cameraDeviceConnection = cameraConnection
             cameraDevice = device  // Store the device reference
             isCameraReady = true
+            Log.i("CDC_TRACE", """
+onCameraOpened:
+deviceId=${device.deviceId}
+VID=${device.vendorId}, PID=${device.productId}
+interfaces=${device.interfaceCount}
+deviceName=${device.deviceName}
+source=cameraCallback
+""".trimIndent())
             Log.i(TAG, "📷 Camera opened - stored device connection (VID=${cameraDevice?.vendorId}, PID=${cameraDevice?.productId})")
             Log.i(TAG, "⏳ CDC serial will start after first video frame received (UVC streaming must be stable)")
 
@@ -243,6 +268,7 @@ class UsbSerialManager(
             isCameraReady = false
             cameraDeviceConnection = null
             cameraDevice = null
+            Log.i("CDC_TRACE", "CDC STOP | reason=cameraClosed")
             Log.i(TAG, "📷 Camera closed - stopping USB serial and clearing device connection")
 
             // Stop serial when camera closes
@@ -263,6 +289,27 @@ class UsbSerialManager(
      */
     private fun isCameraReady(): Boolean {
         return isCameraReady
+    }
+
+    /**
+     * Obtain a fresh UsbDevice from UsbManager at CDC start time.
+     * Cached device from camera open can be a stale snapshot; a fresh lookup
+     * ensures CDC DATA interface is found when the kernel has finished enumeration.
+     */
+    private fun getFreshUsbDevice(): UsbDevice? {
+        val cached = cameraDevice ?: return null
+        usbManager.deviceList?.values?.forEach {
+            Log.i("CDC_TRACE", "USB_SCAN: id=${it.deviceId}, VID=${it.vendorId}, PID=${it.productId}, ifaces=${it.interfaceCount}")
+        } ?: Log.i("CDC_TRACE", "USB_SCAN: deviceList.values is null")
+        val fresh = usbManager.deviceList?.values?.find { it.deviceId == cached.deviceId }
+        if (fresh != null) {
+            Log.i("CDC_TRACE", "getFreshUsbDevice: match FOUND, using fresh UsbDevice from UsbManager")
+            Log.i(TAG, "Using fresh UsbDevice from UsbManager for CDC (deviceId=${cached.deviceId})")
+            return fresh
+        }
+        Log.i("CDC_TRACE", "getFreshUsbDevice: match NOT FOUND, using cached fallback (deviceId=${cached.deviceId})")
+        Log.w(TAG, "Fresh UsbDevice not in deviceList, using cached — CDC may fail if interfaces were not enumerated (deviceId=${cached.deviceId})")
+        return cached
     }
 
     /**

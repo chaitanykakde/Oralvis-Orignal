@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import java.io.ByteArrayOutputStream
 import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -40,6 +41,7 @@ import com.jiangdg.ausbc.callback.IPlayCallBack
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.camera.CameraUVC
 import com.jiangdg.ausbc.render.env.RotateType
+import com.jiangdg.ausbc.utils.CameraUtils
 import com.jiangdg.ausbc.utils.MediaUtils
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.ausbc.widget.IAspectRatio
@@ -123,10 +125,17 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     // SurfaceTexture readiness gate (demo compatibility)
     private var isSurfaceTextureReady: Boolean = false
     private var hasReceivedFirstFrame: Boolean = false
+    // Deferred openCamera when permission is granted before SurfaceTexture is ready
+    private var mPendingCameraOpen: Pair<MultiCameraClient.ICamera, com.jiangdg.ausbc.camera.bean.CameraRequest>? = null
     
     // USB hardware integration
     private var usbSerialManager: UsbSerialManager? = null
     private val captureLock = AtomicBoolean(false)
+    // FIX 1: run immediate scan for already-attached devices once per lifecycle
+    private var hasRunInitialUsbDeviceScan = false
+    // FIX 2: gate patient/runtime dialogs until USB permission is resolved
+    private var usbPermissionPending = false
+    private var deferredRuntimePermissionCheck = false
 
     // CDC 20-second stability gate (diagnostic/isolation)
     private val cdcStabilityHandler = Handler(Looper.getMainLooper())
@@ -337,6 +346,13 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             }
         }
 
+        // PROBLEM 1 FIX: Register USBMonitor early so ACTION_USB_PERMISSION and attach events
+        // are never lost. Camera open remains gated by SurfaceTexture readiness.
+        ensureUsbMonitorRegistered()
+        // FIX 1: Immediately evaluate already-attached USB devices so permission dialog
+        // appears without waiting for mDeviceCheckRunnable (1s delay).
+        requestPermissionForAlreadyAttachedDevices()
+
         ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
@@ -442,21 +458,24 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
 
     /**
      * SURFACETEXTURE READINESS GATE - Match demo behavior
-     * Camera initialization only happens AFTER SurfaceTexture is ready
+     * USBMonitor is registered early (ensureUsbMonitorRegistered in onCreate).
+     * Camera open only happens when SurfaceTexture is ready; if permission
+     * was granted before SurfaceTexture, open runs here when it becomes ready.
      */
     private fun initializeCameraIfReady() {
         if (!isSurfaceTextureReady) {
-            android.util.Log.d("CameraGate", "Camera initialization deferred - SurfaceTexture not ready")
+            android.util.Log.d("CameraGate", "Camera open deferred - SurfaceTexture not ready")
             return
         }
 
-        if (mCameraClient != null) {
-            android.util.Log.d("CameraGate", "Camera already initialized")
-            return
-        }
+        ensureUsbMonitorRegistered()
 
-        android.util.Log.d("CameraGate", "✅ SurfaceTexture ready - initializing camera now")
-        initializeCamera()
+        // Run deferred openCamera if permission was granted before SurfaceTexture was ready
+        mPendingCameraOpen?.let { (cam, req) ->
+            mPendingCameraOpen = null
+            android.util.Log.d("CameraGate", "Executed deferred openCamera (SurfaceTexture became ready)")
+            cam.openCamera(binding.cameraTextureView, req)
+        }
     }
 
     /**
@@ -522,10 +541,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         // Cancel any existing scheduled CDC start
         cancelCdcStartSchedule()
         
+        android.util.Log.i("CDC_TRACE", "CDC scheduling started | time=${System.currentTimeMillis()} | waiting 20s | hasReceivedFirstFrame=$hasReceivedFirstFrame | isCameraReady=$isCameraReady")
         android.util.Log.i("CdcStability", "First frame received — scheduling CDC start in 20 seconds")
         
         // Create runnable that will start CDC after stability period
         cdcStabilityRunnable = Runnable {
+            android.util.Log.i("CDC_TRACE", "CDC start triggered after delay | time=${System.currentTimeMillis()} | cameraOpen=${isCameraReady && mCurrentCamera != null}")
             // Verify camera is still open before starting CDC
             if (isCameraReady && mCurrentCamera != null) {
                 android.util.Log.i("CdcStability", "✅ CDC started after 20 seconds of stable UVC streaming")
@@ -546,6 +567,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private fun cancelCdcStartSchedule() {
         cdcStabilityRunnable?.let { runnable ->
             cdcStabilityHandler.removeCallbacks(runnable)
+            android.util.Log.i("CDC_TRACE", "CDC scheduling CANCELLED")
             android.util.Log.d("CdcStability", "CDC start cancelled — camera closed or Activity paused before delay elapsed")
             cdcStabilityRunnable = null
         }
@@ -604,6 +626,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
      * Called from onResume() to ensure proper lifecycle timing.
      */
     private fun checkAndPromptForPatientSelection() {
+        // FIX 2: Defer patient picker until USB permission is resolved
+        if (usbPermissionPending) return
         // Only prompt if no patient is currently selected
         if (!GlobalPatientManager.hasPatientSelected()) {
             // Use post to ensure UI is fully ready
@@ -3085,6 +3109,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     
     private fun checkPermissions() {
+        // FIX 2: Defer runtime permission dialogs until USB permission is resolved
+        if (usbPermissionPending) {
+            deferredRuntimePermissionCheck = true
+            initializeCameraIfReady()
+            return
+        }
         val requiredPermissions = getRequiredPermissions()
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -3138,7 +3168,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             .show()
     }
     
-    private fun initializeCamera() {
+    /**
+     * Ensures USBMonitor is registered so ACTION_USB_PERMISSION and device attach
+     * are always received. Call early in onCreate. Camera open is gated by
+     * SurfaceTexture in onConnectDev / initializeCameraIfReady.
+     */
+    private fun ensureUsbMonitorRegistered() {
+        if (mCameraClient != null) return
+
         binding.statusText.text = "Initializing camera..."
         
         mCameraClient = MultiCameraClient(this, object : IDeviceConnectCallBack {
@@ -3152,12 +3189,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 mCameraMap[device.deviceId] = camera
                 
                 binding.statusText.text = "USB Camera detected - Requesting permission..."
-                
-                // Request permission for the USB device
+                // FIX 2: Gate patient/runtime dialogs until USB permission resolved
+                usbPermissionPending = true
+                // Request permission for the USB device (or processConnect if already granted)
                 mCameraClient?.requestPermission(device)
             }
             
             override fun onDetachDec(device: UsbDevice?) {
+                mPendingCameraOpen = null
                 // Cancel scheduled CDC start (camera detached)
                 cancelCdcStartSchedule()
                 
@@ -3180,7 +3219,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onConnectDev(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
                 device ?: return
                 ctrlBlock ?: return
-                
+                // FIX 2: USB permission resolved; allow deferred patient/runtime dialogs
+                usbPermissionPending = false
+                tryDeferredPermissionChecks()
+
                 android.util.Log.d("CAMERA_LIFE", "Camera connected")
                 binding.statusText.text = "Camera connected - Opening camera..."
                 
@@ -3343,13 +3385,19 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         .setRawPreviewData(true)  // Enable raw preview data for motion analysis
                         .create()
                     
-                    // Open camera with texture view
-                    android.util.Log.d("CAMERA_LIFE", "Opening camera with resolution ${recordingWidth}x${recordingHeight}")
-                    camera.openCamera(binding.cameraTextureView, cameraRequest)
+                    // Open camera when SurfaceTexture is ready; else defer until it is
+                    if (isSurfaceTextureReady) {
+                        android.util.Log.d("CAMERA_LIFE", "Opening camera with resolution ${recordingWidth}x${recordingHeight}")
+                        camera.openCamera(binding.cameraTextureView, cameraRequest)
+                    } else {
+                        mPendingCameraOpen = Pair(camera, cameraRequest)
+                        android.util.Log.d("CameraGate", "Deferred openCamera - SurfaceTexture not ready, will open when ready")
+                    }
                 }
             }
             
             override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
+                mPendingCameraOpen = null
                 // Cancel scheduled CDC start (camera disconnected)
                 cancelCdcStartSchedule()
                 
@@ -3360,11 +3408,55 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             }
             
             override fun onCancelDev(device: UsbDevice?) {
+                // FIX 2: USB permission resolved (denied); allow deferred patient/runtime dialogs
+                usbPermissionPending = false
+                tryDeferredPermissionChecks()
                 binding.statusText.text = "Permission denied"
             }
         })
         
         mCameraClient?.register()
+    }
+
+    /**
+     * FIX 1: Immediately evaluate already-attached USB devices so the permission dialog
+     * appears without waiting for mDeviceCheckRunnable (1s delay). Runs once per lifecycle.
+     * Reuses USBMonitor/requestPermission; does not open device or bypass USBMonitor.
+     */
+    private fun requestPermissionForAlreadyAttachedDevices() {
+        if (hasRunInitialUsbDeviceScan) return
+        val client = mCameraClient ?: return
+        hasRunInitialUsbDeviceScan = true
+
+        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+        val devices = client.getDeviceList() ?: return
+        for (device in devices) {
+            if (!CameraUtils.isUsbCamera(device) && !CameraUtils.isFilterDevice(this, device)) continue
+            if (mCameraMap.containsKey(device.deviceId)) continue
+            val camera = CameraUVC(this, device)
+            mCameraMap[device.deviceId] = camera
+            // Only gate patient/runtime dialogs when we will show the USB permission dialog
+            if (!usbManager.hasPermission(device)) {
+                usbPermissionPending = true
+                binding.statusText.text = "USB Camera detected - Requesting permission..."
+            }
+            // requestPermission: shows dialog if needed, or triggers onConnectDev if already granted
+            client.requestPermission(device)
+            // Only trigger for first matching device; mDeviceCheckRunnable handles others
+            break
+        }
+    }
+
+    /**
+     * FIX 2: Run deferred checkPermissions and/or patient dialog after USB permission
+     * has been resolved (granted or denied).
+     */
+    private fun tryDeferredPermissionChecks() {
+        if (deferredRuntimePermissionCheck) {
+            deferredRuntimePermissionCheck = false
+            checkPermissions()
+        }
+        checkAndPromptForPatientSelection()
     }
     
     private fun updateCameraControlValues() {
