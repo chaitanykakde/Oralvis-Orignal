@@ -1,61 +1,79 @@
 package com.oralvis.oralviscamera
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.net.Uri
 import android.os.Bundle
-import android.view.MotionEvent
-import android.view.ScaleGestureDetector
+import android.os.Handler
+import android.os.Looper
 import android.view.View
+import android.view.WindowManager
 import android.widget.MediaController
 import android.widget.Toast
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.oralvis.annotation.AnnotationModule
 import com.oralvis.oralviscamera.databinding.ActivityMediaViewerBinding
 import java.io.File
 
+/**
+ * Full-screen media viewer for images and videos.
+ * 
+ * Features:
+ * - Full-screen immersive display
+ * - Auto-hide controls after 3 seconds
+ * - Annotate button for images (launches AnnotationActivity)
+ */
 class MediaViewerActivity : AppCompatActivity() {
+    
     private lateinit var binding: ActivityMediaViewerBinding
     private var mediaPath: String = ""
     private var mediaType: String = ""
     private var sessionId: String? = null
-    private var scaleGestureDetector: ScaleGestureDetector? = null
-    private var scaleFactor = 1.0f
-    private var matrix: Matrix = Matrix()
-
+    private var filename: String = ""
+    
+    // For auto-hide controls
+    private val hideHandler = Handler(Looper.getMainLooper())
+    private var controlsVisible = true
+    private val hideRunnable = Runnable { hideControls() }
+    
     companion object {
         const val EXTRA_MEDIA_PATH = "media_path"
         const val EXTRA_MEDIA_TYPE = "media_type"
         const val EXTRA_SESSION_ID = "session_id"
         const val EXTRA_FILENAME = "filename"
+        
+        private const val AUTO_HIDE_DELAY_MILLIS = 3000L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        
+        // Make full screen
+        setupFullScreen()
         
         binding = ActivityMediaViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
-        ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
-        }
-        
-        // Get media info from intent
+        // Get media info from intent - support multiple extra names for compatibility
         mediaPath = intent.getStringExtra(EXTRA_MEDIA_PATH) 
-            ?: intent.getStringExtra("MEDIA_PATH") ?: ""
-        mediaType = intent.getStringExtra(EXTRA_MEDIA_TYPE) ?: ""
+            ?: intent.getStringExtra("MEDIA_PATH") 
+            ?: intent.getStringExtra("media_path") ?: ""
+            
+        mediaType = intent.getStringExtra(EXTRA_MEDIA_TYPE) 
+            ?: intent.getStringExtra("media_type") ?: ""
+            
         sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+            ?: intent.getStringExtra("session_id")
+        
+        filename = intent.getStringExtra(EXTRA_FILENAME)
+            ?: intent.getStringExtra("filename") ?: ""
         
         // Handle legacy intent extra names
         if (mediaType.isEmpty()) {
-            val isVideo = intent.getBooleanExtra("IS_VIDEO", false)
+            val isVideo = intent.getBooleanExtra("IS_VIDEO", false) 
+                || intent.getBooleanExtra("is_video", false)
             mediaType = if (isVideo) "video" else "image"
         }
         
@@ -63,34 +81,46 @@ class MediaViewerActivity : AppCompatActivity() {
         loadMedia()
     }
     
+    private fun setupFullScreen() {
+        // Use modern WindowInsetsController for immersive mode
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+    
+    private fun hideSystemBars() {
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        windowInsetsController.systemBarsBehavior = 
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        windowInsetsController.hide(WindowInsetsCompat.Type.systemBars())
+    }
+    
+    private fun showSystemBars() {
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        windowInsetsController.show(WindowInsetsCompat.Type.systemBars())
+    }
+    
     private fun setupUI() {
+        // Back button
         binding.btnBack.setOnClickListener {
             finish()
         }
         
-        // Setup annotate button
+        // Annotate button
         binding.btnAnnotate.setOnClickListener {
             openAnnotationMode()
         }
         
-        // Setup scale gesture detector for image zoom
-        scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                scaleFactor *= detector.scaleFactor
-                scaleFactor = scaleFactor.coerceIn(0.1f, 10.0f)
-                
-                matrix.setScale(scaleFactor, scaleFactor)
-                binding.imageView.imageMatrix = matrix
-                return true
-            }
-        })
+        // Tap anywhere to toggle controls
+        binding.main.setOnClickListener {
+            toggleControls()
+        }
         
-        // Hide system UI for full screen experience
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        )
+        binding.imageView.setOnClickListener {
+            toggleControls()
+        }
+        
+        // Schedule auto-hide
+        scheduleAutoHide()
     }
     
     private fun loadMedia() {
@@ -107,21 +137,30 @@ class MediaViewerActivity : AppCompatActivity() {
             return
         }
         
-        when (mediaType.lowercase()) {
+        // Set filename if not provided
+        if (filename.isEmpty()) {
+            filename = file.name
+        }
+        
+        // Display filename
+        binding.txtFilename.text = filename
+        binding.txtFilename.visibility = View.VISIBLE
+        
+        // Determine media type from extension if not specified
+        val effectiveMediaType = if (mediaType.isNotEmpty()) {
+            mediaType.lowercase()
+        } else {
+            when (file.extension.lowercase()) {
+                "jpg", "jpeg", "png", "bmp", "gif", "webp" -> "image"
+                "mp4", "avi", "mov", "mkv", "3gp" -> "video"
+                else -> "image" // Default to image
+            }
+        }
+        
+        when (effectiveMediaType) {
             "image" -> showImage(file)
             "video" -> showVideo(file)
-            else -> {
-                // Try to determine type from file extension
-                val extension = file.extension.lowercase()
-                when (extension) {
-                    "jpg", "jpeg", "png", "bmp", "gif" -> showImage(file)
-                    "mp4", "avi", "mov", "mkv" -> showVideo(file)
-                    else -> {
-                        Toast.makeText(this, "Unsupported media type", Toast.LENGTH_SHORT).show()
-                        finish()
-                    }
-                }
-            }
+            else -> showImage(file)
         }
     }
     
@@ -133,31 +172,40 @@ class MediaViewerActivity : AppCompatActivity() {
         binding.btnAnnotate.visibility = View.VISIBLE
         
         try {
-            // Load image with better quality
-            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+            // Load image efficiently
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            
+            // Calculate sample size for large images
+            val maxSize = 2048
+            var sampleSize = 1
+            if (options.outWidth > maxSize || options.outHeight > maxSize) {
+                sampleSize = maxOf(
+                    options.outWidth / maxSize,
+                    options.outHeight / maxSize
+                )
+            }
+            
+            // Load the bitmap with appropriate sample size
+            val loadOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+            }
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath, loadOptions)
+            
             if (bitmap != null) {
                 binding.imageView.setImageBitmap(bitmap)
-                binding.imageView.scaleType = android.widget.ImageView.ScaleType.MATRIX
-                
-                // Enable zoom and pan for image
-                binding.imageView.setOnTouchListener { _, event ->
-                    scaleGestureDetector?.onTouchEvent(event) ?: false
-                }
-                
-                binding.imageView.setOnClickListener {
-                    toggleSystemUI()
-                }
+                binding.imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
             } else {
                 // Fallback to URI loading
                 val uri = Uri.fromFile(file)
                 binding.imageView.setImageURI(uri)
-                binding.imageView.setOnClickListener {
-                    toggleSystemUI()
-                }
             }
             
         } catch (e: Exception) {
-            Toast.makeText(this, "Failed to load image: ${e.message}", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("MediaViewer", "Failed to load image: ${e.message}", e)
+            Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
@@ -166,43 +214,36 @@ class MediaViewerActivity : AppCompatActivity() {
         binding.imageView.visibility = View.GONE
         binding.videoView.visibility = View.VISIBLE
         
-        // Hide annotate button for videos
+        // Hide annotate button for videos (annotation is only for images)
         binding.btnAnnotate.visibility = View.GONE
         
         try {
             val uri = Uri.fromFile(file)
             binding.videoView.setVideoURI(uri)
             
-            // Setup media controller for video controls
+            // Setup media controller
             val mediaController = MediaController(this)
             mediaController.setAnchorView(binding.videoView)
             binding.videoView.setMediaController(mediaController)
             
-            // Auto-start video playback
-            binding.videoView.setOnPreparedListener { mediaPlayer ->
+            binding.videoView.setOnPreparedListener {
                 binding.videoView.start()
             }
             
-            // Handle video completion
-            binding.videoView.setOnCompletionListener {
-                // Video finished playing
-            }
-            
-            // Handle video errors
-            binding.videoView.setOnErrorListener { _, what, extra ->
+            binding.videoView.setOnErrorListener { _, _, _ ->
                 Toast.makeText(this, "Video playback error", Toast.LENGTH_SHORT).show()
                 true
             }
             
         } catch (e: Exception) {
-            Toast.makeText(this, "Failed to load video: ${e.message}", Toast.LENGTH_SHORT).show()
+            android.util.Log.e("MediaViewer", "Failed to load video: ${e.message}", e)
+            Toast.makeText(this, "Failed to load video", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
     
     /**
-     * Open annotation mode for the current image.
-     * Launches the AnnotationActivity from the annotation module.
+     * Launch the annotation activity for the current image.
      */
     private fun openAnnotationMode() {
         if (mediaPath.isEmpty()) {
@@ -216,38 +257,77 @@ class MediaViewerActivity : AppCompatActivity() {
             return
         }
         
-        // Get filename from intent or extract from path
-        val filename = intent.getStringExtra(EXTRA_FILENAME) ?: file.name
+        // Cancel auto-hide when opening annotation
+        hideHandler.removeCallbacks(hideRunnable)
         
-        // Launch annotation activity using the AnnotationModule API
+        // Launch annotation activity
         AnnotationModule.launchAnnotation(
             context = this,
             imagePath = mediaPath,
-            imageFilename = filename,
+            imageFilename = filename.ifEmpty { file.name },
             sessionId = sessionId
         )
     }
     
-    private fun toggleSystemUI() {
-        val currentFlags = window.decorView.systemUiVisibility
-        val newFlags = if (currentFlags and View.SYSTEM_UI_FLAG_FULLSCREEN != 0) {
-            // Show system UI
-            View.SYSTEM_UI_FLAG_VISIBLE
+    // ============= Controls Visibility =============
+    
+    private fun toggleControls() {
+        if (controlsVisible) {
+            hideControls()
         } else {
-            // Hide system UI
-            View.SYSTEM_UI_FLAG_FULLSCREEN or
-            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            showControls()
         }
-        window.decorView.systemUiVisibility = newFlags
     }
     
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        return scaleGestureDetector?.onTouchEvent(event) ?: super.onTouchEvent(event)
+    private fun showControls() {
+        controlsVisible = true
+        binding.controlsOverlay.animate()
+            .alpha(1f)
+            .setDuration(200)
+            .withStartAction {
+                binding.controlsOverlay.visibility = View.VISIBLE
+            }
+            .start()
+        
+        showSystemBars()
+        scheduleAutoHide()
+    }
+    
+    private fun hideControls() {
+        controlsVisible = false
+        binding.controlsOverlay.animate()
+            .alpha(0f)
+            .setDuration(200)
+            .withEndAction {
+                binding.controlsOverlay.visibility = View.INVISIBLE
+            }
+            .start()
+        
+        hideSystemBars()
+    }
+    
+    private fun scheduleAutoHide() {
+        hideHandler.removeCallbacks(hideRunnable)
+        hideHandler.postDelayed(hideRunnable, AUTO_HIDE_DELAY_MILLIS)
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        showControls()
+    }
+    
+    override fun onPause() {
+        super.onPause()
+        hideHandler.removeCallbacks(hideRunnable)
     }
     
     override fun onDestroy() {
         super.onDestroy()
-        binding.videoView.stopPlayback()
+        hideHandler.removeCallbacks(hideRunnable)
+        try {
+            binding.videoView.stopPlayback()
+        } catch (e: Exception) {
+            // Ignore
+        }
     }
 }
