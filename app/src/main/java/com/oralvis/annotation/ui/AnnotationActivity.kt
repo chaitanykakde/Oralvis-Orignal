@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Matrix
 import android.graphics.RectF
 import android.os.Bundle
 import android.view.View
@@ -13,6 +12,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
+import com.oralvis.annotation.export.AnnotatedImageExporter
 import com.oralvis.annotation.export.AnnotationExporter
 import com.oralvis.annotation.model.AnnotationBox
 import com.oralvis.annotation.model.ImageAnnotation
@@ -31,7 +31,7 @@ import java.util.UUID
  * - VIEW MODE: Tap existing annotations to edit/delete
  * - ANNOTATE MODE: Draw new bounding boxes
  * - Coordinate mapping from screen to image pixels
- * - JSON export in required format
+ * - JSON export AND annotated image export
  */
 class AnnotationActivity : AppCompatActivity() {
     
@@ -116,7 +116,7 @@ class AnnotationActivity : AppCompatActivity() {
         
         // Save button
         binding.btnSave.setOnClickListener {
-            saveAnnotations()
+            showSaveOptions()
         }
         
         // Clear button
@@ -193,6 +193,7 @@ class AnnotationActivity : AppCompatActivity() {
         // Handle annotation selected (tap in VIEW mode)
         binding.overlayView.onAnnotationSelected = { annotation ->
             if (annotation != null) {
+                AnnotationLogger.d("Annotation selected: ${annotation.label}")
                 showAnnotationOptions(annotation)
             }
         }
@@ -283,19 +284,32 @@ class AnnotationActivity : AppCompatActivity() {
         // Refresh the overlay
         binding.overlayView.setAnnotation(imageAnnotation)
         updateModeUI()
+        
+        Toast.makeText(this, "Added: $label", Toast.LENGTH_SHORT).show()
     }
     
     private fun showAnnotationOptions(annotation: AnnotationBox) {
-        AnnotationOptionsDialog.show(
-            context = this,
-            annotation = annotation,
-            onChangeLabel = {
-                showLabelPickerForEdit(annotation)
-            },
-            onDelete = {
-                confirmDeleteAnnotation(annotation)
-            }
+        val options = arrayOf(
+            "Change Label (${annotation.label})",
+            "Delete"
         )
+        
+        AlertDialog.Builder(this)
+            .setTitle("Edit Annotation")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showLabelPickerForEdit(annotation)
+                    1 -> confirmDeleteAnnotation(annotation)
+                }
+            }
+            .setNegativeButton("Cancel") { dialog, _ ->
+                binding.overlayView.clearSelection()
+                dialog.dismiss()
+            }
+            .setOnCancelListener {
+                binding.overlayView.clearSelection()
+            }
+            .show()
     }
     
     private fun showLabelPickerForEdit(annotation: AnnotationBox) {
@@ -306,7 +320,12 @@ class AnnotationActivity : AppCompatActivity() {
                 AnnotationLogger.d("Updated annotation ${annotation.id} label to: $newLabel")
                 binding.overlayView.setAnnotation(imageAnnotation)
                 binding.overlayView.clearSelection()
+                Toast.makeText(this, "Label changed to: $newLabel", Toast.LENGTH_SHORT).show()
             }
+        }
+        
+        picker.onDismissed = {
+            binding.overlayView.clearSelection()
         }
         
         picker.show(supportFragmentManager, LabelPickerBottomSheet.TAG)
@@ -319,7 +338,9 @@ class AnnotationActivity : AppCompatActivity() {
             .setPositiveButton("Delete") { _, _ ->
                 deleteAnnotation(annotation)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton("Cancel") { _, _ ->
+                binding.overlayView.clearSelection()
+            }
             .show()
     }
     
@@ -353,12 +374,68 @@ class AnnotationActivity : AppCompatActivity() {
     
     // ============= Save/Export =============
     
-    private fun saveAnnotations() {
+    private fun showSaveOptions() {
         if (!imageAnnotation.hasAnnotations()) {
             Toast.makeText(this, "No annotations to save", Toast.LENGTH_SHORT).show()
             return
         }
         
+        val options = arrayOf(
+            "Save JSON Only (for data export)",
+            "Save Annotated Image (with boxes drawn)",
+            "Save Both"
+        )
+        
+        AlertDialog.Builder(this)
+            .setTitle("Save Options")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> saveJsonOnly()
+                    1 -> saveAnnotatedImageOnly()
+                    2 -> saveBoth()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+    
+    private fun saveJsonOnly() {
+        val jsonPath = exportAnnotationsToJson()
+        if (jsonPath != null) {
+            Toast.makeText(this, "JSON saved successfully", Toast.LENGTH_LONG).show()
+            setResultAndFinishIfNeeded(jsonPath, null)
+        } else {
+            Toast.makeText(this, "Failed to save JSON", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun saveAnnotatedImageOnly() {
+        val imagePath = exportAnnotatedImage()
+        if (imagePath != null) {
+            Toast.makeText(this, "Annotated image saved:\n$imagePath", Toast.LENGTH_LONG).show()
+            setResultAndFinishIfNeeded(null, imagePath)
+        } else {
+            Toast.makeText(this, "Failed to save annotated image", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun saveBoth() {
+        val jsonPath = exportAnnotationsToJson()
+        val annotatedImagePath = exportAnnotatedImage()
+        
+        val messages = mutableListOf<String>()
+        if (jsonPath != null) messages.add("JSON saved")
+        if (annotatedImagePath != null) messages.add("Annotated image saved")
+        
+        if (messages.isNotEmpty()) {
+            Toast.makeText(this, messages.joinToString("\n"), Toast.LENGTH_LONG).show()
+            setResultAndFinishIfNeeded(jsonPath, annotatedImagePath)
+        } else {
+            Toast.makeText(this, "Failed to save", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun exportAnnotationsToJson(): String? {
         val sId = sessionId ?: "session_${System.currentTimeMillis()}"
         
         // Create session with this image's annotations
@@ -369,18 +446,34 @@ class AnnotationActivity : AppCompatActivity() {
         val filePath = AnnotationExporter.exportSession(this, session)
         
         if (filePath != null) {
-            Toast.makeText(this, "Annotations saved successfully", Toast.LENGTH_SHORT).show()
             AnnotationLogger.logSessionSaved(sId)
-            
-            // Set result for caller
-            setResult(RESULT_OK, Intent().apply {
-                putExtra("ANNOTATION_FILE_PATH", filePath)
-                putExtra("SESSION_ID", sId)
-                putExtra("ANNOTATION_COUNT", imageAnnotation.annotationCount())
-            })
-        } else {
-            Toast.makeText(this, "Failed to save annotations", Toast.LENGTH_SHORT).show()
         }
+        
+        return filePath
+    }
+    
+    private fun exportAnnotatedImage(): String? {
+        val bmp = bitmap ?: return null
+        
+        // Get output directory (same as original image directory, or Annotations folder)
+        val originalFile = File(imagePath)
+        val outputDir = originalFile.parentFile ?: getExternalFilesDir("AnnotatedImages") ?: return null
+        
+        return AnnotatedImageExporter.exportAnnotatedImage(
+            originalBitmap = bmp,
+            annotation = imageAnnotation,
+            outputDir = outputDir,
+            originalFilename = imageFilename
+        )
+    }
+    
+    private fun setResultAndFinishIfNeeded(jsonPath: String?, annotatedImagePath: String?) {
+        setResult(RESULT_OK, Intent().apply {
+            jsonPath?.let { putExtra("ANNOTATION_JSON_PATH", it) }
+            annotatedImagePath?.let { putExtra("ANNOTATED_IMAGE_PATH", it) }
+            putExtra("SESSION_ID", sessionId ?: "")
+            putExtra("ANNOTATION_COUNT", imageAnnotation.annotationCount())
+        })
     }
     
     // ============= Back Handling =============
@@ -389,9 +482,9 @@ class AnnotationActivity : AppCompatActivity() {
         if (imageAnnotation.hasAnnotations()) {
             AlertDialog.Builder(this)
                 .setTitle("Unsaved Changes")
-                .setMessage("You have ${imageAnnotation.annotationCount()} unsaved annotation(s). Save before leaving?")
+                .setMessage("You have ${imageAnnotation.annotationCount()} annotation(s). Save before leaving?")
                 .setPositiveButton("Save & Exit") { _, _ ->
-                    saveAnnotations()
+                    saveBoth()
                     finish()
                 }
                 .setNegativeButton("Discard") { _, _ ->

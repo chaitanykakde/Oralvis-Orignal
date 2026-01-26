@@ -283,18 +283,21 @@ class AnnotationOverlayView @JvmOverloads constructor(
         val labelColor = AnnotationLabel.getColorForLabel(box.label)
         
         // Draw semi-transparent fill
-        fillPaint.color = Color.argb(40, Color.red(labelColor), Color.green(labelColor), Color.blue(labelColor))
+        fillPaint.color = Color.argb(50, Color.red(labelColor), Color.green(labelColor), Color.blue(labelColor))
         canvas.drawRect(screenRect, fillPaint)
         
         // Draw border
         if (isSelected) {
+            // Selected annotation: white dashed border + colored inner border
             canvas.drawRect(screenRect, selectedPaint)
             boxPaint.color = labelColor
+            boxPaint.strokeWidth = 4f
             val inset = RectF(screenRect)
             inset.inset(3f, 3f)
             canvas.drawRect(inset, boxPaint)
         } else {
             boxPaint.color = labelColor
+            boxPaint.strokeWidth = 4f
             canvas.drawRect(screenRect, boxPaint)
         }
         
@@ -306,7 +309,7 @@ class AnnotationOverlayView @JvmOverloads constructor(
         val textBounds = Rect()
         labelPaint.getTextBounds(label, 0, label.length, textBounds)
         
-        val padding = 6f
+        val padding = 8f
         val labelWidth = textBounds.width() + padding * 2
         val labelHeight = textBounds.height() + padding * 2
         
@@ -327,11 +330,12 @@ class AnnotationOverlayView @JvmOverloads constructor(
     }
     
     private fun drawCurrentBox(canvas: Canvas) {
+        // FIXED: was using drawCurrentX instead of drawCurrentY
         val rect = RectF(
             minOf(drawStartX, drawCurrentX),
             minOf(drawStartY, drawCurrentY),
             maxOf(drawStartX, drawCurrentX),
-            maxOf(drawStartY, drawCurrentX)
+            maxOf(drawStartY, drawCurrentY)
         )
         
         // Draw fill and border
@@ -339,8 +343,12 @@ class AnnotationOverlayView @JvmOverloads constructor(
         canvas.drawRect(rect, drawingPaint)
         
         // Draw corner handles
-        val handleRadius = 8f
-        val handlePaint = Paint().apply { color = Color.WHITE; style = Paint.Style.FILL }
+        val handleRadius = 10f
+        val handlePaint = Paint().apply { 
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
         canvas.drawCircle(rect.left, rect.top, handleRadius, handlePaint)
         canvas.drawCircle(rect.right, rect.top, handleRadius, handlePaint)
         canvas.drawCircle(rect.left, rect.bottom, handleRadius, handlePaint)
@@ -418,18 +426,29 @@ class AnnotationOverlayView @JvmOverloads constructor(
     }
     
     private fun handleViewTouch(event: MotionEvent): Boolean {
-        if (event.action != MotionEvent.ACTION_UP) return false
-        
-        // Convert tap to image coordinates
-        val imagePoint = screenToImage(event.x, event.y) ?: return false
-        
-        // Find annotation at this point
-        val tapped = imageAnnotation?.findAnnotationAt(imagePoint.x, imagePoint.y)
-        
-        selectedAnnotationId = tapped?.id
-        onAnnotationSelected?.invoke(tapped)
-        
-        invalidate()
-        return true
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                // Accept the touch to receive subsequent events
+                return true
+            }
+            
+            MotionEvent.ACTION_UP -> {
+                // Convert tap to image coordinates
+                val imagePoint = screenToImage(event.x, event.y)
+                
+                if (imagePoint != null) {
+                    // Find annotation at this point
+                    val tapped = imageAnnotation?.findAnnotationAt(imagePoint.x, imagePoint.y)
+                    
+                    AnnotationLogger.d("Tap at screen(${event.x}, ${event.y}) -> image(${imagePoint.x}, ${imagePoint.y}), found: ${tapped?.label ?: "none"}")
+                    
+                    selectedAnnotationId = tapped?.id
+                    onAnnotationSelected?.invoke(tapped)
+                    invalidate()
+                }
+                return true
+            }
+        }
+        return false
     }
 }
