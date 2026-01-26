@@ -100,8 +100,10 @@ class SessionDetailActivity : AppCompatActivity() {
     
     private fun openMediaViewer(mediaRecord: MediaRecord) {
         val intent = Intent(this, MediaViewerActivity::class.java)
-        intent.putExtra("MEDIA_PATH", mediaRecord.filePath)
-        intent.putExtra("IS_VIDEO", mediaRecord.mediaType == "Video")
+        intent.putExtra(MediaViewerActivity.EXTRA_MEDIA_PATH, mediaRecord.filePath)
+        intent.putExtra(MediaViewerActivity.EXTRA_MEDIA_TYPE, if (mediaRecord.mediaType == "Video") "video" else "image")
+        intent.putExtra(MediaViewerActivity.EXTRA_SESSION_ID, session?.sessionId)
+        intent.putExtra(MediaViewerActivity.EXTRA_FILENAME, mediaRecord.fileName)
         startActivity(intent)
     }
 }

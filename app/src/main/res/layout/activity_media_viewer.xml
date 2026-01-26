@@ -8,17 +8,51 @@
     android:background="@color/black"
     tools:context=".MediaViewerActivity">
 
-    <!-- Back Button -->
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnBack"
-        android:layout_width="wrap_content"
+    <!-- Top Bar with Back and Annotate buttons -->
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Back"
-        android:backgroundTint="#FF5722"
-        android:layout_margin="16dp"
-        app:icon="@android:drawable/ic_menu_revert"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="8dp"
+        android:background="#88000000"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Back Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBack"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Back"
+            android:textColor="@color/white"
+            app:icon="@drawable/ic_back"
+            app:iconTint="@color/white" />
+
+        <!-- Spacer -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1" />
+
+        <!-- Annotate Button (visible only for images) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAnnotate"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Annotate"
+            android:backgroundTint="#FF5722"
+            android:textColor="@color/white"
+            android:visibility="gone"
+            app:icon="@drawable/ic_edit"
+            app:iconTint="@color/white"
+            tools:visibility="visible" />
+
+    </LinearLayout>
 
     <!-- Image View for Images -->
     <ImageView
@@ -28,7 +62,7 @@
         android:scaleType="centerInside"
         android:adjustViewBounds="true"
         android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/topBar"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -40,7 +74,7 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/topBar"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
