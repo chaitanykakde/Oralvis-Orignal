@@ -10,6 +10,14 @@ import java.nio.charset.StandardCharsets
 /**
  * Manages USB serial connection for reading commands from hardware.
  * Runs a dedicated background thread for blocking USB bulk transfers.
+ *
+ * Alignment with Python working script (oralvis_verify.py):
+ * - VID 0x1209 / PID 0xC550: device selection is done by caller (same device as UVC).
+ * - 115200 8N1: BAUD_RATE, DATA_BITS, STOP_BITS, PARITY; SET_LINE_CODING sent on open.
+ * - DTR enabled: SET_CONTROL_LINE_STATE (0x22) with DTR=1 before read loop (dsrdtr=True / ser.dtr = True).
+ * - Newline-terminated ASCII: read loop splits on '\n', trims, decodes UTF-8 (ASCII-safe).
+ * - Timeout: TIMEOUT_MS = 1000 (Python TIMEOUT = 1.0).
+ * - Logging: every received command logged as [RECEIVED] <command> for verification.
  */
 class UsbSerialConnection(
     private val usbManager: UsbManager,
@@ -25,18 +33,35 @@ class UsbSerialConnection(
         private const val PARITY = 0
         private const val TIMEOUT_MS = 1000
         private const val BUFFER_SIZE = 1024
+
+        // CDC ACM control requests (USB CDC 1.1) — must match Windows/Python (DtrEnable = true)
+        private const val USB_RECIP_INTERFACE = 0x01
+        private const val USB_TYPE_CLASS = 0x20
+        private const val USB_DIR_OUT = 0x00
+        private const val CDC_REQUEST_TYPE = USB_DIR_OUT or USB_TYPE_CLASS or USB_RECIP_INTERFACE // 0x21
+        private const val SET_CONTROL_LINE_STATE = 0x22
+        private const val SET_LINE_CODING = 0x20
+        private const val DTR_MASK = 0x0001
+        private const val CONTROL_TRANSFER_TIMEOUT_MS = 500
+
+        /** Tag for filtering all received commands in logcat (matches Python "[RECEIVED]"). */
+        private const val LOG_RECEIVED = "CDC_RECEIVED"
     }
     
     private var connection: UsbDeviceConnection? = null
     private var readThread: Thread? = null
     @Volatile private var isRunning = false
-    
-/**
- * Open the USB connection using the camera's already-open device connection.
- * @param existingConnection The camera's UsbDeviceConnection (must already be open)
- * @return true if connection established successfully
- */
-fun openWithExistingConnection(existingConnection: UsbDeviceConnection): Boolean {
+    /** When false, we do not close the connection in stop() (e.g. camera owns it). */
+    private var closeConnectionOnStop = true
+
+    /**
+     * Open the USB connection.
+     * @param existingConnection Already-open UsbDeviceConnection for this device
+     * @param closeConnectionOnStop true to close the connection in stop(); false when caller owns it (e.g. camera)
+     * @return true if connection established successfully
+     */
+    fun openWithExistingConnection(existingConnection: UsbDeviceConnection, closeConnectionOnStop: Boolean = true): Boolean {
+        this.closeConnectionOnStop = closeConnectionOnStop
     try {
         if (existingConnection == null) {
             Log.e(TAG, "Failed to get camera's USB device connection")
@@ -81,6 +106,15 @@ endpointCount=${intf.endpointCount}
                 return false
             }
 
+            // FIX 1 — Enable DTR (required for hardware to emit data; matches Windows/Python DtrEnable = true)
+            val cdcCommInterface = findCdcCommInterface()
+            if (cdcCommInterface != null) {
+                enableDtr(existingConnection, cdcCommInterface)
+                setLineCoding(existingConnection, cdcCommInterface)
+            } else {
+                Log.w(TAG, "CDC COMM interface not found — DTR not set; hardware may not send data")
+            }
+
             Log.i("CDC_TRACE", "CDC connection OPEN | baud=$BAUD_RATE | thread=${Thread.currentThread().name}")
             connection = existingConnection
             Log.i(TAG, "✅ USB connection opened successfully - using CDC DATA interface index ${cdcDataInterface.id}")
@@ -89,6 +123,72 @@ endpointCount=${intf.endpointCount}
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error opening USB connection: ${e.message}", e)
             return false
+        }
+    }
+
+    /**
+     * Find CDC ACM COMM interface (class 2, subclass 2). Used for SET_CONTROL_LINE_STATE and SET_LINE_CODING.
+     */
+    private fun findCdcCommInterface(): android.hardware.usb.UsbInterface? {
+        for (i in 0 until device.interfaceCount) {
+            val intf = device.getInterface(i)
+            if (intf.interfaceClass == 2 && intf.interfaceSubclass == 2) { // USB_CLASS_CDC, ACM
+                Log.i("CDC_TRACE", "CDC COMM (ACM) interface FOUND at index=$i id=${intf.id}")
+                return intf
+            }
+        }
+        return null
+    }
+
+    /**
+     * Send SET_CONTROL_LINE_STATE (0x22) with DTR=1 so hardware emits data (matches Windows/Python DtrEnable = true).
+     */
+    private fun enableDtr(conn: UsbDeviceConnection, commInterface: android.hardware.usb.UsbInterface) {
+        val result = conn.controlTransfer(
+            CDC_REQUEST_TYPE,
+            SET_CONTROL_LINE_STATE,
+            DTR_MASK,
+            commInterface.id,
+            null,
+            0,
+            CONTROL_TRANSFER_TIMEOUT_MS
+        )
+        if (result >= 0) {
+            Log.i("CDC_TRACE", "DTR enabled (SET_CONTROL_LINE_STATE) | interfaceId=${commInterface.id}")
+            Log.i(TAG, "✅ DTR enabled — hardware can now send CAPTURE/UV/RGB")
+        } else {
+            Log.e("CDC_TRACE", "SET_CONTROL_LINE_STATE failed | result=$result")
+            Log.w(TAG, "DTR enable failed (result=$result) — hardware may not send data")
+        }
+    }
+
+    /**
+     * Send SET_LINE_CODING for 115200 8N1 (optional; mirrors Windows line settings).
+     */
+    private fun setLineCoding(conn: UsbDeviceConnection, commInterface: android.hardware.usb.UsbInterface) {
+        val lineCoding = ByteArray(7).apply {
+            // dwDTERate: 115200 little-endian
+            this[0] = (BAUD_RATE and 0xFF).toByte()
+            this[1] = ((BAUD_RATE shr 8) and 0xFF).toByte()
+            this[2] = ((BAUD_RATE shr 16) and 0xFF).toByte()
+            this[3] = ((BAUD_RATE shr 24) and 0xFF).toByte()
+            this[4] = 0   // bCharFormat (1 stop bit)
+            this[5] = 0   // bParityType (none)
+            this[6] = DATA_BITS.toByte() // bDataBits (8)
+        }
+        val result = conn.controlTransfer(
+            CDC_REQUEST_TYPE,
+            SET_LINE_CODING,
+            0,
+            commInterface.id,
+            lineCoding,
+            lineCoding.size,
+            CONTROL_TRANSFER_TIMEOUT_MS
+        )
+        if (result >= 0) {
+            Log.i("CDC_TRACE", "SET_LINE_CODING sent | 115200 8N1 | interfaceId=${commInterface.id}")
+        } else {
+            Log.w(TAG, "SET_LINE_CODING failed (result=$result) — using default line coding")
         }
     }
     
@@ -151,20 +251,25 @@ endpointCount=${intf.endpointCount}
                 Log.i(TAG, "📡 Using CDC DATA interface index ${cdcDataInterface.id}")
                 Log.i(TAG, "📡 CDC DATA endpoints: IN=${inEndpoint.address}, OUT=${outEndpoint?.address ?: "N/A"}")
 
+                var readAttempts = 0L
+                var lastNoDataLogTime = 0L
+                var lastPartialLogTime = 0L
+                val noDataLogIntervalMs = 5000L
+                val partialLogIntervalMs = 3000L
+
                 while (isRunning) {
                     try {
-                        Log.d("CDC_TRACE", "CDC READ attempt...")
-                        // Blocking bulk transfer
+                        readAttempts++
+                        // Blocking bulk transfer (same as Python readline timeout = 1.0)
                         val length = connection?.bulkTransfer(inEndpoint, buffer, buffer.size, TIMEOUT_MS) ?: -1
 
                         if (length > 0) {
-                            Log.i("CDC_TRACE", "CDC READ bytes=$length data=${buffer.take(length).joinToString("") { "%02x".format(it.toInt().and(0xFF)) }.let { if (it.length > 128) it.take(128) + "..." else it }}")
-                            // Convert bytes to string
+                            val hexPreview = buffer.take(length).joinToString("") { "%02x".format(it.toInt().and(0xFF)) }.let { if (it.length > 64) it.take(64) + "..." else it }
+                            Log.i("CDC_TRACE", "CDC READ bytes=$length hex=$hexPreview")
                             val data = String(buffer, 0, length, StandardCharsets.UTF_8)
                             commandBuffer.append(data)
 
-                            // Process complete commands (newline-terminated)
-                            // Handle multiple commands in one read and partial commands across reads
+                            // Process complete commands (newline-terminated, same as Python readline())
                             while (true) {
                                 val newlineIndex = commandBuffer.indexOf('\n')
                                 if (newlineIndex == -1) break
@@ -172,30 +277,43 @@ endpointCount=${intf.endpointCount}
                                 val command = commandBuffer.substring(0, newlineIndex).trim()
                                 commandBuffer.delete(0, newlineIndex + 1)
 
-                                // Skip empty commands (multiple newlines)
                                 if (command.isNotEmpty()) {
-                                    Log.d(TAG, "Command received: '$command'")
+                                    Log.i(LOG_RECEIVED, "[RECEIVED] $command")
+                                    Log.i(TAG, "[RECEIVED] $command")
                                     try {
                                         onCommandReceived(command)
                                     } catch (e: Exception) {
                                         Log.e(TAG, "Error processing command '$command': ${e.message}")
                                     }
+                                } else {
+                                    Log.d("CDC_TRACE", "CDC empty line (multiple newlines), skipped")
                                 }
                             }
 
-                            // Prevent buffer from growing indefinitely if no newlines received
                             if (commandBuffer.length > BUFFER_SIZE * 2) {
                                 Log.w(TAG, "Command buffer too large (${commandBuffer.length} chars), clearing")
                                 commandBuffer.setLength(0)
                             }
-
-                        } else if (length < 0) {
-                            // Timeout or error - continue loop
-                            if (length != -1) {
-                                Log.w(TAG, "Bulk transfer error: $length")
+                        } else if (length == 0) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastNoDataLogTime >= noDataLogIntervalMs) {
+                                Log.d("CDC_TRACE", "CDC READ: no data (timeout/zero length) — read loop active, waiting for hardware")
+                                lastNoDataLogTime = now
                             }
+                        } else {
+                            // length < 0: error
+                            Log.w("CDC_TRACE", "CDC READ error: length=$length")
+                            Log.w(TAG, "Bulk transfer error: $length")
                         }
 
+                        // Log when we have partial data (no newline yet) — occasionally
+                        if (commandBuffer.isNotEmpty()) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastPartialLogTime >= partialLogIntervalMs) {
+                                Log.d("CDC_TRACE", "CDC partial buffer (no newline yet): length=${commandBuffer.length} preview='${commandBuffer.toString().take(40).replace(Regex("[^\\x20-\\x7E]"), ".")}'")
+                                lastPartialLogTime = now
+                            }
+                        }
                     } catch (e: Exception) {
                         if (isRunning) {
                             Log.e("CDC_TRACE", "CDC READ ERROR", e)
@@ -223,13 +341,16 @@ endpointCount=${intf.endpointCount}
         Log.i(TAG, "Stopping USB serial connection")
         isRunning = false
 
-        // Close connection first to unblock bulkTransfer
-        try {
-            connection?.close()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error closing connection: ${e.message}")
-        }
+        // Close connection only if we own it (CDC-only device); do not close camera's connection
+        val conn = connection
         connection = null
+        if (closeConnectionOnStop && conn != null) {
+            try {
+                conn.close()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing connection: ${e.message}")
+            }
+        }
 
         // Wait for thread to finish (with timeout)
         readThread?.let { thread ->

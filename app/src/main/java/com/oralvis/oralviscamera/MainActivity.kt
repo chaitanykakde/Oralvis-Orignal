@@ -520,9 +520,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         // CONTROL TRANSFER TIMING: Safe to update camera parameters now
         updateCameraControlValues()
         
-        // CDC 20-SECOND STABILITY GATE: Schedule CDC start after 20 seconds of stable streaming
-        // This diagnostic gate isolates CDC interference and proves causality if issues occur
-        scheduleCdcStartAfterStability()
+        // CDC now starts immediately when camera opens (onCameraOpened → start); no 20s delay.
         
         android.util.Log.d("CameraPipeline", "✅ Camera pipeline fully initialized and stable")
     }
@@ -3279,16 +3277,16 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         // PHASE A — CAMERA ACTIVATION: Enable parameter application immediately
                         activateCameraPipeline()
 
-                        // PHASE C — NOTIFY SERIAL: Store camera connection for later CDC startup
-                        // CDC will start ONLY after first frame received (see onFirstFrameReceived)
-                        // This ensures UVC enumeration is complete before CDC interface claiming
+                        // PHASE C — NOTIFY SERIAL and start CDC immediately (match Windows/Python: CDC as soon as device is connected)
                         val deviceConnection = ctrlBlock.connection
                         if (deviceConnection != null) {
                             try {
                                 usbSerialManager?.onCameraOpened(deviceConnection, device!!)
-                                android.util.Log.d("CameraSerial", "✅ Stored camera's device connection - CDC will start after first frame")
+                                android.util.Log.d("CameraSerial", "✅ Stored camera's device connection - starting CDC immediately")
+                                usbSerialManager?.start()
+                                android.util.Log.d("CameraSerial", "✅ CDC started (hardware buttons active)")
                             } catch (e: Exception) {
-                                android.util.Log.e("CameraSerial", "❌ Error storing camera connection: ${e.message}", e)
+                                android.util.Log.e("CameraSerial", "❌ Error storing camera connection or starting CDC: ${e.message}", e)
                             }
                         } else {
                             android.util.Log.w("CameraSerial", "⚠️ Camera control block has null connection - CDC cannot start")
@@ -3435,15 +3433,22 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             if (mCameraMap.containsKey(device.deviceId)) continue
             val camera = CameraUVC(this, device)
             mCameraMap[device.deviceId] = camera
-            // Only gate patient/runtime dialogs when we will show the USB permission dialog
             if (!usbManager.hasPermission(device)) {
                 usbPermissionPending = true
                 binding.statusText.text = "USB Camera detected - Requesting permission..."
             }
-            // requestPermission: shows dialog if needed, or triggers onConnectDev if already granted
             client.requestPermission(device)
-            // Only trigger for first matching device; mDeviceCheckRunnable handles others
             break
+        }
+        // Request permission for OralVis CDC controller (0x1209/0xC550) when it's a separate device so CDC can open it
+        for (device in devices) {
+            if (device.vendorId == 0x1209 && device.productId == 0xC550) {
+                if (!usbManager.hasPermission(device)) {
+                    android.util.Log.i("CDC_TRACE", "Requesting permission for OralVis CDC device (separate) deviceId=${device.deviceId}")
+                    client.requestPermission(device)
+                }
+                break
+            }
         }
     }
 

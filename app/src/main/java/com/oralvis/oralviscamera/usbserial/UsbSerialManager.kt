@@ -8,6 +8,12 @@ import android.util.Log
 /**
  * Main orchestrator for USB serial communication with OralVis hardware.
  * Manages device detection, permission handling, connection lifecycle, and command dispatch.
+ *
+ * Behavior aligned with Python oralvis_verify.py:
+ * - Same device (VID 0x1209, PID 0xC550) via camera connection.
+ * - CDC starts as soon as camera is connected (no delay).
+ * - DTR and line coding set in UsbSerialConnection before read loop.
+ * - Commands: newline-terminated ASCII (CAPTURE, UV, RGB); logged as [RECEIVED] / CDC_CMD.
  */
 class UsbSerialManager(
     private val context: Context,
@@ -22,6 +28,9 @@ class UsbSerialManager(
 
     companion object {
         private const val TAG = "UsbSerialManager"
+        /** OralVis CDC controller (hardware buttons) — must match Python/device_filter. */
+        private const val ORALVIS_CDC_VID = 0x1209
+        private const val ORALVIS_CDC_PID = 0xC550
     }
 
     private val usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -69,12 +78,10 @@ class UsbSerialManager(
             Log.i(TAG, "Starting USB serial manager (camera is ready)")
             isStarted = true
 
-            // PROBLEM 2 FIX: Use fresh UsbDevice from UsbManager at CDC start time.
-            // Cached device from camera open can be a stale snapshot; interfaces may
-            // be enumerated later. Fresh lookup ensures CDC DATA is found when present.
-            val deviceForCdc = getFreshUsbDevice()
+            // Use OralVis CDC device by VID/PID (0x1209/0xC550). If same as camera, reuse camera connection; else open separately.
+            val deviceForCdc = getOralVisCdcDevice()
             if (deviceForCdc == null) {
-                Log.e(TAG, "Cannot get UsbDevice for CDC — cameraDevice is null")
+                Log.e(TAG, "OralVis CDC device (VID=$ORALVIS_CDC_VID, PID=$ORALVIS_CDC_PID) not found — is controller connected?")
                 isStarted = false
                 return
             }
@@ -119,54 +126,60 @@ class UsbSerialManager(
     
     /**
      * Open the USB serial connection and start reading commands.
-     * This is called AFTER camera is ready to ensure camera owns the device.
+     * Uses OralVis CDC device (VID 0x1209, PID 0xC550). If it's the same device as the camera, reuses camera connection; otherwise opens the CDC device separately.
      */
     private fun openConnection(device: UsbDevice) {
-        // Close any existing connection
         closeConnection()
 
-        // CRITICAL: Wait for camera to be ready before opening serial
-        // This ensures camera has exclusive device ownership
-        if (!isCameraReady()) {
-            Log.w(TAG, "⚠️ Camera not ready - deferring serial connection")
-            return
+        val isSameAsCamera = cameraDevice?.deviceId == device.deviceId
+        val connectionToUse: android.hardware.usb.UsbDeviceConnection?
+        val closeConnectionOnStop: Boolean
+
+        if (isSameAsCamera) {
+            connectionToUse = getCameraDeviceConnection()
+            closeConnectionOnStop = false
+            Log.i("CDC_TRACE", "CDC device is same as camera — reusing camera connection (deviceId=${device.deviceId})")
+            Log.i(TAG, "🔌 Opening serial using camera's device connection (composite device)")
+        } else {
+            if (!usbManager.hasPermission(device)) {
+                Log.e(TAG, "❌ No permission for OralVis CDC device (VID=${device.vendorId}, PID=${device.productId}) — request permission for controller")
+                onConnectionStateChanged(false)
+                return
+            }
+            connectionToUse = usbManager.openDevice(device)
+            closeConnectionOnStop = true
+            Log.i("CDC_TRACE", "CDC device is separate from camera — opened dedicated connection (deviceId=${device.deviceId})")
+            Log.i(TAG, "🔌 Opening serial on OralVis CDC controller (separate device)")
         }
 
-        // Get the camera's device connection
-        val cameraConnection = getCameraDeviceConnection()
-        if (cameraConnection == null) {
-            Log.e(TAG, "❌ Cannot access camera's device connection")
+        if (connectionToUse == null) {
+            Log.e(TAG, "❌ Cannot open connection for CDC device")
             onConnectionStateChanged(false)
             return
         }
-
-        Log.i(TAG, "🔌 Opening serial using camera's device connection")
 
         try {
-            val connection = UsbSerialConnection(
+            val serialConn = UsbSerialConnection(
                 usbManager = usbManager,
                 device = device,
-                onCommandReceived = { rawCommand ->
-                    handleCommandReceived(rawCommand)
-                }
+                onCommandReceived = { rawCommand -> handleCommandReceived(rawCommand) }
             )
 
-            // Use camera's existing device connection instead of opening our own
-            if (connection.openWithExistingConnection(cameraConnection)) {
-                connection.startReading()
-                serialConnection = connection
+            if (serialConn.openWithExistingConnection(connectionToUse, closeConnectionOnStop)) {
+                serialConn.startReading()
+                serialConnection = serialConn
                 onConnectionStateChanged(true)
-                Log.i(TAG, "✅ USB serial connection established using camera's device")
+                Log.i(TAG, "✅ USB serial connection established (deviceId=${device.deviceId}, VID=${device.vendorId}, PID=${device.productId})")
                 Log.i(TAG, "📡 Ready to receive CAPTURE, UV, RGB commands from OralVis hardware")
             } else {
-                Log.w(TAG, "Camera device has no CDC DATA interface — serial disabled")
+                if (closeConnectionOnStop) connectionToUse.close()
+                Log.w(TAG, "CDC device has no CDC DATA interface — serial disabled")
                 onConnectionStateChanged(false)
             }
-
         } catch (e: Exception) {
+            if (closeConnectionOnStop) connectionToUse.close()
             Log.e(TAG, "❌ Error establishing serial connection: ${e.message}", e)
             onConnectionStateChanged(false)
-            // Reset state on error
             serialConnection = null
         }
     }
@@ -182,38 +195,41 @@ class UsbSerialManager(
     
     /**
      * Handle a received command from the serial connection.
-     * Parses and dispatches the command on the main thread.
+     * Detailed logging for every command: received, parsed, dispatched, result.
+     * Filter logcat by "CDC_CMD" to see full command path.
      */
     private fun handleCommandReceived(rawCommand: String) {
         try {
-            // Skip empty or whitespace-only commands
             if (rawCommand.isBlank()) {
+                Log.d("CDC_CMD", "[SKIP] blank or whitespace-only command")
                 return
             }
 
+            Log.i("CDC_CMD", "[RECEIVED] raw='$rawCommand'")
             Log.i("CDC_TRACE", "HARDWARE BUTTON EVENT received | raw=$rawCommand")
-            Log.d(TAG, "📥 Received raw command: '$rawCommand'")
 
             val command = commandParser.parse(rawCommand)
 
-            // Skip unknown commands to avoid spam
             if (command.type == CommandType.UNKNOWN) {
+                Log.w("CDC_CMD", "[SKIP] unknown command: '$rawCommand'")
                 Log.d(TAG, "⚠️ Skipping unknown command: '$rawCommand'")
                 return
             }
 
+            Log.i("CDC_CMD", "[PARSE] type=${command.type} raw='$rawCommand'")
             Log.i(TAG, "🎮 Processing command: ${command.type} (from: '$rawCommand')")
 
-            // Dispatch command (dispatcher will call commandReceiver which uses runOnUiThread)
             val success = commandDispatcher.dispatch(command)
 
             if (success) {
+                Log.i("CDC_CMD", "[OK] executed: ${command.type}")
                 Log.i(TAG, "✅ Command executed successfully: ${command.type}")
             } else {
+                Log.w("CDC_CMD", "[REJECTED] ${command.type} (rate limit or guard)")
                 Log.w(TAG, "❌ Command execution failed or rejected: ${command.type}")
             }
-
         } catch (e: Exception) {
+            Log.e("CDC_CMD", "[ERROR] raw='$rawCommand' ${e.message}", e)
             Log.e(TAG, "❌ Error handling command '$rawCommand': ${e.message}", e)
         }
     }
@@ -229,8 +245,8 @@ class UsbSerialManager(
      * Notify that camera has opened successfully.
      * Stores camera connection and device reference for later CDC startup.
      * 
-     * CRITICAL: CDC will NOT start here. It will start only after first frame received.
-     * This ensures UVC enumeration is complete before CDC interface claiming.
+     * CDC is started immediately by MainActivity when camera opens (onCameraOpened → start),
+     * so hardware buttons (CAPTURE/UV/RGB) work as soon as the camera is connected.
      */
     fun onCameraOpened(cameraConnection: android.hardware.usb.UsbDeviceConnection, device: UsbDevice) {
         try {
@@ -246,10 +262,7 @@ deviceName=${device.deviceName}
 source=cameraCallback
 """.trimIndent())
             Log.i(TAG, "📷 Camera opened - stored device connection (VID=${cameraDevice?.vendorId}, PID=${cameraDevice?.productId})")
-            Log.i(TAG, "⏳ CDC serial will start after first video frame received (UVC streaming must be stable)")
-
-            // DO NOT start serial here - wait for first frame confirmation
-            // Serial will be started from MainActivity.onFirstFrameReceived()
+            Log.i(TAG, "CDC serial will be started by MainActivity when camera opens (immediate)")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error in onCameraOpened: ${e.message}", e)
             // Reset state on error to prevent inconsistent state
@@ -292,24 +305,22 @@ source=cameraCallback
     }
 
     /**
-     * Obtain a fresh UsbDevice from UsbManager at CDC start time.
-     * Cached device from camera open can be a stale snapshot; a fresh lookup
-     * ensures CDC DATA interface is found when the kernel has finished enumeration.
+     * Find the OralVis CDC controller by VID/PID (0x1209, 0xC550).
+     * When camera and controller are the same composite device, this may return the camera device;
+     * when they are separate (e.g. camera VID=9568, controller VID=0x1209), returns the controller.
      */
-    private fun getFreshUsbDevice(): UsbDevice? {
-        val cached = cameraDevice ?: return null
+    private fun getOralVisCdcDevice(): UsbDevice? {
         usbManager.deviceList?.values?.forEach {
             Log.i("CDC_TRACE", "USB_SCAN: id=${it.deviceId}, VID=${it.vendorId}, PID=${it.productId}, ifaces=${it.interfaceCount}")
         } ?: Log.i("CDC_TRACE", "USB_SCAN: deviceList.values is null")
-        val fresh = usbManager.deviceList?.values?.find { it.deviceId == cached.deviceId }
-        if (fresh != null) {
-            Log.i("CDC_TRACE", "getFreshUsbDevice: match FOUND, using fresh UsbDevice from UsbManager")
-            Log.i(TAG, "Using fresh UsbDevice from UsbManager for CDC (deviceId=${cached.deviceId})")
-            return fresh
+        val cdc = usbManager.deviceList?.values?.find { it.vendorId == ORALVIS_CDC_VID && it.productId == ORALVIS_CDC_PID }
+        if (cdc != null) {
+            Log.i("CDC_TRACE", "getOralVisCdcDevice: FOUND id=${cdc.deviceId} VID=${cdc.vendorId} PID=${cdc.productId}")
+            Log.i(TAG, "Using OralVis CDC device (deviceId=${cdc.deviceId}) for hardware buttons")
+            return cdc
         }
-        Log.i("CDC_TRACE", "getFreshUsbDevice: match NOT FOUND, using cached fallback (deviceId=${cached.deviceId})")
-        Log.w(TAG, "Fresh UsbDevice not in deviceList, using cached — CDC may fail if interfaces were not enumerated (deviceId=${cached.deviceId})")
-        return cached
+        Log.w("CDC_TRACE", "getOralVisCdcDevice: NOT FOUND (VID=$ORALVIS_CDC_VID PID=$ORALVIS_CDC_PID)")
+        return null
     }
 
     /**
