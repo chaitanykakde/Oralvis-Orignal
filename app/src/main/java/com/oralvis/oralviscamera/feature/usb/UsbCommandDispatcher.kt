@@ -1,32 +1,24 @@
-package com.oralvis.oralviscamera.usbserial
+package com.oralvis.oralviscamera.feature.usb
+
+// NOTE: Phase 2 USB extraction. Behavior unchanged from original usbserial version.
 
 import android.util.Log
 
-/**
- * Dispatcher that executes USB commands via the CameraCommandReceiver interface.
- * Provides context-aware command handling (e.g., different behavior during guided sessions).
- */
 class UsbCommandDispatcher(
     private val commandReceiver: CameraCommandReceiver
 ) {
 
     companion object {
         private const val TAG = "UsbCommandDispatcher"
-        private const val MIN_COMMAND_INTERVAL_MS = 200L // Minimum 200ms between commands
+        private const val MIN_COMMAND_INTERVAL_MS = 200L
     }
 
     private var lastCommandTime = 0L
-    
-    /**
-     * Dispatch a parsed USB command to the appropriate app action.
-     * @param command The parsed command to execute
-     * @return true if command was successfully dispatched, false otherwise
-     */
+
     fun dispatch(command: UsbCommand): Boolean {
         val currentTime = System.currentTimeMillis()
         val timeSinceLastCommand = currentTime - lastCommandTime
 
-        // Rate limit commands to prevent rapid-fire execution
         if (timeSinceLastCommand < MIN_COMMAND_INTERVAL_MS) {
             Log.d(TAG, "Command rate limited: ${command.type} (${timeSinceLastCommand}ms since last)")
             return false
@@ -46,7 +38,7 @@ class UsbCommandDispatcher(
                 }
                 result
             }
-            
+
             CommandType.UV -> {
                 Log.d(TAG, "Executing UV (Fluorescence mode) command")
                 val result = commandReceiver.switchToFluorescenceMode()
@@ -57,7 +49,7 @@ class UsbCommandDispatcher(
                 }
                 result
             }
-            
+
             CommandType.RGB -> {
                 Log.d(TAG, "Executing RGB (Normal mode) command")
                 val result = commandReceiver.switchToNormalMode()
@@ -68,7 +60,7 @@ class UsbCommandDispatcher(
                 }
                 result
             }
-            
+
             CommandType.UNKNOWN -> {
                 Log.w(TAG, "Unknown command ignored: '${command.rawText}'")
                 false
@@ -76,3 +68,4 @@ class UsbCommandDispatcher(
         }
     }
 }
+

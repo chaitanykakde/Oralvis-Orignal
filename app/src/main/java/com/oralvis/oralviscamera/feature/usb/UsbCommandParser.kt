@@ -1,25 +1,18 @@
-package com.oralvis.oralviscamera.usbserial
+package com.oralvis.oralviscamera.feature.usb
+
+// NOTE: Phase 2 USB extraction. Behavior unchanged from original usbserial version.
 
 import android.util.Log
 
-/**
- * Parser for USB serial commands.
- * Converts raw text strings into typed UsbCommand objects.
- */
 class UsbCommandParser {
-    
+
     companion object {
         private const val TAG = "UsbCommandParser"
     }
-    
-    /**
-     * Parse a raw command string into a UsbCommand.
-     * @param rawCommand The raw text received from serial connection
-     * @return Parsed UsbCommand with appropriate CommandType
-     */
+
     fun parse(rawCommand: String): UsbCommand {
         val normalized = rawCommand.trim().uppercase()
-        
+
         val type = when (normalized) {
             "CAPTURE" -> CommandType.CAPTURE
             "UV" -> CommandType.UV
@@ -29,7 +22,7 @@ class UsbCommandParser {
                 CommandType.UNKNOWN
             }
         }
-        
+
         return UsbCommand(
             type = type,
             rawText = rawCommand,
@@ -37,3 +30,4 @@ class UsbCommandParser {
         )
     }
 }
+

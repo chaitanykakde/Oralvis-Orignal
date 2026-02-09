@@ -1,4 +1,4 @@
-package com.oralvis.oralviscamera.usbserial
+package com.oralvis.oralviscamera.feature.usb
 
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
@@ -8,23 +8,18 @@ import android.util.Log
 import java.nio.charset.StandardCharsets
 
 /**
+ * NOTE: Phase 2 USB extraction.
+ * This class was moved from com.oralvis.oralviscamera.usbserial with behavior unchanged.
+ *
  * Manages USB serial connection for reading commands from hardware.
  * Runs a dedicated background thread for blocking USB bulk transfers.
- *
- * Alignment with Python working script (oralvis_verify.py):
- * - VID 0x1209 / PID 0xC550: device selection is done by caller (same device as UVC).
- * - 115200 8N1: BAUD_RATE, DATA_BITS, STOP_BITS, PARITY; SET_LINE_CODING sent on open.
- * - DTR enabled: SET_CONTROL_LINE_STATE (0x22) with DTR=1 before read loop (dsrdtr=True / ser.dtr = True).
- * - Newline-terminated ASCII: read loop splits on '\n', trims, decodes UTF-8 (ASCII-safe).
- * - Timeout: TIMEOUT_MS = 1000 (Python TIMEOUT = 1.0).
- * - Logging: every received command logged as [RECEIVED] <command> for verification.
  */
 class UsbSerialConnection(
     private val usbManager: UsbManager,
     private val device: UsbDevice,
     private val onCommandReceived: (String) -> Unit
 ) {
-    
+
     companion object {
         private const val TAG = "UsbSerialConnection"
         private const val BAUD_RATE = 115200
@@ -47,7 +42,7 @@ class UsbSerialConnection(
         /** Tag for filtering all received commands in logcat (matches Python "[RECEIVED]"). */
         private const val LOG_RECEIVED = "CDC_RECEIVED"
     }
-    
+
     private var connection: UsbDeviceConnection? = null
     private var readThread: Thread? = null
     @Volatile private var isRunning = false
@@ -62,11 +57,11 @@ class UsbSerialConnection(
      */
     fun openWithExistingConnection(existingConnection: UsbDeviceConnection, closeConnectionOnStop: Boolean = true): Boolean {
         this.closeConnectionOnStop = closeConnectionOnStop
-    try {
-        if (existingConnection == null) {
-            Log.e(TAG, "Failed to get camera's USB device connection")
-            return false
-        }
+        try {
+            if (existingConnection == null) {
+                Log.e(TAG, "Failed to get camera's USB device connection")
+                return false
+            }
 
             Log.i("CDC_TRACE", "CDC ENUM START | deviceId=${device.deviceId} | interfaceCount=${device.interfaceCount}")
 
@@ -191,7 +186,7 @@ endpointCount=${intf.endpointCount}
             Log.w(TAG, "SET_LINE_CODING failed (result=$result) — using default line coding")
         }
     }
-    
+
     /**
      * Start the background reading thread.
      * Reads data in a loop and calls onCommandReceived for each newline-terminated command.
@@ -321,7 +316,7 @@ endpointCount=${intf.endpointCount}
                         }
                     }
                 }
-                
+
             } catch (e: Exception) {
                 Log.e("CDC_TRACE", "CDC READ ERROR", e)
                 Log.e(TAG, "Error in read thread: ${e.message}", e)
@@ -329,10 +324,10 @@ endpointCount=${intf.endpointCount}
                 Log.i(TAG, "USB read thread stopped")
             }
         }, "UsbSerialReadThread")
-        
+
         readThread?.start()
     }
-    
+
     /**
      * Stop the reading thread and close the connection.
      */
@@ -368,7 +363,7 @@ endpointCount=${intf.endpointCount}
 
         readThread = null
     }
-    
+
     /**
      * Check if connection is currently active.
      */
@@ -383,3 +378,4 @@ endpointCount=${intf.endpointCount}
         return "UsbSerialConnection(connection=${connection != null}, running=$isRunning, threadAlive=${readThread?.isAlive})"
     }
 }
+

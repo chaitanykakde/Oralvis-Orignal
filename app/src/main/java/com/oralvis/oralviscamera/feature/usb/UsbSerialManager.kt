@@ -1,20 +1,13 @@
-package com.oralvis.oralviscamera.usbserial
+package com.oralvis.oralviscamera.feature.usb
+
+// NOTE: Phase 2 USB extraction.
+// This file was moved from com.oralvis.oralviscamera.usbserial with behavior unchanged.
 
 import android.content.Context
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.util.Log
 
-/**
- * Main orchestrator for USB serial communication with OralVis hardware.
- * Manages device detection, permission handling, connection lifecycle, and command dispatch.
- *
- * Behavior aligned with Python oralvis_verify.py:
- * - Same device (VID 0x1209, PID 0xC550) via camera connection.
- * - CDC starts as soon as camera is connected (no delay).
- * - DTR and line coding set in UsbSerialConnection before read loop.
- * - Commands: newline-terminated ASCII (CAPTURE, UV, RGB); logged as [RECEIVED] / CDC_CMD.
- */
 class UsbSerialManager(
     private val context: Context,
     private val commandReceiver: CameraCommandReceiver,
@@ -48,13 +41,6 @@ class UsbSerialManager(
         Log.i("CDC_TRACE", "UsbSerialManager created | thread=${Thread.currentThread().name} | usbManager=${usbManager != null} | isStarted=$isStarted | isCameraReady=$isCameraReady")
     }
 
-    /**
-     * Start the USB serial manager.
-     * No longer handles device detection or permissions - camera owns that.
-     * Call from Activity.onResume().
-     *
-     * CRITICAL: Only starts if camera is ready to ensure camera-exclusive device ownership.
-     */
     fun start() {
         try {
             if (isStarted) {
@@ -62,13 +48,11 @@ class UsbSerialManager(
                 return
             }
 
-            // ENFORCE CAMERA-FIRST RULE: Serial only starts after camera is ready
             if (!isCameraReady()) {
                 Log.i(TAG, "⚠️ Camera not ready - USB serial start deferred until camera opens")
                 return
             }
 
-            // Camera must provide both connection and device for serial to work
             if (cameraDeviceConnection == null || cameraDevice == null) {
                 Log.w(TAG, "⚠️ Camera device connection or device not available - serial cannot start")
                 return
@@ -78,7 +62,6 @@ class UsbSerialManager(
             Log.i(TAG, "Starting USB serial manager (camera is ready)")
             isStarted = true
 
-            // Use OralVis CDC device by VID/PID (0x1209/0xC550). If same as camera, reuse camera connection; else open separately.
             val deviceForCdc = getOralVisCdcDevice()
             if (deviceForCdc == null) {
                 Log.e(TAG, "OralVis CDC device (VID=$ORALVIS_CDC_VID, PID=$ORALVIS_CDC_PID) not found — is controller connected?")
@@ -88,16 +71,10 @@ class UsbSerialManager(
             openConnection(deviceForCdc)
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error starting USB serial manager: ${e.message}", e)
-            // Reset state on error
             isStarted = false
         }
     }
-    
-    /**
-     * Stop the USB serial manager.
-     * Closes connection.
-     * Call from Activity.onPause() or when camera closes.
-     */
+
     fun stop() {
         if (!isStarted) {
             return
@@ -107,14 +84,9 @@ class UsbSerialManager(
         Log.i(TAG, "Stopping USB serial manager")
         isStarted = false
 
-        // Close connection
         closeConnection()
     }
-    
-    /**
-     * Destroy the USB serial manager.
-     * Call from Activity.onDestroy().
-     */
+
     fun destroy() {
         Log.i(TAG, "Destroying USB serial manager")
         stop()
@@ -122,12 +94,7 @@ class UsbSerialManager(
         cameraDeviceConnection = null
         isCameraReady = false
     }
-    
-    
-    /**
-     * Open the USB serial connection and start reading commands.
-     * Uses OralVis CDC device (VID 0x1209, PID 0xC550). If it's the same device as the camera, reuses camera connection; otherwise opens the CDC device separately.
-     */
+
     private fun openConnection(device: UsbDevice) {
         closeConnection()
 
@@ -183,21 +150,13 @@ class UsbSerialManager(
             serialConnection = null
         }
     }
-    
-    /**
-     * Close the active USB serial connection.
-     */
+
     private fun closeConnection() {
         Log.i("CDC_TRACE", "CDC STOP | closeConnection | stopping serialConnection")
         serialConnection?.stop()
         serialConnection = null
     }
-    
-    /**
-     * Handle a received command from the serial connection.
-     * Detailed logging for every command: received, parsed, dispatched, result.
-     * Filter logcat by "CDC_CMD" to see full command path.
-     */
+
     private fun handleCommandReceived(rawCommand: String) {
         try {
             if (rawCommand.isBlank()) {
@@ -233,25 +192,15 @@ class UsbSerialManager(
             Log.e(TAG, "❌ Error handling command '$rawCommand': ${e.message}", e)
         }
     }
-    
-    /**
-     * Check if currently connected to the USB device.
-     */
+
     fun isConnected(): Boolean {
         return serialConnection?.isConnected() == true
     }
 
-    /**
-     * Notify that camera has opened successfully.
-     * Stores camera connection and device reference for later CDC startup.
-     * 
-     * CDC is started immediately by MainActivity when camera opens (onCameraOpened → start),
-     * so hardware buttons (CAPTURE/UV/RGB) work as soon as the camera is connected.
-     */
     fun onCameraOpened(cameraConnection: android.hardware.usb.UsbDeviceConnection, device: UsbDevice) {
         try {
             cameraDeviceConnection = cameraConnection
-            cameraDevice = device  // Store the device reference
+            cameraDevice = device
             isCameraReady = true
             Log.i("CDC_TRACE", """
 onCameraOpened:
@@ -265,17 +214,12 @@ source=cameraCallback
             Log.i(TAG, "CDC serial will be started by MainActivity when camera opens (immediate)")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error in onCameraOpened: ${e.message}", e)
-            // Reset state on error to prevent inconsistent state
             isCameraReady = false
             cameraDeviceConnection = null
             cameraDevice = null
         }
     }
 
-    /**
-     * Notify that camera has closed.
-     * Serial should stop when camera stops.
-     */
     fun onCameraClosed() {
         try {
             isCameraReady = false
@@ -284,11 +228,9 @@ source=cameraCallback
             Log.i("CDC_TRACE", "CDC STOP | reason=cameraClosed")
             Log.i(TAG, "📷 Camera closed - stopping USB serial and clearing device connection")
 
-            // Stop serial when camera closes
             stop()
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error in onCameraClosed: ${e.message}", e)
-            // Force reset state even on error
             isCameraReady = false
             cameraDeviceConnection = null
             cameraDevice = null
@@ -297,18 +239,10 @@ source=cameraCallback
         }
     }
 
-    /**
-     * Check if camera is ready (for internal use).
-     */
     private fun isCameraReady(): Boolean {
         return isCameraReady
     }
 
-    /**
-     * Find the OralVis CDC controller by VID/PID (0x1209, 0xC550).
-     * When camera and controller are the same composite device, this may return the camera device;
-     * when they are separate (e.g. camera VID=9568, controller VID=0x1209), returns the controller.
-     */
     private fun getOralVisCdcDevice(): UsbDevice? {
         usbManager.deviceList?.values?.forEach {
             Log.i("CDC_TRACE", "USB_SCAN: id=${it.deviceId}, VID=${it.vendorId}, PID=${it.productId}, ifaces=${it.interfaceCount}")
@@ -323,10 +257,6 @@ source=cameraCallback
         return null
     }
 
-    /**
-     * Get the camera's device connection.
-     * This allows serial to reuse the camera's already-open device connection.
-     */
     private fun getCameraDeviceConnection(): android.hardware.usb.UsbDeviceConnection? {
         if (!isCameraReady) {
             Log.w(TAG, "Camera not ready - cannot get device connection")
@@ -342,3 +272,4 @@ source=cameraCallback
         return cameraDeviceConnection
     }
 }
+

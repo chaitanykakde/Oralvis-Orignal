@@ -26,8 +26,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -36,7 +34,6 @@ import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.ICaptureCallBack
-import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.jiangdg.ausbc.callback.IPlayCallBack
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.camera.CameraUVC
@@ -67,8 +64,7 @@ import com.oralvis.oralviscamera.database.Session
 import com.oralvis.oralviscamera.database.Patient
 import com.oralvis.oralviscamera.database.PatientDao
 import com.oralvis.oralviscamera.session.SessionManager
-import com.oralvis.oralviscamera.camera.CameraModePresets
-import com.oralvis.oralviscamera.camera.CameraModePreset
+import com.oralvis.oralviscamera.feature.session.SessionController
 import com.oralvis.oralviscamera.home.PatientPickerAdapter
 import com.oralvis.oralviscamera.AddPatientActivity
 import com.oralvis.oralviscamera.session.SessionMedia
@@ -79,14 +75,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.jiangdg.ausbc.camera.bean.PreviewSize
-import com.oralvis.oralviscamera.guidedcapture.GuidedCaptureManager
 import com.oralvis.oralviscamera.guidedcapture.SessionBridge
+import com.oralvis.oralviscamera.feature.guided.GuidedController
 import kotlin.math.abs
-import com.oralvis.oralviscamera.usbserial.CameraCommandReceiver
-import com.oralvis.oralviscamera.usbserial.UsbSerialManager
-import java.util.concurrent.atomic.AtomicBoolean
+import com.oralvis.oralviscamera.feature.usb.CameraCommandReceiver
+import com.oralvis.oralviscamera.feature.usb.UsbSerialManager
+import com.oralvis.oralviscamera.feature.usb.UsbController
+import com.oralvis.oralviscamera.ui.main.MainUiBinder
+import com.oralvis.oralviscamera.feature.camera.state.CameraStateStore
+import com.oralvis.oralviscamera.feature.camera.lifecycle.CameraLifecycleManager
+import com.oralvis.oralviscamera.feature.camera.preview.PreviewSurfaceManager
+import com.oralvis.oralviscamera.feature.camera.preview.BasePreviewCallbackProvider
+import com.oralvis.oralviscamera.feature.camera.preview.PreviewCallbackRouter
+import com.oralvis.oralviscamera.feature.camera.capture.PhotoCaptureHost
+import com.oralvis.oralviscamera.feature.camera.capture.PhotoCaptureHandler
+import com.oralvis.oralviscamera.feature.camera.capture.VideoCaptureHost
+import com.oralvis.oralviscamera.feature.camera.capture.VideoCaptureHandler
+import com.oralvis.oralviscamera.feature.camera.mode.CameraModeController
+import com.oralvis.oralviscamera.feature.camera.mode.CameraModeUi
+import com.oralvis.oralviscamera.feature.camera.mode.FluorescenceModeAdapter
+import com.oralvis.oralviscamera.GlobalPatientManager
 
-class MainActivity : AppCompatActivity(), CameraCommandReceiver {
+class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHost, VideoCaptureHost {
     
     // #region agent log
     private fun writeDebugLog(hypothesisId: String, location: String, message: String, data: Map<String, Any> = emptyMap()) {
@@ -115,22 +125,36 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     // #endregion
     
     private lateinit var binding: ActivityMainBinding
+    private lateinit var uiBinder: MainUiBinder
     private var mCameraClient: MultiCameraClient? = null
-    private var mCurrentCamera: MultiCameraClient.ICamera? = null
-    private var fluorescenceEffect: com.oralvis.oralviscamera.camera.FluorescenceEffect? = null
-    private var isCameraReady: Boolean = false
     private val mCameraMap = hashMapOf<Int, MultiCameraClient.ICamera>()
-    private var isRecording = false
 
-    // SurfaceTexture readiness gate (demo compatibility)
-    private var isSurfaceTextureReady: Boolean = false
-    private var hasReceivedFirstFrame: Boolean = false
-    // Deferred openCamera when permission is granted before SurfaceTexture is ready
-    private var mPendingCameraOpen: Pair<MultiCameraClient.ICamera, com.jiangdg.ausbc.camera.bean.CameraRequest>? = null
-    
+    // Mode switching (Phase 5D — extracted to CameraModeController + FluorescenceModeAdapter)
+    private val fluorescenceModeAdapter = FluorescenceModeAdapter(this)
+    private lateinit var cameraModeController: CameraModeController
+    private val cameraModeUi = object : CameraModeUi {
+        override fun updateCameraControlValues() { this@MainActivity.updateCameraControlValues() }
+        override fun setDefaultCameraControlValues() { this@MainActivity.setDefaultCameraControlValues() }
+        override fun showToast(message: String) { Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show() }
+    }
+
+    // Camera lifecycle (Phase 5A — extracted to CameraStateStore + CameraLifecycleManager)
+    private val cameraStateStore = CameraStateStore()
+    private val cameraLifecycleManager = CameraLifecycleManager(cameraStateStore)
+
+    // Preview surface and callback routing (Phase 5B)
+    private val basePreviewCallbackProvider = BasePreviewCallbackProvider()
+    private val previewCallbackRouter = PreviewCallbackRouter({ guidedController }, basePreviewCallbackProvider)
+    private lateinit var previewSurfaceManager: PreviewSurfaceManager
+
+    // Capture handlers (Phase 5C)
+    private lateinit var photoCaptureHandler: PhotoCaptureHandler
+    private lateinit var videoCaptureHandler: VideoCaptureHandler
+    private var recordingHandlerForVideo: Handler? = null
+
     // USB hardware integration
     private var usbSerialManager: UsbSerialManager? = null
-    private val captureLock = AtomicBoolean(false)
+    private var usbController: UsbController? = null
     // FIX 1: run immediate scan for already-attached devices once per lifecycle
     private var hasRunInitialUsbDeviceScan = false
     // FIX 2: gate patient/runtime dialogs until USB permission is resolved
@@ -142,21 +166,13 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private var cdcStabilityRunnable: Runnable? = null
     private val CDC_STABILITY_DELAY_MS = 20_000L // 20 seconds
 
-    // No-op preview callback to enable CameraUVC parameter application
-    private var hasRegisteredBasePreviewCallback = false
-    private val noOpPreviewCallback = object : IPreviewDataCallBack {
-        override fun onPreviewData(data: ByteArray?, width: Int, height: Int, format: IPreviewDataCallBack.DataFormat) {
-            // Intentionally empty - exists only to enable CameraUVC parameter application
-        }
-    }
-    
     // New features
     private lateinit var sessionManager: SessionManager
+    private lateinit var sessionController: SessionController
     private lateinit var mediaDatabase: MediaDatabase
     private lateinit var mediaRepository: MediaRepository
     private lateinit var patientDao: PatientDao
     private lateinit var themeManager: ThemeManager
-    private var currentMode = "Normal"
     private var settingsBottomSheet: BottomSheetDialog? = null
     private var globalPatientObserver: androidx.lifecycle.Observer<com.oralvis.oralviscamera.database.Patient?>? = null
     
@@ -178,7 +194,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private val exposureUpdateHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val exposureUpdateRunnable = Runnable {
         if (pendingExposureValue >= 0) {
-            mCurrentCamera?.let { camera ->
+            cameraStateStore.mCurrentCamera?.let { camera ->
                 if (camera is CameraUVC) {
                     camera.setExposure(pendingExposureValue)
                     pendingExposureValue = -1
@@ -188,12 +204,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     private var controlsVisible = false
     private var selectedPatient: Patient? = null
-    
-    // Recording timer
-    private var recordingStartTime = 0L
-    private var recordingHandler: android.os.Handler? = null
-    private var recordingRunnable: Runnable? = null
-    
+
     // Session media tracking
     private val sessionMediaList = mutableListOf<SessionMedia>()
     private var sessionMediaAdapter: SessionMediaAdapter? = null
@@ -205,7 +216,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
 
     // Guided auto-capture (currently forced ON for development/demo; no flags)
     private val isGuidedCaptureEnabled: Boolean = true // kept for future use but ignored for now
-    private var guidedCaptureManager: GuidedCaptureManager? = null
+    private var guidedController: GuidedController? = null
 
     // Log collection for debugging
     private lateinit var logCollector: LogCollector
@@ -313,38 +324,18 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        uiBinder = MainUiBinder(binding)
 
         // Verify settings button exists
         android.util.Log.d("SettingsDebug", "Binding initialized - btnSettings exists: ${binding.btnSettings != null}")
 
-        // CRITICAL: Add SurfaceTexture listener to match demo behavior
-        // Camera must NOT open until SurfaceTexture is ready (demo compatibility)
-        binding.cameraTextureView.surfaceTextureListener = object : android.view.TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                android.util.Log.d("SurfaceTexture", "SurfaceTexture available - camera can now be initialized")
-                isSurfaceTextureReady = true
-                initializeCameraIfReady()
-            }
-
-            override fun onSurfaceTextureSizeChanged(surface: android.graphics.SurfaceTexture, width: Int, height: Int) {
-                android.util.Log.d("SurfaceTexture", "SurfaceTexture size changed: ${width}x${height}")
-            }
-
-            override fun onSurfaceTextureDestroyed(surface: android.graphics.SurfaceTexture): Boolean {
-                android.util.Log.d("SurfaceTexture", "SurfaceTexture destroyed")
-                isSurfaceTextureReady = false
-                return true
-            }
-
-            override fun onSurfaceTextureUpdated(surface: android.graphics.SurfaceTexture) {
-                // First frame arrived - this is our signal that camera is working
-                if (!hasReceivedFirstFrame) {
-                    hasReceivedFirstFrame = true
-                    android.util.Log.d("CameraPipeline", "✅ FIRST FRAME ARRIVED - pipeline working")
-                    onFirstFrameReceived()
-                }
-            }
-        }
+        // Phase 5B: Preview surface handling in PreviewSurfaceManager
+        previewSurfaceManager = PreviewSurfaceManager(
+            store = cameraStateStore,
+            onInitializeCameraIfReady = { initializeCameraIfReady() },
+            onFirstFrameReceived = { onFirstFrameReceived() }
+        )
+        previewSurfaceManager.attachTo(binding.cameraTextureView)
 
         // PROBLEM 1 FIX: Register USBMonitor early so ACTION_USB_PERMISSION and attach events
         // are never lost. Camera open remains gated by SurfaceTexture readiness.
@@ -353,11 +344,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         // appears without waiting for mDeviceCheckRunnable (1s delay).
         requestPermissionForAlreadyAttachedDevices()
 
-        ViewCompat.setOnApplyWindowInsetsListener(binding.main) { v, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-            insets
-        }
+        uiBinder.applyWindowInsets()
         
         // Initialize new features
         try {
@@ -372,6 +359,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             android.util.Log.d("SettingsDebug", "Creating SessionManager...")
         sessionManager = SessionManager(this)
             android.util.Log.d("SettingsDebug", "SessionManager created")
+            android.util.Log.d("SettingsDebug", "Creating SessionController...")
+        sessionController = SessionController(sessionManager)
+            android.util.Log.d("SettingsDebug", "SessionController created")
 
             android.util.Log.d("SettingsDebug", "Getting MediaDatabase...")
         mediaDatabase = MediaDatabase.getDatabase(this)
@@ -380,6 +370,17 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             android.util.Log.d("SettingsDebug", "Creating MediaRepository...")
         mediaRepository = MediaRepository(this)
             android.util.Log.d("SettingsDebug", "MediaRepository created")
+
+        // Phase 5C: Capture handlers (require sessionController, mediaRepository, binding)
+        recordingHandlerForVideo = Handler(Looper.getMainLooper())
+        photoCaptureHandler = PhotoCaptureHandler(mediaRepository, this, lifecycleScope)
+        videoCaptureHandler = VideoCaptureHandler(this)
+        cameraModeController = CameraModeController(
+            getCamera = { cameraStateStore.mCurrentCamera },
+            modeUi = cameraModeUi,
+            fluorescenceAdapter = fluorescenceModeAdapter,
+            runOnUiThread = { r -> runOnUiThread(r) }
+        )
 
             android.util.Log.d("SettingsDebug", "Getting patientDao...")
         patientDao = mediaDatabase.patientDao()
@@ -447,7 +448,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 updateUsbConnectionStatus(isConnected)
             }
         )
-        android.util.Log.i("UsbSerial", "USB serial manager initialized")
+        usbController = UsbController(usbSerialManager!!)
+        android.util.Log.i("UsbSerial", "USB serial manager and controller initialized")
 
         // DEFERRAL: Move heavy initialization to after camera ready
         // Remove the immediate initializeGuidedCapture() call from onCreate
@@ -457,72 +459,27 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
 
     /**
-     * SURFACETEXTURE READINESS GATE - Match demo behavior
-     * USBMonitor is registered early (ensureUsbMonitorRegistered in onCreate).
-     * Camera open only happens when SurfaceTexture is ready; if permission
-     * was granted before SurfaceTexture, open runs here when it becomes ready.
+     * SURFACETEXTURE READINESS GATE - Match demo behavior (Phase 5A: forwarded to CameraLifecycleManager).
      */
     private fun initializeCameraIfReady() {
-        if (!isSurfaceTextureReady) {
-            android.util.Log.d("CameraGate", "Camera open deferred - SurfaceTexture not ready")
-            return
-        }
-
-        ensureUsbMonitorRegistered()
-
-        // Run deferred openCamera if permission was granted before SurfaceTexture was ready
-        mPendingCameraOpen?.let { (cam, req) ->
-            mPendingCameraOpen = null
-            android.util.Log.d("CameraGate", "Executed deferred openCamera (SurfaceTexture became ready)")
-            cam.openCamera(binding.cameraTextureView, req)
-        }
+        cameraLifecycleManager.initializeCameraIfReady(
+            isSurfaceTextureReady = { cameraStateStore.isSurfaceTextureReady },
+            ensureUsbMonitorRegistered = { ensureUsbMonitorRegistered() },
+            openCamera = { cam, req -> cam.openCamera(binding.cameraTextureView, req) }
+        )
     }
 
     /**
-     * FIRST-FRAME SAFETY GUARANTEE - Match demo behavior
-     * Called when first frame arrives from SurfaceTexture update
-     * 
-     * CRITICAL: This is the ONLY safe time to:
-     * - Start CDC serial communication
-     * - Apply camera mode presets (control transfers)
-     * 
-     * First frame arrival proves:
-     * - UVC streaming is active
-     * - USB endpoints are stable
-     * - Interface enumeration is complete
-     * - Control transfers cannot stall isochronous endpoints
+     * FIRST-FRAME SAFETY GUARANTEE (Phase 5A: forwarded to CameraLifecycleManager).
      */
     private fun onFirstFrameReceived() {
-        android.util.Log.d("CameraPipeline", "🎯 FIRST FRAME RECEIVED - safe to initialize heavy components")
-
-        // CRITICAL: Apply mode preset ONLY after first frame confirms streaming is stable
-        // This prevents 9 control transfers from stalling isochronous endpoints during startup
-        // Advanced cameras are timing-sensitive and require this delay
-        try {
-            if (currentMode == "Normal") {
-                android.util.Log.d("CameraPipeline", "Applying Normal mode preset after first frame (streaming stable)")
-                applyModePreset("Normal")
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("CameraPipeline", "Failed to apply mode preset: ${e.message}", e)
-        }
-
-        // DEFERRAL: Initialize heavy components now that camera is proven working
-        try {
-            if (guidedCaptureManager == null) {
-                android.util.Log.d("CameraPipeline", "Initializing GuidedCaptureManager (with OpenCV)")
-                initializeGuidedCapture()
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("CameraPipeline", "Failed to initialize guided capture: ${e.message}", e)
-        }
-
-        // CONTROL TRANSFER TIMING: Safe to update camera parameters now
-        updateCameraControlValues()
-        
-        // CDC now starts immediately when camera opens (onCameraOpened → start); no 20s delay.
-        
-        android.util.Log.d("CameraPipeline", "✅ Camera pipeline fully initialized and stable")
+        cameraLifecycleManager.onFirstFrameReceived(
+            getCurrentMode = { cameraModeController.currentMode },
+            applyModePreset = { mode -> cameraModeController.applyModePreset(mode) },
+            isGuidedInitialized = { guidedController?.isInitialized() == true },
+            initializeGuidedIfNeeded = { guidedController?.initializeIfNeeded() ?: Unit },
+            updateCameraControlValues = { cameraModeController.updateCameraControlValues() }
+        )
     }
 
     /**
@@ -539,16 +496,16 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         // Cancel any existing scheduled CDC start
         cancelCdcStartSchedule()
         
-        android.util.Log.i("CDC_TRACE", "CDC scheduling started | time=${System.currentTimeMillis()} | waiting 20s | hasReceivedFirstFrame=$hasReceivedFirstFrame | isCameraReady=$isCameraReady")
+        android.util.Log.i("CDC_TRACE", "CDC scheduling started | time=${System.currentTimeMillis()} | waiting 20s | cameraStateStore.hasReceivedFirstFrame=$cameraStateStore.hasReceivedFirstFrame | cameraStateStore.isCameraReady=$cameraStateStore.isCameraReady")
         android.util.Log.i("CdcStability", "First frame received — scheduling CDC start in 20 seconds")
         
         // Create runnable that will start CDC after stability period
         cdcStabilityRunnable = Runnable {
-            android.util.Log.i("CDC_TRACE", "CDC start triggered after delay | time=${System.currentTimeMillis()} | cameraOpen=${isCameraReady && mCurrentCamera != null}")
+            android.util.Log.i("CDC_TRACE", "CDC start triggered after delay | time=${System.currentTimeMillis()} | cameraOpen=${cameraStateStore.isCameraReady && cameraStateStore.mCurrentCamera != null}")
             // Verify camera is still open before starting CDC
-            if (isCameraReady && mCurrentCamera != null) {
+            if (cameraStateStore.isCameraReady && cameraStateStore.mCurrentCamera != null) {
                 android.util.Log.i("CdcStability", "✅ CDC started after 20 seconds of stable UVC streaming")
-                usbSerialManager?.start()
+                usbController?.start()
             } else {
                 android.util.Log.w("CdcStability", "CDC start cancelled — camera closed before delay elapsed")
             }
@@ -645,7 +602,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         cancelCdcStartSchedule()
         
         // Stop USB serial manager to release USB connection and threads
-        usbSerialManager?.stop()
+        usbController?.stop()
         android.util.Log.d("UsbSerial", "USB serial manager stopped in onPause")
     }
     
@@ -666,7 +623,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         val cameraFrame = binding.cameraFrame
         android.util.Log.d("SettingsDebug", "cameraFrame obtained: $cameraFrame")
         android.util.Log.d("SettingsDebug", "Creating GuidedCaptureManager...")
-        guidedCaptureManager = GuidedCaptureManager(
+        guidedController = GuidedController(
             context = this,
             rootContainer = cameraFrame,
             sessionBridge = object : SessionBridge {
@@ -682,12 +639,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 ) {
                     android.util.Log.d("GuidedCapture", "onGuidedCaptureRequested called - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
                     // Reuse the existing capture pipeline, then update the latest record with guided metadata.
-                    if (mCurrentCamera != null) {
+                    if (cameraStateStore.mCurrentCamera != null) {
                         android.util.Log.d("GuidedCapture", "Camera available, using capturePhotoWithGuidedMetadata")
-                        capturePhotoWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
+                        photoCaptureHandler.capturePhotoWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
                     } else {
                         android.util.Log.d("GuidedCapture", "Camera not available, using captureBlankImageWithGuidedMetadata")
-                        captureBlankImageWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
+                        photoCaptureHandler.captureBlankImageWithGuidedMetadata(guidedSessionId, dentalArch, sequenceNumber)
                     }
                 }
 
@@ -739,128 +696,149 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 }
             }
         )
+        guidedController?.initializeIfNeeded()
     }
 
     private fun setupUI() {
         android.util.Log.d("SettingsDebug", "SETUP_UI_CALLED - setupUI() method called - BEGIN")
-        binding.navCamera.setOnClickListener {
-            // Already on camera screen; no action required
-        }
-        
-        binding.navGallery.setOnClickListener {
-            android.util.Log.d("NavigationDebug", "navGallery clicked")
-            android.util.Log.d("NavigationDebug", "hasPatientSelected: ${GlobalPatientManager.hasPatientSelected()}")
-            if (GlobalPatientManager.hasPatientSelected()) {
-                android.util.Log.d("NavigationDebug", "Opening GalleryActivity")
-                val intent = Intent(this, GalleryActivity::class.java)
-                startActivity(intent)
-            } else {
-                android.util.Log.d("NavigationDebug", "Showing patient selection toast")
-                Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
+        uiBinder.bindBottomNavigation(
+            onNavCameraClicked = {
+                // Already on camera screen; no action required
+            },
+            onNavGalleryClicked = {
+                onNavGalleryClicked()
+            },
+            onNavFindPatientsClicked = {
+                onNavFindPatientsClicked()
+            },
+            onNavPatientClicked = {
+                onNavPatientClicked()
             }
-        }
-        
-        binding.navFindPatients.setOnClickListener {
-            val intent = Intent(this, FindPatientsActivity::class.java)
+        )
+
+        uiBinder.bindCaptureControls(
+            onCaptureClicked = {
+                onCaptureClicked()
+            },
+            onRecordClicked = {
+                onRecordClicked()
+            }
+        )
+
+        uiBinder.bindStartSessionButtons(
+            onStartSessionClicked = {
+                onStartSessionClicked()
+            }
+        )
+
+        uiBinder.bindDebugSettingsButton(
+            onDebugSettingsClicked = {
+                android.util.Log.e("DEBUG_SETTINGS_BUTTON", "DEBUG_SETTINGS_BUTTON_CLICKED - Testing settings panel logic")
+                toggleSettingsPanel()
+            }
+        )
+    }
+
+    /**
+     * Navigation and action handlers invoked by MainUiBinder callbacks.
+     * Logic is identical to the original inline click listeners.
+     */
+    private fun onNavGalleryClicked() {
+        android.util.Log.d("NavigationDebug", "navGallery clicked")
+        android.util.Log.d("NavigationDebug", "hasPatientSelected: ${GlobalPatientManager.hasPatientSelected()}")
+        if (GlobalPatientManager.hasPatientSelected()) {
+            android.util.Log.d("NavigationDebug", "Opening GalleryActivity")
+            val intent = Intent(this, GalleryActivity::class.java)
             startActivity(intent)
+        } else {
+            android.util.Log.d("NavigationDebug", "Showing patient selection toast")
+            Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
         }
-        
-        binding.navPatient.setOnClickListener {
-            // Open patient selection dialog
+    }
+
+    private fun onNavFindPatientsClicked() {
+        val intent = Intent(this, FindPatientsActivity::class.java)
+        startActivity(intent)
+    }
+
+    private fun onNavPatientClicked() {
+        openPatientDialogForSession()
+    }
+
+    private fun onCaptureClicked() {
+        if (!GlobalPatientManager.hasPatientSelected()) {
+            Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
             openPatientDialogForSession()
+            return
         }
 
-        // Camera action buttons - with separate blank capture logic
-        binding.btnCapture.setOnClickListener {
-            if (!GlobalPatientManager.hasPatientSelected()) {
-                Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
-                openPatientDialogForSession()
-                return@setOnClickListener
-            }
-            
-            // If guided capture is enabled, route through guided capture with proper metadata
-            if (guidedCaptureManager?.isEnabled == true) {
-                android.util.Log.d("MainActivity", "Manual capture during guided session - routing through guided capture")
-                if (guidedCaptureManager?.handleManualCapture() == true) {
-                    // Manual capture was handled by guided system with proper metadata
-                    return@setOnClickListener
-                }
-            }
-            
-            // Regular capture (not in guided mode or guided mode didn't handle it)
-            if (mCurrentCamera != null) {
-                capturePhotoWithRetry()
-            } else {
-                captureBlankImage()
-            }
+        if (guidedController?.isGuidedActive() == true) {
+            android.util.Log.d("MainActivity", "Manual capture during guided session - routing through guided capture")
+            if (guidedController?.handleManualCapture() == true) return
         }
-        
-        binding.btnRecord.setOnClickListener {
-            if (!GlobalPatientManager.hasPatientSelected()) {
-                Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
-                openPatientDialogForSession()
-                return@setOnClickListener
-            }
-            if (mCurrentCamera != null) {
-                toggleRecordingWithRetry()
-            } else {
-                captureBlankVideo()
-            }
+
+        if (cameraStateStore.mCurrentCamera != null) {
+            photoCaptureHandler.capturePhotoWithRetry()
+        } else {
+            photoCaptureHandler.captureBlankImage()
         }
-        
-        // Start Session (top-right button near patient info) - primary guided entry point
-        val startSessionClickListener = View.OnClickListener {
-            android.util.Log.e("Guided", "Start Session CLICKED")
+    }
 
-            // Check if there's a valid patient from the database (not deleted)
-            val currentPatient = GlobalPatientManager.getCurrentPatient()
-            if (currentPatient == null || currentPatient.id == -1L) {
-                android.util.Log.e("Guided", "No valid patient selected - opening patient selection dialog")
-                // Open patient selection dialog to choose or create a patient
-                openPatientDialogForSession()
-                return@OnClickListener
-            }
+    private fun onRecordClicked() {
+        if (!GlobalPatientManager.hasPatientSelected()) {
+            Toast.makeText(this, "Please select a patient first", Toast.LENGTH_SHORT).show()
+            openPatientDialogForSession()
+            return
+        }
+        if (cameraStateStore.mCurrentCamera != null) {
+            videoCaptureHandler.toggleRecordingWithRetry()
+        } else {
+            videoCaptureHandler.captureBlankVideo()
+        }
+    }
 
-            // Verify the patient still exists in database
-            lifecycleScope.launch {
-                try {
-                    val patientExists = mediaDatabase.patientDao().getPatientById(currentPatient.id)
-                    if (patientExists == null) {
-                        android.util.Log.e("Guided", "Patient was deleted - opening patient selection dialog")
-                        withContext(Dispatchers.Main) {
-                            // Clear global state since patient no longer exists
-                            GlobalPatientManager.clearCurrentPatient()
-                            selectedPatient = null
-                            globalPatientId = null
-                            // Open patient selection dialog
-                            openPatientDialogForSession()
-                        }
-                        return@launch
-                    }
+    private fun onStartSessionClicked() {
+        android.util.Log.e("Guided", "Start Session CLICKED")
 
-                    // Patient exists, proceed with session
+        // Check if there's a valid patient from the database (not deleted)
+        val currentPatient = GlobalPatientManager.getCurrentPatient()
+        if (currentPatient == null || currentPatient.id == -1L) {
+            android.util.Log.e("Guided", "No valid patient selected - opening patient selection dialog")
+            // Open patient selection dialog to choose or create a patient
+            openPatientDialogForSession()
+            return
+        }
+
+        // Verify the patient still exists in database
+        lifecycleScope.launch {
+            try {
+                val patientExists = mediaDatabase.patientDao().getPatientById(currentPatient.id)
+                if (patientExists == null) {
+                    android.util.Log.e("Guided", "Patient was deleted - opening patient selection dialog")
                     withContext(Dispatchers.Main) {
-                        selectedPatient = currentPatient
-                        updatePatientInfoDisplay()
-                        binding.patientInfoCard.visibility = View.VISIBLE
-                        proceedWithSessionStart()
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("Guided", "Error checking patient existence: ${e.message}")
-                    withContext(Dispatchers.Main) {
+                        // Clear global state since patient no longer exists
+                        GlobalPatientManager.clearCurrentPatient()
+                        selectedPatient = null
+                        globalPatientId = null
+                        // Open patient selection dialog
                         openPatientDialogForSession()
                     }
+                    return@launch
+                }
+
+                // Patient exists, proceed with session
+                withContext(Dispatchers.Main) {
+                    selectedPatient = currentPatient
+                    updatePatientInfoDisplay()
+                    binding.patientInfoCard.visibility = View.VISIBLE
+                    proceedWithSessionStart()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Guided", "Error checking patient existence: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    openPatientDialogForSession()
                 }
             }
-        }
-
-        binding.btnStartSession.setOnClickListener(startSessionClickListener)
-        binding.btnStartGuidedSession.setOnClickListener(startSessionClickListener)
-
-        // DEBUG: Settings button to test panel logic
-        binding.btnDebugSettings.setOnClickListener {
-            android.util.Log.e("DEBUG_SETTINGS_BUTTON", "DEBUG_SETTINGS_BUTTON_CLICKED - Testing settings panel logic")
-            toggleSettingsPanel()
         }
     }
 
@@ -871,29 +849,23 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
      */
     private fun setupCameraCoreUI() {
         android.util.Log.d("CameraCoreUI", "setupCameraCoreUI() - Initializing camera core UI")
-        
-        // Settings button - toggle side panel
-        binding.btnSettings.setOnClickListener {
-            android.util.Log.d("SettingsDebug", "Settings button clicked")
-            toggleSettingsPanel()
-        }
-        
-        // Close settings panel
-        binding.btnCloseSettings.setOnClickListener {
-            hideSettingsPanel()
-        }
-        
-        // Click on scrim to close settings
-        binding.settingsScrim.setOnClickListener {
-            hideSettingsPanel()
-        }
-        
-        // Edit patient button in top info bar - opens Find Patients screen
-        binding.btnEditPatient.setOnClickListener {
-            val intent = Intent(this, FindPatientsActivity::class.java)
-            startActivity(intent)
-        }
-        
+        uiBinder.bindCameraCoreUi(
+            onSettingsClicked = {
+                android.util.Log.d("SettingsDebug", "Settings button clicked")
+                toggleSettingsPanel()
+            },
+            onCloseSettingsClicked = {
+                hideSettingsPanel()
+            },
+            onSettingsScrimClicked = {
+                hideSettingsPanel()
+            },
+            onEditPatientClicked = {
+                val intent = Intent(this, FindPatientsActivity::class.java)
+                startActivity(intent)
+            }
+        )
+
         // Setup resolution and mode spinners
         setupSpinners()
         
@@ -910,14 +882,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
      */
     private fun setupGuidedSessionUI() {
         android.util.Log.d("GuidedSessionUI", "setupGuidedSessionUI() - Initializing session UI")
-        
-        // Always show capture buttons - patient selection is global
-        binding.sessionButtonsContainer.visibility = View.VISIBLE
-        binding.btnStartSession.visibility = View.GONE
-        
-        // Setup session media RecyclerView
-        setupSessionMediaRecycler()
-        
+        uiBinder.setupGuidedSessionUi(
+            onSetupSessionMediaRecycler = {
+                setupSessionMediaRecycler()
+            }
+        )
+
         android.util.Log.d("GuidedSessionUI", "setupGuidedSessionUI() - Complete")
     }
 
@@ -930,47 +900,36 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
      * Implements safety guards: camera readiness, capture lock, activity lifecycle.
      */
     override fun triggerCapture(): Boolean {
-        // Guard: Check camera readiness
-        if (!isCameraReady) {
+        if (!cameraStateStore.isCameraReady) {
             android.util.Log.w("UsbCommand", "CAPTURE ignored: camera not ready")
             return false
         }
-
-        // Guard: Check activity lifecycle
         if (isFinishing || isDestroyed) {
             android.util.Log.w("UsbCommand", "CAPTURE ignored: activity finishing")
             return false
         }
-
-        // Guard: Prevent double-capture with atomic lock
-        if (!captureLock.compareAndSet(false, true)) {
+        if (!photoCaptureHandler.tryAcquireCaptureLock()) {
             android.util.Log.w("UsbCommand", "CAPTURE ignored: already capturing")
             return false
         }
 
         try {
-            // Execute capture on main thread
             runOnUiThread {
                 try {
-                    // Check patient selection
                     if (!GlobalPatientManager.hasPatientSelected()) {
                         android.util.Log.w("UsbCommand", "CAPTURE ignored: no patient selected")
                         showPatientSelectionPrompt()
                         return@runOnUiThread
                     }
-
-                    // Execute capture
-                    if (guidedCaptureManager?.isEnabled == true) {
-                        // Guided capture: delegate to guided manager
-                        if (guidedCaptureManager?.handleManualCapture() == true) {
+                    if (guidedController?.isGuidedActive() == true) {
+                        if (guidedController?.handleManualCapture() == true) {
                             android.util.Log.i("UsbCommand", "CAPTURE handled by guided capture manager")
                         } else {
                             android.util.Log.w("UsbCommand", "CAPTURE rejected by guided capture manager")
                         }
                     } else {
-                        // Regular capture: use camera directly
-                        if (mCurrentCamera != null) {
-                            capturePhotoWithRetry()
+                        if (cameraStateStore.mCurrentCamera != null) {
+                            photoCaptureHandler.capturePhotoWithRetry()
                             android.util.Log.i("UsbCommand", "CAPTURE executed via direct camera capture")
                         } else {
                             android.util.Log.w("UsbCommand", "CAPTURE ignored: camera not available")
@@ -979,74 +938,34 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 } catch (e: Exception) {
                     android.util.Log.e("UsbCommand", "Error during capture: ${e.message}", e)
                 } finally {
-                    // ALWAYS reset the capture lock, even on error
-                    captureLock.set(false)
+                    photoCaptureHandler.releaseCaptureLock()
                 }
             }
-
             return true
-
         } catch (e: Exception) {
             android.util.Log.e("UsbCommand", "Error dispatching capture: ${e.message}", e)
-            // Reset lock on error
-            captureLock.set(false)
+            photoCaptureHandler.releaseCaptureLock()
             return false
         }
     }
     
     /**
      * Switch to Normal (RGB) mode from USB hardware command.
-     * Blocks mode switch during guided session to prevent inconsistent parameters.
+     * Delegates to CameraModeController (Phase 5D).
      */
-    override fun switchToNormalMode(): Boolean {
-        // Guard: Check camera exists
-        if (mCurrentCamera == null) {
-            android.util.Log.w("UsbCommand", "RGB mode switch ignored: camera not available")
-            return false
-        }
+    override fun switchToNormalMode(): Boolean = cameraModeController.switchToNormalMode()
 
-        // Execute on main thread
-        runOnUiThread {
-            try {
-                switchToMode("Normal")
-                android.util.Log.i("UsbCommand", "RGB (Normal) mode command executed successfully")
-            } catch (e: Exception) {
-                android.util.Log.e("UsbCommand", "Error switching to Normal mode: ${e.message}", e)
-            }
-        }
-
-        return true
-    }
-    
     /**
      * Switch to Fluorescence (UV) mode from USB hardware command.
-     * Blocks mode switch during guided session to prevent inconsistent parameters.
+     * Delegates to CameraModeController (Phase 5D).
      */
-    override fun switchToFluorescenceMode(): Boolean {
-        // Guard: Check camera exists
-        if (mCurrentCamera == null) {
-            android.util.Log.w("UsbCommand", "UV mode switch ignored: camera not available")
-            return false
-        }
-
-        // Execute on main thread
-        runOnUiThread {
-            try {
-                switchToMode("Fluorescence")
-                android.util.Log.i("UsbCommand", "UV (Fluorescence) mode command executed successfully")
-            } catch (e: Exception) {
-                android.util.Log.e("UsbCommand", "Error switching to Fluorescence mode: ${e.message}", e)
-            }
-        }
-
-        return true
-    }
+    override fun switchToFluorescenceMode(): Boolean = cameraModeController.switchToFluorescenceMode()
     
     /**
      * Check if a guided capture session is currently active.
      */
     override fun isGuidedSessionActive(): Boolean {
-        return guidedCaptureManager?.isEnabled == true
+        return guidedController?.isGuidedActive() == true
     }
     
     /**
@@ -1094,21 +1013,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
      * This is separate from camera activation (Phase A) and adds session-specific logic.
      */
     private fun proceedWithSessionStart() {
-        if (guidedCaptureManager == null) {
+        if (guidedController == null || !guidedController!!.isInitialized()) {
             android.util.Log.e("Guided", "GuidedCaptureManager is null, initializing now")
             initializeGuidedCapture()
         }
         android.util.Log.e("Guided", "PHASE B: Starting guided capture session")
-        guidedCaptureManager?.enable()
-
-        // Register GuidedCaptureManager as preview callback to receive NV21 frames
-        // This is ADDITIONAL to the base callback registered in Phase A
-        mCurrentCamera?.let { camera ->
-            camera.addPreviewDataCallBack(guidedCaptureManager!!)
-            android.util.Log.e("Guided", "PHASE B: Registered GuidedCaptureManager as preview callback")
-        } ?: run {
-            android.util.Log.w("Guided", "PHASE B: Camera not available, will register callback when camera opens")
-        }
+        previewCallbackRouter.enableGuided(cameraStateStore.mCurrentCamera)
         
         // Setup guided session UI (session media recycler, session buttons)
         // Camera core UI already initialized in onCreate via setupCameraCoreUI()
@@ -1116,8 +1026,6 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         setupGuidedSessionUI()
         android.util.Log.d("GuidedSessionUI", "setupGuidedSessionUI() completed")
         
-        // Initialize recording timer
-        recordingHandler = android.os.Handler(android.os.Looper.getMainLooper())
     }
 
     /**
@@ -1141,7 +1049,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
 
                         android.util.Log.d("CAMERA_LIFE", "Patient selected = ${patient.code}, camera should remain connected")
                         android.util.Log.d("CAMERA_LIFE", "Dialog dismissed")
-                        android.util.Log.d("CAMERA_LIFE", "Camera still active = ${mCurrentCamera != null}")
+                        android.util.Log.d("CAMERA_LIFE", "Camera still active = ${cameraStateStore.mCurrentCamera != null}")
 
                         GlobalPatientManager.setCurrentPatient(this@MainActivity, patient)
                         globalPatientId = patient.code
@@ -1161,7 +1069,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtBrightness.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
+                    cameraStateStore.mCurrentCamera?.let { camera ->
                         if (camera is CameraUVC) {
                             camera.setBrightness(progress)
                         }
@@ -1177,7 +1085,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtContrast.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
+                    cameraStateStore.mCurrentCamera?.let { camera ->
                         if (camera is CameraUVC) {
                             camera.setContrast(progress)
                         }
@@ -1193,7 +1101,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtSaturation.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
+                    cameraStateStore.mCurrentCamera?.let { camera ->
                         if (camera is CameraUVC) {
                             camera.setSaturation(progress)
                         }
@@ -1209,7 +1117,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtGamma.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
+                    cameraStateStore.mCurrentCamera?.let { camera ->
                         if (camera is CameraUVC) {
                             camera.setGamma(progress)
                         }
@@ -1225,7 +1133,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtHue.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
+                    cameraStateStore.mCurrentCamera?.let { camera ->
                         if (camera is CameraUVC) {
                             camera.setHue(progress)
                         }
@@ -1241,7 +1149,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtSharpness.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
+                    cameraStateStore.mCurrentCamera?.let { camera ->
                         if (camera is CameraUVC) {
                             camera.setSharpness(progress)
                         }
@@ -1257,7 +1165,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     binding.txtGain.text = progress.toString()
-                    mCurrentCamera?.let { camera ->
+                    cameraStateStore.mCurrentCamera?.let { camera ->
                         if (camera is CameraUVC) {
                             camera.setGain(progress)
                         }
@@ -1278,7 +1186,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastExposureUpdate >= exposureUpdateInterval) {
                         // Update immediately
-                        mCurrentCamera?.let { camera ->
+                        cameraStateStore.mCurrentCamera?.let { camera ->
                             if (camera is CameraUVC) {
                                 camera.setExposure(progress)
                                 lastExposureUpdate = currentTime
@@ -1302,7 +1210,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {
                 // Ensure final value is applied immediately when user stops dragging
                 val finalProgress = seekBar?.progress ?: 0
-                mCurrentCamera?.let { camera ->
+                cameraStateStore.mCurrentCamera?.let { camera ->
                     if (camera is CameraUVC) {
                         camera.setExposure(finalProgress)
                         lastExposureUpdate = System.currentTimeMillis()
@@ -1343,26 +1251,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     
 
     /**
-     * PHASE A — CAMERA ACTIVATION: Put camera into processing mode to enable parameter application.
-     * This is called automatically when camera opens and is separate from guided capture sessions.
-     *
-     * Purpose: Enable CameraUVC parameter application by registering a base preview callback.
-     * CameraUVC requires at least one preview callback to be registered for setXXX() methods to work.
+     * PHASE A — CAMERA ACTIVATION (Phase 5B: delegated to PreviewCallbackRouter).
      */
     private fun activateCameraPipeline() {
-        if (mCurrentCamera == null) {
-            android.util.Log.w("CameraActivation", "Cannot activate camera pipeline - mCurrentCamera is null")
+        if (cameraStateStore.mCurrentCamera == null) {
+            android.util.Log.w("CameraActivation", "Cannot activate camera pipeline - cameraStateStore.mCurrentCamera is null")
             return
         }
-        
-        // Register base preview callback to enable CameraUVC parameter application
-        if (!hasRegisteredBasePreviewCallback) {
-            mCurrentCamera?.addPreviewDataCallBack(noOpPreviewCallback)
-            hasRegisteredBasePreviewCallback = true
-            android.util.Log.d("CameraActivation", "PHASE A COMPLETE: Camera pipeline activated - parameter application enabled")
-        } else {
-            android.util.Log.d("CameraActivation", "Camera pipeline already activated")
-        }
+        previewCallbackRouter.onCameraOpened(cameraStateStore.mCurrentCamera!!)
     }
 
     /**
@@ -1420,7 +1316,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         updateSessionMediaUI()
     }
     
-    private fun addSessionMedia(filePath: String, isVideo: Boolean) {
+    override fun addSessionMedia(filePath: String, isVideo: Boolean) {
         val media = SessionMedia(
             id = ++mediaIdCounter,
             filePath = filePath,
@@ -1746,65 +1642,6 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         setupModeSpinner()
     }
     
-    private fun switchToMode(mode: String) {
-        currentMode = mode
-        updateModeUI()
-        applyModePreset(mode)
-    }
-    
-    private fun updateModeUI() { /* no-op: mode toggles shown in settings panel only */ }
-    
-    private fun applyModePreset(mode: String) {
-        val preset = when (mode) {
-            "Normal" -> CameraModePresets.NORMAL
-            "Fluorescence" -> CameraModePresets.FLUORESCENCE
-            else -> CameraModePresets.NORMAL
-        }
-        
-        mCurrentCamera?.let { camera ->
-            if (camera is CameraUVC) {
-                try {
-                    // Apply camera parameters
-                    camera.setAutoExposure(preset.autoExposure)
-                    camera.setAutoWhiteBalance(preset.autoWhiteBalance)
-                    camera.setContrast(preset.contrast)
-                    camera.setSaturation(preset.saturation)
-                    camera.setBrightness(preset.brightness)
-                    camera.setGamma(preset.gamma)
-                    camera.setHue(preset.hue)
-                    camera.setSharpness(preset.sharpness)
-                    camera.setGain(preset.gain)
-                    camera.setExposure(preset.exposure)
-                    
-                    // Apply/remove visual fluorescence effect
-                    if (mode == "Fluorescence") {
-                        // Create effect if it doesn't exist
-                        if (fluorescenceEffect == null) {
-                            fluorescenceEffect = com.oralvis.oralviscamera.camera.FluorescenceEffect(this)
-                        }
-                        // Add the effect to camera render pipeline
-                        camera.addRenderEffect(fluorescenceEffect!!)
-                        android.util.Log.d("FluorescenceMode", "Fluorescence effect applied")
-                    } else {
-                        // Remove effect when switching to Normal mode
-                        fluorescenceEffect?.let { effect ->
-                            camera.removeRenderEffect(effect)
-                            android.util.Log.d("FluorescenceMode", "Fluorescence effect removed")
-                        }
-                    }
-                    
-                    // Update UI controls
-                    updateCameraControlValues()
-                    
-                    Toast.makeText(this, "Switched to $mode mode", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    android.util.Log.e("FluorescenceMode", "Failed to apply $mode preset: ${e.message}", e)
-                    Toast.makeText(this, "Failed to apply $mode preset: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-    
     private fun showSettingsBottomSheet() {
         val bottomSheetView = layoutInflater.inflate(R.layout.bottom_sheet_camera_settings, null)
         settingsBottomSheet = BottomSheetDialog(this)
@@ -1824,12 +1661,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         
         // Mode buttons in settings
         view.findViewById<View>(R.id.btnNormalMode).setOnClickListener {
-            switchToMode("Normal")
+            cameraModeController.switchToMode("Normal")
             settingsBottomSheet?.dismiss()
         }
         
         view.findViewById<View>(R.id.btnFluorescenceMode).setOnClickListener {
-            switchToMode("Fluorescence")
+            cameraModeController.switchToMode("Fluorescence")
             settingsBottomSheet?.dismiss()
         }
         
@@ -1843,7 +1680,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     
     private fun openGallery() {
         // Use the same session manager instance to ensure consistency
-        val currentSessionId = sessionManager.getCurrentSessionIdOrCreate()
+        val currentSessionId = sessionController.getCurrentSessionIdOrCreate()
         
         android.util.Log.d("GalleryDebug", "Opening gallery with session ID: $currentSessionId")
         
@@ -2203,20 +2040,20 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                     isInitialSetup = false
                     // Ensure Normal mode is set during initial setup
                     if (position == 0) {
-                        currentMode = "Normal"
+                        cameraModeController.setCurrentModeNormal()
                         // Don't apply preset here as camera might not be ready yet
                         // It will be applied when camera opens
                     }
                     return
                 }
                 val mode = parent?.getItemAtPosition(position).toString() ?: "Normal"
-                switchToMode(mode)
+                cameraModeController.switchToMode(mode)
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
         
         // Ensure currentMode is set to Normal
-        currentMode = "Normal"
+        cameraModeController.setCurrentModeNormal()
     }
     
     /**
@@ -2237,7 +2074,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         // Save session logic
         lifecycleScope.launch {
             try {
-                val sessionId = sessionManager.getCurrentSessionId()
+                val sessionId = sessionController.getCurrentSessionId()
                 if (sessionId != null) {
                     // Update session with completion info
                     val session = mediaDatabase.sessionDao().getBySessionId(sessionId)
@@ -2258,7 +2095,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         ).show()
                         
                         // Clear session and reset UI to initial state
-                        sessionManager.clearCurrentSession()
+                        sessionController.clearCurrentSession()
                         selectedPatient = null
                         sessionMediaList.clear()
 
@@ -2312,7 +2149,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     
     private fun loadAvailableResolutions() {
         // Try to get current camera, if not available, wait and retry
-        val camera = mCurrentCamera ?: run {
+        val camera = cameraStateStore.mCurrentCamera ?: run {
             android.util.Log.w("ResolutionManager", "Camera not available, will retry when camera is ready")
             return
         }
@@ -2401,10 +2238,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             android.util.Log.d("ResolutionManager", "Reload attempt $attempt/$maxRetries (delay: ${delayMs}ms)")
             
             // Check if camera is available and opened
-            val camera = mCurrentCamera
-            val isCameraReady = camera != null && (camera as? CameraUVC)?.isCameraOpened() == true
+            val camera = cameraStateStore.mCurrentCamera
+            val isCameraReadyForCapture = camera != null && (camera as? CameraUVC)?.isCameraOpened() == true
             
-            if (!isCameraReady) {
+            if (!isCameraReadyForCapture) {
                 android.util.Log.w("ResolutionManager", "Camera not ready (attempt $attempt/$maxRetries)")
                 if (attempt < maxRetries) {
                     // Retry with exponential backoff
@@ -2515,21 +2352,21 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private fun showResolutionPopupMenu(anchorView: View) {
         android.util.Log.d("ResolutionSelector", "========================================")
         android.util.Log.d("ResolutionSelector", "showResolutionPopupMenu() CALLED")
-        android.util.Log.d("ResolutionSelector", "mCurrentCamera: ${mCurrentCamera != null}")
+        android.util.Log.d("ResolutionSelector", "cameraStateStore.mCurrentCamera: ${cameraStateStore.mCurrentCamera != null}")
         android.util.Log.d("ResolutionSelector", "mCameraMap.size: ${mCameraMap.size}")
         android.util.Log.d("ResolutionSelector", "availableResolutions.size: ${availableResolutions.size}")
-        android.util.Log.d("ResolutionSelector", "isRecording: $isRecording")
+        android.util.Log.d("ResolutionSelector", "isRecording: ${videoCaptureHandler.isRecording}")
         android.util.Log.d("ResolutionSelector", "isResolutionChanging: $isResolutionChanging")
         
-        // Get camera reference - try mCurrentCamera first, then fallback to camera map
+        // Get camera reference - try cameraStateStore.mCurrentCamera first, then fallback to camera map
         // This matches demo app behavior where camera instance is maintained even when closed
-        var camera = mCurrentCamera
+        var camera = cameraStateStore.mCurrentCamera
         if (camera == null && mCameraMap.isNotEmpty()) {
-            android.util.Log.w("ResolutionSelector", "mCurrentCamera is null, trying to get from camera map...")
+            android.util.Log.w("ResolutionSelector", "cameraStateStore.mCurrentCamera is null, trying to get from camera map...")
             camera = mCameraMap.values.firstOrNull()
             if (camera != null) {
-                android.util.Log.d("ResolutionSelector", "Found camera in map, updating mCurrentCamera reference")
-                mCurrentCamera = camera
+                android.util.Log.d("ResolutionSelector", "Found camera in map, updating cameraStateStore.mCurrentCamera reference")
+                cameraStateStore.mCurrentCamera = camera
             }
         }
         
@@ -2568,7 +2405,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             return
         }
         
-        if (isRecording) {
+        if (videoCaptureHandler.isRecording) {
             Toast.makeText(this, "Cannot change resolution while recording", Toast.LENGTH_SHORT).show()
             return
         }
@@ -2635,15 +2472,15 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             return
         }
         
-        // Get camera reference - try mCurrentCamera first, then fallback to camera map
+        // Get camera reference - try cameraStateStore.mCurrentCamera first, then fallback to camera map
         // This matches demo app behavior where camera instance is maintained even when closed
-        var camera = mCurrentCamera
+        var camera = cameraStateStore.mCurrentCamera
         if (camera == null && mCameraMap.isNotEmpty()) {
-            android.util.Log.w("ResolutionChange", "mCurrentCamera is null, trying to get from camera map...")
+            android.util.Log.w("ResolutionChange", "cameraStateStore.mCurrentCamera is null, trying to get from camera map...")
             camera = mCameraMap.values.firstOrNull()
             if (camera != null) {
-                android.util.Log.d("ResolutionChange", "Found camera in map, updating mCurrentCamera reference")
-                mCurrentCamera = camera
+                android.util.Log.d("ResolutionChange", "Found camera in map, updating cameraStateStore.mCurrentCamera reference")
+                cameraStateStore.mCurrentCamera = camera
             }
         }
         
@@ -2707,10 +2544,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         val retryDelay = 500L // 500ms between retries
         
         android.util.Log.d("ResolutionManager", "setupResolutionSpinnerWithRetry: attempt ${retryCount + 1}/$maxRetries")
-        android.util.Log.d("ResolutionManager", "Current camera state: mCurrentCamera = ${mCurrentCamera != null}")
+        android.util.Log.d("ResolutionManager", "Current camera state: cameraStateStore.mCurrentCamera = ${cameraStateStore.mCurrentCamera != null}")
         
         // Try to refresh camera reference if it's null
-        if (mCurrentCamera == null) {
+        if (cameraStateStore.mCurrentCamera == null) {
             refreshCameraReference()
         }
         
@@ -2732,14 +2569,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         setupResolutionSpinner(view)
     }
     
-    private fun refreshCameraReference() {
+    override fun refreshCameraReference() {
         android.util.Log.d("ResolutionManager", "Attempting to refresh camera reference")
         try {
             // Try to find an active camera in the camera map
             if (mCameraMap.isNotEmpty()) {
                 val activeCamera = mCameraMap.values.firstOrNull()
                 if (activeCamera != null) {
-                    mCurrentCamera = activeCamera
+                    cameraStateStore.mCurrentCamera = activeCamera
                     android.util.Log.d("ResolutionManager", "Refreshed camera reference successfully")
                 } else {
                     android.util.Log.w("ResolutionManager", "No active camera found in camera map")
@@ -2752,15 +2589,15 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
     }
     
-    private fun isCameraReadyForRecording(): Boolean {
-        if (mCurrentCamera == null) {
-            android.util.Log.d("RecordingManager", "Camera readiness check: mCurrentCamera is null")
+    override fun isCameraReadyForRecording(): Boolean {
+        if (cameraStateStore.mCurrentCamera == null) {
+            android.util.Log.d("RecordingManager", "Camera readiness check: cameraStateStore.mCurrentCamera is null")
             return false
         }
         
         try {
             // Check if camera can provide a camera request (basic functionality)
-            val cameraRequest = (mCurrentCamera as? CameraUVC)?.getCameraRequest()
+            val cameraRequest = (cameraStateStore.mCurrentCamera as? CameraUVC)?.getCameraRequest()
             if (cameraRequest == null) {
                 android.util.Log.d("RecordingManager", "Camera readiness check: camera request is null")
                 return false
@@ -2780,21 +2617,21 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     
     private fun isCameraReadyForResolutionChange(): Boolean {
-        if (mCurrentCamera == null) {
-            android.util.Log.d("ResolutionManager", "Camera readiness check: mCurrentCamera is null")
+        if (cameraStateStore.mCurrentCamera == null) {
+            android.util.Log.d("ResolutionManager", "Camera readiness check: cameraStateStore.mCurrentCamera is null")
             return false
         }
         
         try {
             // First check if camera can provide a camera request (basic functionality)
-            val cameraRequest = (mCurrentCamera as? CameraUVC)?.getCameraRequest()
+            val cameraRequest = (cameraStateStore.mCurrentCamera as? CameraUVC)?.getCameraRequest()
             if (cameraRequest == null) {
                 android.util.Log.d("ResolutionManager", "Camera readiness check: camera request is null")
                 return false
             }
             
             // Then try to get resolutions to verify camera is fully functional
-            val resolutions = mCurrentCamera?.getAllPreviewSizes()
+            val resolutions = cameraStateStore.mCurrentCamera?.getAllPreviewSizes()
             val isReady = resolutions != null && resolutions.isNotEmpty()
             android.util.Log.d("ResolutionManager", "Camera readiness check: resolutions available = $isReady (count: ${resolutions?.size ?: 0})")
             
@@ -2827,19 +2664,19 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             "requestedHeight" to newResolution.height,
             "currentWidth" to (currentResolution?.width ?: -1),
             "currentHeight" to (currentResolution?.height ?: -1),
-            "cameraAvailable" to (mCurrentCamera != null),
-            "isRecording" to isRecording
+            "cameraAvailable" to (cameraStateStore.mCurrentCamera != null),
+            "isRecording" to videoCaptureHandler.isRecording
         ))
         // #endregion
         android.util.Log.d("ResolutionChange", "========================================")
         android.util.Log.d("ResolutionChange", "changeResolution() CALLED")
         android.util.Log.d("ResolutionChange", "Requested resolution: ${newResolution.width}x${newResolution.height}")
         android.util.Log.d("ResolutionChange", "Current resolution: ${currentResolution?.width}x${currentResolution?.height}")
-        android.util.Log.d("ResolutionChange", "Camera available: ${mCurrentCamera != null}")
-        android.util.Log.d("ResolutionChange", "Is recording: $isRecording")
+        android.util.Log.d("ResolutionChange", "Camera available: ${cameraStateStore.mCurrentCamera != null}")
+        android.util.Log.d("ResolutionChange", "Is recording: $videoCaptureHandler.isRecording")
         Toast.makeText(this, "changeResolution() called for ${newResolution.width}x${newResolution.height}", Toast.LENGTH_SHORT).show()
         
-        if (isRecording) {
+        if (videoCaptureHandler.isRecording) {
             Toast.makeText(this, "Cannot change resolution while recording", Toast.LENGTH_SHORT).show()
             android.util.Log.w("ResolutionChange", "BLOCKED: Cannot change resolution while recording")
             return
@@ -2858,7 +2695,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             return
         }
         
-        mCurrentCamera?.let { camera ->
+        cameraStateStore.mCurrentCamera?.let { camera ->
             try {
                 // Set flag to prevent concurrent changes
                 isResolutionChanging = true
@@ -2920,10 +2757,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         resolutionChangeRunnable = null
                         
                         // Check if camera is actually opened before resetting flag
-                        val camera = mCurrentCamera
-                        val isCameraReady = camera != null && (camera as? CameraUVC)?.isCameraOpened() == true
+                        val camera = cameraStateStore.mCurrentCamera
+                        val isCameraReadyForCapture = camera != null && (camera as? CameraUVC)?.isCameraOpened() == true
                         
-                        if (!isCameraReady) {
+                        if (!isCameraReadyForCapture) {
                             android.util.Log.w("ResolutionChange", "Camera not ready yet, retrying in 1 second...")
                             // Retry after 1 second - store new runnable
                             resolutionChangeRunnable = this
@@ -3036,7 +2873,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 )
             }
         } ?: run {
-            android.util.Log.e("ResolutionChange", "FAILED: Camera not available (mCurrentCamera is null)")
+            android.util.Log.e("ResolutionChange", "FAILED: Camera not available (cameraStateStore.mCurrentCamera is null)")
             Toast.makeText(this, "Camera not available", Toast.LENGTH_SHORT).show()
             android.util.Log.w("ResolutionManager", "Camera not available for resolution change")
         }
@@ -3053,7 +2890,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private fun verifyCurrentResolution() {
         android.util.Log.d("ResolutionManager", "========================================")
         android.util.Log.d("ResolutionManager", "verifyCurrentResolution() CALLED")
-        mCurrentCamera?.let { camera ->
+        cameraStateStore.mCurrentCamera?.let { camera ->
             try {
                 val cameraRequest = (camera as? CameraUVC)?.getCameraRequest()
                 if (cameraRequest != null) {
@@ -3194,12 +3031,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             }
             
             override fun onDetachDec(device: UsbDevice?) {
-                mPendingCameraOpen = null
+                cameraStateStore.mPendingCameraOpen = null
                 // Cancel scheduled CDC start (camera detached)
                 cancelCdcStartSchedule()
                 
                 mCameraMap.remove(device?.deviceId)
-                mCurrentCamera = null
+                cameraStateStore.mCurrentCamera = null
                 binding.statusText.text = "USB Camera removed"
                 binding.statusText.visibility = View.VISIBLE
                 
@@ -3228,135 +3065,63 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 mCameraMap[device.deviceId]?.apply {
                     setUsbControlBlock(ctrlBlock)
                 }?.also { camera ->
-                    mCurrentCamera = camera
+                    cameraStateStore.mCurrentCamera = camera
                     
-                    // Set camera state callback
-                    camera.setCameraStateCallBack(object : ICameraStateCallBack {
-                        override fun onCameraState(
-                            self: MultiCameraClient.ICamera,
-                            code: ICameraStateCallBack.State,
-                            msg: String?
-                        ) {
-                            runOnUiThread {
-                                when (code) {
-                                    ICameraStateCallBack.State.OPENED -> {
-                                        android.util.Log.d("CameraState", "Camera opened - setting isCameraReady = true")
-                                        isCameraReady = true
-                                        binding.statusText.text = "Camera opened successfully"
-                                        binding.statusText.visibility = View.GONE
-                                        
-                                        // Set preview aspect ratio to match device screen to fill fully
-                                        val displayMetrics = resources.displayMetrics
-                                        val screenWidth = displayMetrics.widthPixels
-                                        val screenHeight = displayMetrics.heightPixels
-                                        binding.cameraTextureView.setAspectRatio(screenWidth, screenHeight)
-                                        
-                        // Load available resolutions and set current resolution
-                        loadAvailableResolutions()
-                        
-                        // Reset resolution changing flag after camera reopens and resolutions are loaded
-                        if (isResolutionChanging) {
-                            android.util.Log.d("ResolutionManager", "Camera opened after resolution change - resetting flag")
-                            isResolutionChanging = false
-                        }
-
-                        // CONTROL TRANSFER TIMING: Defer updateCameraControlValues() until first frame arrives
-                        // This prevents parameter updates from interfering with initial frame delivery
-
-                        // Set mode state (but DO NOT apply preset yet - control transfers must wait for first frame)
-                        // Mode preset will be applied in onFirstFrameReceived() after streaming is proven stable
-                        currentMode = "Normal"
-                        android.util.Log.d("CameraMode", "Normal mode set (preset will be applied after first frame)")
-                        
-                        // Verify and log current resolution after camera restart
-                        verifyCurrentResolution()
-                        
-                        // Refresh resolution list if settings dialog is open
-                        refreshResolutionSpinnerIfOpen()
-                        
-                        // PHASE A — CAMERA ACTIVATION: Enable parameter application immediately
-                        activateCameraPipeline()
-
-                        // PHASE C — NOTIFY SERIAL and start CDC immediately (match Windows/Python: CDC as soon as device is connected)
-                        val deviceConnection = ctrlBlock.connection
-                        if (deviceConnection != null) {
-                            try {
-                                usbSerialManager?.onCameraOpened(deviceConnection, device!!)
-                                android.util.Log.d("CameraSerial", "✅ Stored camera's device connection - starting CDC immediately")
-                                usbSerialManager?.start()
-                                android.util.Log.d("CameraSerial", "✅ CDC started (hardware buttons active)")
-                            } catch (e: Exception) {
-                                android.util.Log.e("CameraSerial", "❌ Error storing camera connection or starting CDC: ${e.message}", e)
+                    // Set camera state callback (Phase 5A: CameraLifecycleManager owns state; MainActivity runs OPENED/CLOSED/ERROR UI and USB/guided)
+                    camera.setCameraStateCallBack(cameraLifecycleManager.createStateCallback(
+                        runOnUiThread = { runnable -> runOnUiThread(runnable) },
+                        onOpened = {
+                            binding.statusText.text = "Camera opened successfully"
+                            binding.statusText.visibility = View.GONE
+                            val displayMetrics = resources.displayMetrics
+                            val screenWidth = displayMetrics.widthPixels
+                            val screenHeight = displayMetrics.heightPixels
+                            binding.cameraTextureView.setAspectRatio(screenWidth, screenHeight)
+                            loadAvailableResolutions()
+                            if (isResolutionChanging) {
+                                android.util.Log.d("ResolutionManager", "Camera opened after resolution change - resetting flag")
+                                isResolutionChanging = false
                             }
-                        } else {
-                            android.util.Log.w("CameraSerial", "⚠️ Camera control block has null connection - CDC cannot start")
-                        }
-
-                        // PHASE B — GUIDED CAPTURE SESSION: Add guided callback if session is active
-                        // This is separate from camera activation and happens only during guided sessions
-                        guidedCaptureManager?.let { manager ->
-                            if (manager.isEnabled) {
-                                camera.addPreviewDataCallBack(manager)
-                                android.util.Log.e("Guided", "PHASE B: Registered GuidedCaptureManager as preview callback (session active)")
-                            }
-                        }
-                                    }
-                                    ICameraStateCallBack.State.CLOSED -> {
-                                        android.util.Log.d("CameraState", "Camera closed - setting isCameraReady = false")
-                                        isCameraReady = false
-                                        hasRegisteredBasePreviewCallback = false
-                                        
-                                        // Cancel scheduled CDC start (camera closed before stability period)
-                                        cancelCdcStartSchedule()
-                                        
-                                        // Reset first frame flag for next camera open
-                                        // This ensures CDC will wait for first frame again on reopen
-                                        hasReceivedFirstFrame = false
-                                        
-                                        binding.statusText.text = "Camera closed"
-                                        binding.statusText.visibility = View.VISIBLE
-                                        
-                                        // Don't reset flag here - camera closing is expected during resolution change
-                                        // The delayed handler will manage the flag after camera reopens
-                                        // Only reset if this is an unexpected close (not during resolution change)
-                                        android.util.Log.d("ResolutionManager", "Camera closed - isResolutionChanging: $isResolutionChanging")
-                                        if (isResolutionChanging) {
-                                            android.util.Log.d("ResolutionManager", "Camera closed during resolution change - this is expected, delayed handler will manage flag")
-                                            // Don't clear resolutions during resolution change - camera will reopen soon
-                                            // The resolutions list will be refreshed when camera reopens
-                                        } else {
-                                            // Only clear resolutions if this is an unexpected close (camera disconnected)
-                                            // During normal resolution change, we keep the list so popup menu still works
-                                            android.util.Log.d("ResolutionManager", "Camera closed unexpectedly - clearing resolution data")
-                                            availableResolutions.clear()
-                                        }
-                                        
-                                        // Reset recording state when camera is closed
-                                        if (isRecording) {
-                                            android.util.Log.d("RecordingManager", "Camera closed during recording - resetting recording state")
-                                            isRecording = false
-                                            // Restore gradient background
-                                            binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                                            stopRecordingTimer()
-                                        }
-                                        
-                                        // Unregister GuidedCaptureManager preview callback
-                                        guidedCaptureManager?.let { manager ->
-                                            camera.removePreviewDataCallBack(manager)
-                                            android.util.Log.e("Guided", "Unregistered GuidedCaptureManager preview callback (camera closed)")
-                                        }
-
-                                        // Notify serial that camera closed (CDC will stop)
-                                        usbSerialManager?.onCameraClosed()
-                                    }
-                                    ICameraStateCallBack.State.ERROR -> {
-                                        binding.statusText.text = "Camera error: $msg"
-                                        binding.statusText.visibility = View.VISIBLE
-                                    }
+                            cameraModeController.setCurrentModeNormal()
+                            android.util.Log.d("CameraMode", "Normal mode set (preset will be applied after first frame)")
+                            verifyCurrentResolution()
+                            refreshResolutionSpinnerIfOpen()
+                            activateCameraPipeline()
+                            val deviceConnection = ctrlBlock.connection
+                            if (deviceConnection != null) {
+                                try {
+                                    usbSerialManager?.onCameraOpened(deviceConnection, device!!)
+                                    android.util.Log.d("CameraSerial", "✅ Stored camera's device connection - starting CDC immediately")
+                                    usbController?.start()
+                                    android.util.Log.d("CameraSerial", "✅ CDC started (hardware buttons active)")
+                                } catch (e: Exception) {
+                                    android.util.Log.e("CameraSerial", "❌ Error storing camera connection or starting CDC: ${e.message}", e)
                                 }
+                            } else {
+                                android.util.Log.w("CameraSerial", "⚠️ Camera control block has null connection - CDC cannot start")
                             }
+                            // Guided reattach done inside activateCameraPipeline() via previewCallbackRouter
+                        },
+                        onClosed = {
+                            previewCallbackRouter.onCameraClosed(camera)
+                            cancelCdcStartSchedule()
+                            binding.statusText.text = "Camera closed"
+                            binding.statusText.visibility = View.VISIBLE
+                            android.util.Log.d("ResolutionManager", "Camera closed - isResolutionChanging: $isResolutionChanging")
+                            if (isResolutionChanging) {
+                                android.util.Log.d("ResolutionManager", "Camera closed during resolution change - this is expected, delayed handler will manage flag")
+                            } else {
+                                android.util.Log.d("ResolutionManager", "Camera closed unexpectedly - clearing resolution data")
+                                availableResolutions.clear()
+                            }
+                            videoCaptureHandler.resetRecordingState()
+                            usbSerialManager?.onCameraClosed()
+                        },
+                        onError = { msg ->
+                            binding.statusText.text = "Camera error: $msg"
+                            binding.statusText.visibility = View.VISIBLE
                         }
-                    })
+                    ))
                     
                     // Create camera request with resolution matching screen aspect ratio
                     val displayMetrics = resources.displayMetrics
@@ -3384,23 +3149,23 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                         .create()
                     
                     // Open camera when SurfaceTexture is ready; else defer until it is
-                    if (isSurfaceTextureReady) {
+                    if (cameraStateStore.isSurfaceTextureReady) {
                         android.util.Log.d("CAMERA_LIFE", "Opening camera with resolution ${recordingWidth}x${recordingHeight}")
                         camera.openCamera(binding.cameraTextureView, cameraRequest)
                     } else {
-                        mPendingCameraOpen = Pair(camera, cameraRequest)
+                        cameraStateStore.mPendingCameraOpen = Pair(camera, cameraRequest)
                         android.util.Log.d("CameraGate", "Deferred openCamera - SurfaceTexture not ready, will open when ready")
                     }
                 }
             }
             
             override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
-                mPendingCameraOpen = null
+                cameraStateStore.mPendingCameraOpen = null
                 // Cancel scheduled CDC start (camera disconnected)
                 cancelCdcStartSchedule()
                 
-                mCurrentCamera?.closeCamera()
-                mCurrentCamera = null
+                cameraStateStore.mCurrentCamera?.closeCamera()
+                cameraStateStore.mCurrentCamera = null
                 binding.statusText.text = "Camera disconnected"
                 binding.statusText.visibility = View.VISIBLE
             }
@@ -3465,7 +3230,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     
     private fun updateCameraControlValues() {
-        mCurrentCamera?.let { camera ->
+        cameraStateStore.mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     // Update all camera control values from actual camera
@@ -3602,123 +3367,15 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         binding.btnAutoWhiteBalance.setBackgroundColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
     }
     
-    private fun capturePhotoWithRetry() {
-        capturePhotoWithRetry(0)
-    }
-    
-    private fun capturePhotoWithRetry(retryCount: Int) {
-        val maxRetries = 3
-        val retryDelay = 1000L // 1 second between retries
-        
-        android.util.Log.d("PhotoManager", "capturePhotoWithRetry: attempt ${retryCount + 1}/$maxRetries")
-        
-        // Try to refresh camera reference if it's null
-        if (mCurrentCamera == null) {
-            android.util.Log.d("PhotoManager", "Camera reference is null, attempting to refresh...")
-            refreshCameraReference()
-        }
-        
-        // Check if camera is ready for photo capture
-        if (!isCameraReadyForPhotoCapture()) {
-            if (retryCount < maxRetries) {
-                android.util.Log.w("PhotoManager", "Camera not ready, retrying in ${retryDelay}ms...")
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    capturePhotoWithRetry(retryCount + 1)
-                }, retryDelay)
-                return
-            } else {
-                android.util.Log.e("PhotoManager", "Camera not ready after $maxRetries attempts")
-                Toast.makeText(this, "Camera not ready for photo capture - please try again", Toast.LENGTH_SHORT).show()
-                return
-            }
-        }
-        
-        // Camera is ready, proceed with photo capture
-        capturePhoto()
-    }
-
-    /**
-     * Guided variant of capture that attaches guided metadata to the inserted MediaRecord.
-     * This reuses the existing capturePhoto() implementation but passes additional
-     * parameters to logMediaToDatabase once the file path is known.
-     */
-    private fun capturePhotoWithGuidedMetadata(
-        guidedSessionId: String,
-        dentalArch: String,
-        sequenceNumber: Int
-    ) {
-        // For now, reuse the same readiness checks as normal photo capture
-        if (!isCameraReadyForPhotoCapture()) {
-            android.util.Log.w("PhotoManager", "Camera not ready for guided photo capture")
-            Toast.makeText(this, "Camera not ready for guided capture - please try again", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        mCurrentCamera?.let { camera ->
-            try {
-                android.util.Log.d("PhotoManager", "Starting guided photo capture...")
-                val imagePath = createImageFile()
-                camera.captureImage(object : ICaptureCallBack {
-                    override fun onBegin() {
-                        if (!isFinishing && !isDestroyed) {
-                            runOnUiThread {
-                                if (!isFinishing && !isDestroyed) {
-                                    Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    }
-
-                    override fun onError(error: String?) {
-                        if (!isFinishing && !isDestroyed) {
-                            runOnUiThread {
-                                if (!isFinishing && !isDestroyed) {
-                                    Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    }
-
-                    override fun onComplete(path: String?) {
-                        if (!isFinishing && !isDestroyed) {
-                            runOnUiThread {
-                                if (!isFinishing && !isDestroyed) {
-                                    val finalPath = path ?: imagePath
-                                    android.util.Log.d("GuidedCapture", "Guided photo captured - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
-                                    Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-
-                                    // Use MediaRepository for consistent capture handling
-                                    captureRealImageToRepository(
-                                        filePath = finalPath,
-                                        mediaType = "Image",
-                                        guidedSessionId = guidedSessionId,
-                                        dentalArch = dentalArch,
-                                        sequenceNumber = sequenceNumber
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }, imagePath)
-            } catch (e: Exception) {
-                android.util.Log.e("PhotoManager", "Guided photo capture failed: ${e.message}")
-                Toast.makeText(this, "Capture failed: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        } ?: run {
-            android.util.Log.w("PhotoManager", "Camera not available for guided photo capture")
-            Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    private fun isCameraReadyForPhotoCapture(): Boolean {
-        if (mCurrentCamera == null) {
-            android.util.Log.d("PhotoManager", "Camera readiness check: mCurrentCamera is null")
+    override fun isCameraReadyForPhotoCapture(): Boolean {
+        if (cameraStateStore.mCurrentCamera == null) {
+            android.util.Log.d("PhotoManager", "Camera readiness check: cameraStateStore.mCurrentCamera is null")
             return false
         }
         
         try {
             // Check if camera can provide a camera request (basic functionality)
-            val cameraRequest = (mCurrentCamera as? CameraUVC)?.getCameraRequest()
+            val cameraRequest = (cameraStateStore.mCurrentCamera as? CameraUVC)?.getCameraRequest()
             if (cameraRequest == null) {
                 android.util.Log.d("PhotoManager", "Camera readiness check: camera request is null")
                 return false
@@ -3737,77 +3394,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
     }
     
-    private fun capturePhoto() {
-        // Try to refresh camera reference if it's null (same as recording management)
-        if (mCurrentCamera == null) {
-            android.util.Log.d("PhotoManager", "Camera reference is null, attempting to refresh...")
-            refreshCameraReference()
-        }
-        
-        // Check if camera is ready for photo capture
-        if (!isCameraReadyForPhotoCapture()) {
-            android.util.Log.w("PhotoManager", "Camera not ready for photo capture")
-            Toast.makeText(this, "Camera not ready for photo capture - please try again", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        mCurrentCamera?.let { camera ->
-            try {
-                android.util.Log.d("PhotoManager", "Starting photo capture...")
-                val imagePath = createImageFile()
-                camera.captureImage(object : ICaptureCallBack {
-                    override fun onBegin() {
-                        if (!isFinishing && !isDestroyed) {
-                            runOnUiThread {
-                                if (!isFinishing && !isDestroyed) {
-                                    Toast.makeText(this@MainActivity, "Capturing photo...", Toast.LENGTH_SHORT).show()
-                                    android.util.Log.d("PhotoManager", "Photo capture started")
-                                }
-                            }
-                        }
-                    }
-                    
-                    override fun onError(error: String?) {
-                        if (!isFinishing && !isDestroyed) {
-                            runOnUiThread {
-                                if (!isFinishing && !isDestroyed) {
-                                    Toast.makeText(this@MainActivity, "Capture failed: $error", Toast.LENGTH_SHORT).show()
-                                    android.util.Log.e("PhotoManager", "Photo capture failed: $error")
-                                }
-                            }
-                        }
-                    }
-                    
-                    override fun onComplete(path: String?) {
-                        if (!isFinishing && !isDestroyed) {
-                            runOnUiThread {
-                                if (!isFinishing && !isDestroyed) {
-                                    val finalPath = path ?: imagePath
-                                    Toast.makeText(this@MainActivity, "Photo saved", Toast.LENGTH_SHORT).show()
-                                    // Use MediaRepository for consistent capture handling
-                                    captureRealImageToRepository(finalPath, "Image")
-                                    android.util.Log.d("PhotoManager", "Photo capture completed: $finalPath")
-                                }
-                            }
-                        }
-                    }
-                }, imagePath)
-            } catch (e: Exception) {
-                android.util.Log.e("PhotoManager", "Photo capture failed with exception: ${e.message}")
-                Toast.makeText(this, "Capture failed: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        } ?: run {
-            android.util.Log.w("PhotoManager", "Camera not available for photo capture")
-            Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    private fun createVideoFile(): String {
+    override fun createVideoFile(): String {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val videoFileName = "OralVis_Video_${currentMode}_$timestamp.mp4"
+        val videoFileName = "OralVis_Video_${cameraModeController.currentMode}_$timestamp.mp4"
         
         // Use session-based directory
-        val sessionId = sessionManager.getCurrentSessionId()
+        val sessionId = sessionController.getCurrentSessionId()
         val sessionDir = File(getExternalFilesDir(null), "Sessions/$sessionId")
         val videoDir = File(sessionDir, "Videos")
         if (!videoDir.exists()) {
@@ -3818,12 +3410,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         return videoFile.absolutePath
     }
     
-    private fun createImageFile(): String {
+    override fun createImageFile(): String {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val imageFileName = "OralVis_Image_${currentMode}_$timestamp.jpg"
+        val imageFileName = "OralVis_Image_${cameraModeController.currentMode}_$timestamp.jpg"
         
         // Use session-based directory
-        val sessionId = sessionManager.getCurrentSessionId()
+        val sessionId = sessionController.getCurrentSessionId()
         val sessionDir = File(getExternalFilesDir(null), "Sessions/$sessionId")
         val imageDir = File(sessionDir, "Images")
         if (!imageDir.exists()) {
@@ -3846,12 +3438,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 android.util.Log.d("MediaDatabase", "Starting database logging for: $filePath")
                 
                 // Use the same session manager instance to ensure consistency
-                val sessionId = sessionManager.getCurrentSessionIdOrCreate()
+                val sessionId = sessionController.getCurrentSessionIdOrCreate()
                 android.util.Log.d("MediaDatabase", "Session ID: $sessionId")
                 
                 val fileName = java.io.File(filePath).name
                 android.util.Log.d("MediaDatabase", "File name: $fileName")
-                android.util.Log.d("MediaDatabase", "Mode: $currentMode")
+                android.util.Log.d("MediaDatabase", "Mode: ${cameraModeController.currentMode}")
                 android.util.Log.d("MediaDatabase", "Media type: $mediaType")
                 android.util.Log.d("MediaDatabase", "dentalArch: $dentalArch")
                 android.util.Log.d("MediaDatabase", "sequenceNumber: $sequenceNumber")
@@ -3860,7 +3452,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                 val mediaRecord = MediaRecord(
                     sessionId = sessionId,
                     fileName = fileName,
-                    mode = currentMode,
+                    mode = cameraModeController.currentMode,
                     mediaType = mediaType,
                     captureTime = Date(),
                     filePath = filePath,
@@ -3913,136 +3505,6 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
     }
     
-    private fun toggleRecordingWithRetry() {
-        toggleRecordingWithRetry(0)
-    }
-    
-    private fun toggleRecordingWithRetry(retryCount: Int) {
-        val maxRetries = 3
-        val retryDelay = 1000L // 1 second between retries
-        
-        android.util.Log.d("RecordingManager", "toggleRecordingWithRetry: attempt ${retryCount + 1}/$maxRetries")
-        
-        // Try to refresh camera reference if it's null
-        if (mCurrentCamera == null) {
-            android.util.Log.d("RecordingManager", "Camera reference is null, attempting to refresh...")
-            refreshCameraReference()
-        }
-        
-        // Check if camera is ready for recording
-        if (!isCameraReadyForRecording()) {
-            if (retryCount < maxRetries) {
-                android.util.Log.w("RecordingManager", "Camera not ready, retrying in ${retryDelay}ms...")
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    toggleRecordingWithRetry(retryCount + 1)
-                }, retryDelay)
-                return
-            } else {
-                android.util.Log.e("RecordingManager", "Camera not ready after $maxRetries attempts")
-                Toast.makeText(this, "Camera not ready for recording - please try again", Toast.LENGTH_SHORT).show()
-                return
-            }
-        }
-        
-        // Camera is ready, proceed with recording
-        toggleRecording()
-    }
-    
-    private fun toggleRecording() {
-        // Try to refresh camera reference if it's null (same as resolution management)
-        if (mCurrentCamera == null) {
-            android.util.Log.d("RecordingManager", "Camera reference is null, attempting to refresh...")
-            refreshCameraReference()
-        }
-        
-        // Check if camera is ready for recording
-        if (!isCameraReadyForRecording()) {
-            android.util.Log.w("RecordingManager", "Camera not ready for recording")
-            Toast.makeText(this, "Camera not ready for recording - please try again", Toast.LENGTH_SHORT).show()
-            return
-        }
-        
-        mCurrentCamera?.let { camera ->
-            if (!isRecording) {
-                try {
-                    android.util.Log.d("RecordingManager", "Starting video recording...")
-                    // Create video file in app-specific directory
-                    val videoFile = createVideoFile()
-                    camera.captureVideoStart(object : ICaptureCallBack {
-                        override fun onBegin() {
-                            if (!isFinishing && !isDestroyed) {
-                                runOnUiThread {
-                                    if (!isFinishing && !isDestroyed) {
-                                        isRecording = true
-                                        // Keep gradient but can add a pulse animation or different state if needed
-                                        // For now, keep the gradient
-                                        startRecordingTimer()
-                                        Toast.makeText(this@MainActivity, "Recording started", Toast.LENGTH_SHORT).show()
-                                        android.util.Log.d("RecordingManager", "Recording started successfully")
-                                    }
-                                }
-                            }
-                        }
-                        
-                        override fun onError(error: String?) {
-                            if (!isFinishing && !isDestroyed) {
-                                runOnUiThread {
-                                    if (!isFinishing && !isDestroyed) {
-                                        isRecording = false
-                                        // Restore gradient background
-                                        binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                                        stopRecordingTimer()
-                                        Toast.makeText(this@MainActivity, "Recording failed: $error", Toast.LENGTH_SHORT).show()
-                                        android.util.Log.e("RecordingManager", "Recording failed: $error")
-                                    }
-                                }
-                            }
-                        }
-                        
-                        override fun onComplete(path: String?) {
-                            if (!isFinishing && !isDestroyed) {
-                                runOnUiThread {
-                                    if (!isFinishing && !isDestroyed) {
-                                        isRecording = false
-                                        // Restore gradient background
-                                        binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                                        stopRecordingTimer()
-                                        val finalPath = path ?: videoFile
-                                        Toast.makeText(this@MainActivity, "Video saved", Toast.LENGTH_SHORT).show()
-                                        // Use MediaRepository for consistent capture handling
-                                        captureRealImageToRepository(finalPath, "Video")
-                                        android.util.Log.d("RecordingManager", "Recording completed: $finalPath")
-                                    }
-                                }
-                            }
-                        }
-                    }, videoFile)
-                } catch (e: Exception) {
-                    android.util.Log.e("RecordingManager", "Recording failed with exception: ${e.message}")
-                    Toast.makeText(this, "Recording failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                try {
-                    android.util.Log.d("RecordingManager", "Stopping video recording...")
-                    camera.captureVideoStop()
-                    isRecording = false
-                    // Restore gradient background
-                    binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                    stopRecordingTimer()
-                    Toast.makeText(this, "Recording stopped", Toast.LENGTH_SHORT).show()
-                    android.util.Log.d("RecordingManager", "Recording stopped successfully")
-                } catch (e: Exception) {
-                    android.util.Log.e("RecordingManager", "Stop recording failed with exception: ${e.message}")
-                    stopRecordingTimer()
-                    Toast.makeText(this, "Stop recording failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        } ?: run {
-            android.util.Log.w("RecordingManager", "Camera not available for recording")
-            Toast.makeText(this, "Camera not connected", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
     private fun toggleCameraControls() {
         // This method is now handled by the settings panel
         // controlsVisible = !controlsVisible
@@ -4051,12 +3513,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     
     private fun resetCameraControls() {
-        if (!isCameraReady) {
+        if (!cameraStateStore.isCameraReady) {
             Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
             return
         }
 
-        mCurrentCamera?.let { camera ->
+        cameraStateStore.mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     // Reset all camera controls
@@ -4148,43 +3610,13 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
     }
     
-    private fun startRecordingTimer() {
-        recordingStartTime = System.currentTimeMillis()
-        binding.recordingTimer.visibility = View.VISIBLE
-        
-        recordingRunnable = object : Runnable {
-            override fun run() {
-                val elapsedTime = System.currentTimeMillis() - recordingStartTime
-                val seconds = (elapsedTime / 1000) % 60
-                val minutes = (elapsedTime / (1000 * 60)) % 60
-                val hours = (elapsedTime / (1000 * 60 * 60)) % 24
-                
-                val timeString = if (hours > 0) {
-                    String.format("%02d:%02d:%02d", hours, minutes, seconds)
-                } else {
-                    String.format("%02d:%02d", minutes, seconds)
-                }
-                
-                binding.recordingTimer.text = timeString
-                recordingHandler?.postDelayed(this, 1000)
-            }
-        }
-        recordingHandler?.post(recordingRunnable!!)
-    }
-    
-    private fun stopRecordingTimer() {
-        recordingRunnable?.let { recordingHandler?.removeCallbacks(it) }
-        binding.recordingTimer.visibility = View.GONE
-        binding.recordingTimer.text = "00:00"
-    }
-    
     private fun toggleAutoFocus() {
-        if (!isCameraReady) {
+        if (!cameraStateStore.isCameraReady) {
             Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
             return
         }
 
-        mCurrentCamera?.let { camera ->
+        cameraStateStore.mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     val currentAutoFocus = camera.getAutoFocus() ?: false
@@ -4209,12 +3641,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     
     private fun toggleAutoExposure() {
-        if (!isCameraReady) {
+        if (!cameraStateStore.isCameraReady) {
             Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
             return
         }
 
-        mCurrentCamera?.let { camera ->
+        cameraStateStore.mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     if (camera.isAutoExposureSupported()) {
@@ -4243,12 +3675,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     }
     
     private fun toggleAutoWhiteBalance() {
-        if (!isCameraReady) {
+        if (!cameraStateStore.isCameraReady) {
             Toast.makeText(this, "Camera not ready - please wait for camera to connect", Toast.LENGTH_SHORT).show()
             return
         }
 
-        mCurrentCamera?.let { camera ->
+        cameraStateStore.mCurrentCamera?.let { camera ->
             if (camera is CameraUVC) {
                 try {
                     val currentAutoWB = camera.getAutoWhiteBalance() ?: false
@@ -4272,103 +3704,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
     }
     
-    // ========================================
-    // SEPARATE BLANK CAPTURE SYSTEM
-    // This code runs ONLY when camera is not connected
-    // ========================================
-    
-    private fun captureBlankImage() {
-        lifecycleScope.launch {
-            try {
-                android.util.Log.d("BlankCapture", "Capturing blank image (no camera connected)...")
-
-                // Get current patient and session context
-                val patientId = GlobalPatientManager.getCurrentPatientId()
-                if (patientId == null) {
-                    android.util.Log.w("BlankCapture", "No patient selected, cannot capture")
-                    Toast.makeText(this@MainActivity, "Please select a patient first", Toast.LENGTH_SHORT).show()
-                    return@launch
-                }
-
-                val sessionId = sessionManager.getCurrentSessionId()
-                android.util.Log.d("BlankCapture", "Patient ID: $patientId, Session ID: $sessionId")
-
-                // Create a blank bitmap
-                val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(bitmap)
-
-                // Fill with black background
-                canvas.drawColor(Color.BLACK)
-
-                // Add text overlay
-                val paint = Paint().apply {
-                    color = Color.WHITE
-                    textSize = 60f
-                    isAntiAlias = true
-                    textAlign = Paint.Align.CENTER
-                }
-
-                val text = "Blank Image\n${currentMode} Mode\nNo Camera Connected"
-                val textBounds = Rect()
-                paint.getTextBounds(text, 0, text.length, textBounds)
-
-                val x = bitmap.width / 2f
-                val y = bitmap.height / 2f + textBounds.height() / 2f
-
-                canvas.drawText(text, x, y, paint)
-
-                // Convert bitmap to byte array
-                val outputStream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-                val imageData = outputStream.toByteArray()
-                outputStream.close()
-
-                // Generate filename
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                val fileName = "OralVis_Image_${currentMode}_$timestamp.jpg"
-
-                // Use MediaRepository to create media record atomically
-                val mediaRecord = mediaRepository.createMediaRecord(
-                    patientId = patientId,
-                    sessionId = sessionId,
-                    mediaType = "Image",
-                    mode = currentMode,
-                    fileName = fileName,
-                    fileContent = imageData
-                )
-
-                if (mediaRecord != null) {
-                    android.util.Log.d("BlankCapture", "Media record created: ${mediaRecord.mediaId}")
-
-                    // Update UI - add to session media list for immediate feedback
-                    runOnUiThread {
-                        addSessionMedia(mediaRecord.filePath!!, isVideo = false)
-                        Toast.makeText(this@MainActivity, "Image captured", Toast.LENGTH_SHORT).show()
-                    }
-
-                    android.util.Log.d("BlankCapture", "Blank image captured successfully: ${mediaRecord.mediaId}")
-                } else {
-                    android.util.Log.e("BlankCapture", "Failed to create media record")
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity, "Failed to capture blank image", Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-            } catch (e: Exception) {
-                android.util.Log.e("BlankCapture", "Failed to capture blank image: ${e.message}", e)
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun captureRealImageToRepository(
+    private fun captureRealImageToRepositoryInternal(
         filePath: String,
         mediaType: String,
-        guidedSessionId: String? = null,
-        dentalArch: String? = null,
-        sequenceNumber: Int? = null
+        guidedSessionId: String?,
+        dentalArch: String?,
+        sequenceNumber: Int?
     ) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -4384,7 +3725,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                     return@launch
                 }
 
-                val sessionId = sessionManager.getCurrentSessionId()
+                val sessionId = sessionController.getCurrentSessionId()
                 android.util.Log.d("RealCapture", "Patient ID: $patientId, Session ID: $sessionId")
 
                 // Read file from disk
@@ -4405,7 +3746,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
                     patientId = patientId,
                     sessionId = sessionId,
                     mediaType = mediaType,
-                    mode = currentMode,
+                    mode = cameraModeController.currentMode,
                     fileName = fileName,
                     dentalArch = dentalArch,
                     sequenceNumber = sequenceNumber,
@@ -4438,170 +3779,18 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         }
     }
 
-    private fun captureBlankImageWithGuidedMetadata(
-        guidedSessionId: String,
-        dentalArch: String,
-        sequenceNumber: Int
+    override fun captureRealImageToRepository(
+        filePath: String,
+        mediaType: String,
+        guidedSessionId: String?,
+        dentalArch: String?,
+        sequenceNumber: Int?
     ) {
-        lifecycleScope.launch {
-            try {
-                android.util.Log.d("BlankCapture", "Capturing guided blank image (no camera connected)...")
-                android.util.Log.d("BlankCapture", "Guided metadata - dentalArch: $dentalArch, sequenceNumber: $sequenceNumber, guidedSessionId: $guidedSessionId")
-
-                // Get current patient and session context
-                val patientId = GlobalPatientManager.getCurrentPatientId()
-                if (patientId == null) {
-                    android.util.Log.w("BlankCapture", "No patient selected, cannot capture")
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity, "Please select a patient first", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
-                }
-
-                val sessionId = sessionManager.getCurrentSessionId()
-                android.util.Log.d("BlankCapture", "Patient ID: $patientId, Session ID: $sessionId")
-
-                val bitmap = Bitmap.createBitmap(1920, 1080, Bitmap.Config.ARGB_8888)
-                val canvas = Canvas(bitmap)
-                canvas.drawColor(Color.BLACK)
-
-                val paint = Paint().apply {
-                    color = Color.WHITE
-                    textSize = 60f
-                    isAntiAlias = true
-                    textAlign = Paint.Align.CENTER
-                }
-                val text = "Blank Guided Image\n${currentMode} Mode\nNo Camera Connected"
-                val textBounds = Rect()
-                paint.getTextBounds(text, 0, text.length, textBounds)
-                val x = bitmap.width / 2f
-                val y = bitmap.height / 2f + textBounds.height() / 2f
-                canvas.drawText(text, x, y, paint)
-
-                // Convert bitmap to byte array
-                val outputStream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outputStream)
-                val imageData = outputStream.toByteArray()
-                outputStream.close()
-
-                // Generate filename
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                val fileName = "OralVis_Image_${currentMode}_$timestamp.jpg"
-
-                // Use MediaRepository to create media record atomically
-                val mediaRecord = mediaRepository.createMediaRecord(
-                    patientId = patientId,
-                    sessionId = sessionId,
-                    mediaType = "Image",
-                    mode = currentMode,
-                    fileName = fileName,
-                    dentalArch = dentalArch,
-                    sequenceNumber = sequenceNumber,
-                    guidedSessionId = guidedSessionId,
-                    fileContent = imageData
-                )
-
-                if (mediaRecord != null) {
-                    android.util.Log.d("BlankCapture", "Guided media record created: ${mediaRecord.mediaId}")
-
-                    // Update UI - add to session media list for immediate feedback
-                    runOnUiThread {
-                        addSessionMedia(mediaRecord.filePath!!, isVideo = false)
-                        Toast.makeText(this@MainActivity, "Guided blank image captured", Toast.LENGTH_SHORT).show()
-                    }
-
-                    android.util.Log.d("BlankCapture", "Guided blank image captured successfully: ${mediaRecord.mediaId}")
-                } else {
-                    android.util.Log.e("BlankCapture", "Failed to create guided media record")
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity, "Failed to capture guided blank image", Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-            } catch (e: Exception) {
-                android.util.Log.e("BlankCapture", "Failed to capture guided blank image: ${e.message}", e)
-                runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Failed to capture blank image: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
+        captureRealImageToRepositoryInternal(filePath, mediaType, guidedSessionId, dentalArch, sequenceNumber)
     }
-    
-    private fun captureBlankVideo() {
-        try {
-            android.util.Log.d("BlankCapture", "Starting blank video recording (no camera connected)...")
-            
-            // Update UI to show recording state
-            isRecording = true
-            // Keep gradient background
-            startRecordingTimer()
-            Toast.makeText(this, "Recording started (blank video)", Toast.LENGTH_SHORT).show()
-            
-            // Simulate recording duration (3 seconds)
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    // Create video file path
-                    val videoPath = createVideoFile()
-                    android.util.Log.d("BlankCapture", "Video path created: $videoPath")
-                    
-                    // Verify directory exists
-                    val videoFile = java.io.File(videoPath)
-                    val parentDir = videoFile.parentFile
-                    android.util.Log.d("BlankCapture", "Video parent directory exists: ${parentDir?.exists()}")
-                    android.util.Log.d("BlankCapture", "Video parent directory path: ${parentDir?.absolutePath}")
-                    
-                    // Create a blank video file (text file for now)
-                    android.util.Log.d("BlankCapture", "Creating video file: $videoPath")
-                    val fileCreated = videoFile.createNewFile()
-                    android.util.Log.d("BlankCapture", "Video file created: $fileCreated")
-                    
-                    // Write video information
-                    val outputStream = FileOutputStream(videoFile)
-                    val content = "Blank Video - ${currentMode} Mode - No Camera Connected\nGenerated at: ${Date()}\nThis is a placeholder video file."
-                    outputStream.write(content.toByteArray())
-                    outputStream.flush()
-                    outputStream.close()
-                    
-                    // Verify file was created
-                    val fileExists = videoFile.exists()
-                    val fileSize = if (fileExists) videoFile.length() else 0
-                    android.util.Log.d("BlankCapture", "Video file exists after save: $fileExists, size: $fileSize bytes")
-                    
-                    // Small delay to ensure file is fully written
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        // Log to database
-                        android.util.Log.d("BlankCapture", "Logging blank video to database: $videoPath")
-                        logMediaToDatabase(videoPath, "Video")
-                        // Add to session media list
-                        addSessionMedia(videoPath, isVideo = true)
-                        
-                        // Show success message
-                        Toast.makeText(this, "Video recorded", Toast.LENGTH_SHORT).show()
-                        android.util.Log.d("BlankCapture", "Blank video recorded successfully: $videoPath")
-                    }, 100)
-                    
-                    // Update UI to show recording stopped
-                    isRecording = false
-                    // Restore gradient background
-                    binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                    stopRecordingTimer()
-                    
-                } catch (e: Exception) {
-                    android.util.Log.e("BlankCapture", "Failed to create blank video file: ${e.message}")
-                    Toast.makeText(this, "Failed to create blank video: ${e.message}", Toast.LENGTH_SHORT).show()
-                    
-                    // Reset UI state
-                    isRecording = false
-                    // Restore gradient background
-                    binding.btnRecord.setBackgroundResource(R.drawable.button_gradient_darkred)
-                    stopRecordingTimer()
-                }
-            }, 3000) // 3 second recording
-            
-        } catch (e: Exception) {
-            android.util.Log.e("BlankCapture", "Failed to start blank video recording: ${e.message}")
-            Toast.makeText(this, "Failed to start blank video recording: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
+
+    override fun captureRealImageToRepository(filePath: String, mediaType: String) {
+        captureRealImageToRepositoryInternal(filePath, mediaType, null, null, null)
     }
     
     override fun onDestroy() {
@@ -4611,7 +3800,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
         cancelCdcStartSchedule()
 
         // Destroy USB serial manager
-        usbSerialManager?.destroy()
+        usbController?.destroy()
         usbSerialManager = null
         android.util.Log.d("UsbSerial", "USB serial manager destroyed in onDestroy")
 
@@ -4620,10 +3809,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             GlobalPatientManager.currentPatient.removeObserver(it)
         }
 
-        // Unregister GuidedCaptureManager preview callback
-        guidedCaptureManager?.let { manager ->
-            mCurrentCamera?.removePreviewDataCallBack(manager)
-        }
+        // Phase 5B: Unregister preview callbacks via router
+        previewCallbackRouter.detachFromCamera(cameraStateStore.mCurrentCamera)
 
         // Clean up exposure update handler
         exposureUpdateHandler.removeCallbacks(exposureUpdateRunnable)
@@ -4639,7 +3826,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
     private fun cleanupEmptySession() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val currentSessionId = sessionManager.getCurrentSessionId()
+                val currentSessionId = sessionController.getCurrentSessionId()
                 if (currentSessionId != null) {
                     // Check if session has any media
                     val mediaCount = mediaDatabase.mediaDao().getMediaCountBySession(currentSessionId)
@@ -4717,10 +3904,36 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver {
             // NOTE: Camera should remain connected - do NOT close it
             // This method now only clears UI state, not camera connection
 
-            android.util.Log.d("CAMERA_LIFE", "Camera preview cleared but camera remains connected = ${mCurrentCamera != null}")
+            android.util.Log.d("CAMERA_LIFE", "Camera preview cleared but camera remains connected = ${cameraStateStore.mCurrentCamera != null}")
 
         } catch (e: Exception) {
             android.util.Log.w("MainActivity", "Failed to clear camera preview: ${e.message}")
         }
+    }
+
+    // ========== PhotoCaptureHost / VideoCaptureHost (Phase 5C) ==========
+    override fun runOnMain(r: Runnable) {
+        runOnUiThread(r)
+    }
+    override fun showToast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+    override fun isActivityValid(): Boolean = !isFinishing && !isDestroyed
+    override fun getCurrentMode(): String = cameraModeController.currentMode
+    override fun getPatientId(): Long? = GlobalPatientManager.getCurrentPatientId()
+    override fun getSessionId(): String? = sessionController.getCurrentSessionId()
+    override fun getCamera(): MultiCameraClient.ICamera? = cameraStateStore.mCurrentCamera
+    override fun setRecordButtonBackground(resId: Int) {
+        binding.btnRecord.setBackgroundResource(resId)
+    }
+    override fun setRecordingTimerVisible(visible: Boolean) {
+        binding.recordingTimer.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+    override fun updateRecordingTimerText(text: String) {
+        binding.recordingTimer.text = text
+    }
+    override fun getMainHandler(): Handler = recordingHandlerForVideo!!
+    override fun logMediaToDatabase(filePath: String, mediaType: String) {
+        logMediaToDatabase(filePath, mediaType, null, null, null)
     }
 }
