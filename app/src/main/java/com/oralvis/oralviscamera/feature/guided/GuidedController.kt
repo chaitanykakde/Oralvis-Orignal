@@ -1,14 +1,13 @@
 package com.oralvis.oralviscamera.feature.guided
 
-// Phase 3 Guided Capture Isolation.
-// This is a thin delegating wrapper around GuidedCaptureManager with no logic changes.
+// Phase 7: Guided domain consolidation.
+// GuidedController is now the single public entry point for all guided capture functionality.
 
 import android.content.Context
 import android.view.ViewGroup
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.oralvis.oralviscamera.guidedcapture.GuidedCaptureManager
-import com.oralvis.oralviscamera.guidedcapture.SessionBridge
 
 class GuidedController(
     private val context: Context,
@@ -48,6 +47,13 @@ class GuidedController(
     }
 
     /**
+     * Disable guided capture.
+     */
+    fun disable() {
+        guidedCaptureManager?.disable()
+    }
+
+    /**
      * Returns the guided preview callback for router to add/remove. GuidedController does not touch camera APIs.
      */
     fun getPreviewCallback(): IPreviewDataCallBack? = guidedCaptureManager
@@ -59,6 +65,12 @@ class GuidedController(
     fun handleManualCapture(): Boolean {
         val manager = guidedCaptureManager ?: return false
         return manager.handleManualCapture()
+    }
+
+    companion object {
+        // Export SessionBridge constants for convenience
+        const val DENTAL_ARCH_LOWER = SessionBridge.DENTAL_ARCH_LOWER
+        const val DENTAL_ARCH_UPPER = SessionBridge.DENTAL_ARCH_UPPER
     }
 }
 
