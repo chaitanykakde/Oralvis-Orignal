@@ -23,6 +23,7 @@ import com.oralvis.oralviscamera.session.SessionManager
 import com.oralvis.oralviscamera.gallery.SequenceCard
 import com.oralvis.oralviscamera.gallery.SequenceCardAdapter
 import com.oralvis.oralviscamera.SessionMediaGridAdapter
+import com.oralvis.oralviscamera.feature.gallery.flow.GalleryFlowCoordinator
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,12 +35,11 @@ class GalleryActivity : AppCompatActivity() {
     private lateinit var mediaRepository: com.oralvis.oralviscamera.database.MediaRepository
     private lateinit var sequenceAdapter: SequenceCardAdapter
     private lateinit var themeManager: ThemeManager
+    private lateinit var galleryFlowCoordinator: GalleryFlowCoordinator
     
     // Tab indices: 0 = Upper Arch, 1 = Lower Arch, 2 = Other
     private var currentArchTab = 1 // Default to Lower Arch
     
-    // All media for current patient
-    private var allMedia: List<com.oralvis.oralviscamera.database.MediaRecordV2> = emptyList()
     private var currentPatientObserver: androidx.lifecycle.Observer<com.oralvis.oralviscamera.database.Patient?>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,6 +61,59 @@ class GalleryActivity : AppCompatActivity() {
 
         mediaRepository = com.oralvis.oralviscamera.database.MediaRepository(this)
         themeManager = ThemeManager(this)
+        
+        galleryFlowCoordinator = GalleryFlowCoordinator(
+            context = this,
+            lifecycleOwner = this,
+            mediaRepository = mediaRepository,
+            onUpdateTabContent = { mediaList ->
+                updateTabContentInternal(mediaList)
+            },
+            onShowNoPatientState = {
+                showNoPatientState()
+            },
+            onShowSessionEmptyState = {
+                showSessionEmptyState()
+            },
+            onRedirectToPatientSelection = {
+                redirectToPatientSelection()
+            },
+            onSyncProgress = { current, total ->
+                runOnUiThread {
+                    binding.btnSaveAndSync.text = "Uploading... $current/$total"
+                }
+            },
+            onSyncPhaseChange = {
+                runOnUiThread {
+                    binding.btnSaveAndSync.text = "Downloading..."
+                }
+            },
+            onSyncComplete = { success, uploadCount, downloadCount, error ->
+                runOnUiThread {
+                    if (success) {
+                        val message = when {
+                            uploadCount > 0 && downloadCount > 0 ->
+                                "Sync complete: $uploadCount uploaded, $downloadCount downloaded"
+                            uploadCount > 0 ->
+                                "Uploaded $uploadCount media file(s) successfully"
+                            downloadCount > 0 ->
+                                "Downloaded $downloadCount media file(s) successfully"
+                            else ->
+                                "No media to sync for this patient"
+                        }
+                        Toast.makeText(this@GalleryActivity, message, Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(
+                            this@GalleryActivity,
+                            "Sync failed: ${error ?: "Unknown error"}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    binding.btnSaveAndSync.isEnabled = true
+                    binding.btnSaveAndSync.text = "Save & Sync"
+                }
+            }
+        )
         
         setupRecycler()
         setupTabs()
@@ -93,7 +146,7 @@ class GalleryActivity : AppCompatActivity() {
                 }
             },
             onDiscardClick = { card ->
-                showDiscardConfirmation(card)
+                galleryFlowCoordinator.showDiscardConfirmation(card) {}
             }
         )
         // Use GridLayoutManager with 2 columns for compact display
@@ -126,13 +179,17 @@ class GalleryActivity : AppCompatActivity() {
     }
     
     private fun updateTabContent() {
+        updateTabContentInternal(galleryFlowCoordinator.allMedia)
+    }
+    
+    private fun updateTabContentInternal(mediaList: List<com.oralvis.oralviscamera.database.MediaRecordV2>) {
         binding.mediaRecyclerView.visibility = View.VISIBLE
         binding.reportsContent.visibility = View.GONE
 
         // Re-group media for the new tab selection
-        if (allMedia.isNotEmpty()) {
+        if (mediaList.isNotEmpty()) {
             android.util.Log.d("TAB_DEBUG", "Re-grouping media for tab $currentArchTab")
-            val sequenceCards = groupMediaIntoSequences(allMedia)
+            val sequenceCards = galleryFlowCoordinator.groupMediaIntoSequences(mediaList, currentArchTab)
 
             android.util.Log.d("TAB_DEBUG", "Tab $currentArchTab: created ${sequenceCards.size} sequence cards")
 
@@ -167,81 +224,9 @@ class GalleryActivity : AppCompatActivity() {
     }
 
     private fun performCloudSync() {
-        val patient = GlobalPatientManager.getCurrentPatient()
-        if (patient == null) {
-            Toast.makeText(this, "No patient selected", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Show progress indication
         binding.btnSaveAndSync.isEnabled = false
         binding.btnSaveAndSync.text = "Syncing..."
-
-        lifecycleScope.launch {
-            try {
-                // Perform two-phase sync
-                val result = SyncOrchestrator.syncPatientMediaTwoPhase(
-                    context = this@GalleryActivity,
-                    patient = patient,
-                    onProgress = { current, total ->
-                        // Update progress for upload phase
-                        runOnUiThread {
-                            binding.btnSaveAndSync.text = "Uploading... $current/$total"
-                        }
-                    },
-                    onPhaseChange = {
-                        // Update UI when moving to download phase
-                        runOnUiThread {
-                            binding.btnSaveAndSync.text = "Downloading..."
-                        }
-                    }
-                )
-
-                runOnUiThread {
-                    if (result.success) {
-                        val uploadCount = result.uploadResult?.successCount ?: 0
-                        val downloadCount = result.downloadResult?.successCount ?: 0
-
-                        val message = when {
-                            uploadCount > 0 && downloadCount > 0 ->
-                                "Sync complete: $uploadCount uploaded, $downloadCount downloaded"
-                            uploadCount > 0 ->
-                                "Uploaded $uploadCount media file(s) successfully"
-                            downloadCount > 0 ->
-                                "Downloaded $downloadCount media file(s) successfully"
-                            else ->
-                                "No media to sync for this patient"
-                        }
-
-                        Toast.makeText(this@GalleryActivity, message, Toast.LENGTH_LONG).show()
-
-                        // Gallery will automatically refresh via Flow observation
-                    } else {
-                        Toast.makeText(
-                            this@GalleryActivity,
-                            "Sync failed: ${result.error ?: "Unknown error"}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-
-                    // Reset button state
-                    binding.btnSaveAndSync.isEnabled = true
-                    binding.btnSaveAndSync.text = "Save & Sync"
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    Toast.makeText(
-                        this@GalleryActivity,
-                        "Sync error: ${e.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-
-                    // Reset button state
-                    binding.btnSaveAndSync.isEnabled = true
-                    binding.btnSaveAndSync.text = "Save & Sync"
-                }
-            }
-        }
+        galleryFlowCoordinator.performCloudSync()
     }
 
     private fun setupActions() {
@@ -311,86 +296,15 @@ class GalleryActivity : AppCompatActivity() {
     }
     
     private fun observeMediaForCurrentPatient() {
-        val patientId = GlobalPatientManager.getCurrentPatientId()
-        android.util.Log.d("GALLERY_DEBUG", "observeMediaForCurrentPatient called")
-        android.util.Log.d("GALLERY_DEBUG", "GlobalPatientManager.getCurrentPatientId() = $patientId")
-        android.util.Log.d("GALLERY_DEBUG", "GlobalPatientManager.hasPatientSelected() = ${GlobalPatientManager.hasPatientSelected()}")
-
-        if (patientId == null) {
-            android.util.Log.d("GalleryActivity", "No patient selected, redirecting to patient selection")
-            redirectToPatientSelection()
-            return
-        }
-
-        // Additional validation: check if patient exists in database
-        lifecycleScope.launch {
-            try {
-                val patient = GlobalPatientManager.getCurrentPatient()
-                android.util.Log.d("GALLERY_DEBUG", "GlobalPatientManager.getCurrentPatient() = $patient")
-                if (patient != null) {
-                    android.util.Log.d("GALLERY_DEBUG", "Patient details: id=${patient.id}, code=${patient.code}, name=${patient.displayName}")
-                }
-
-                if (patient == null) {
-                    android.util.Log.e("GalleryActivity", "Invalid patientId $patientId, redirecting to patient selection")
-                    redirectToPatientSelection()
-                    return@launch
-                }
-
-                android.util.Log.d("GalleryActivity", "Starting session media observation for patient: ${patient.displayName} (id=$patientId)")
-                observeMediaForCurrentSession()
-            } catch (e: Exception) {
-                android.util.Log.e("GalleryActivity", "Error validating patient: ${e.message}")
-                redirectToPatientSelection()
-            }
-        }
+        galleryFlowCoordinator.observeMediaForCurrentPatient()
     }
 
     private fun observeMediaForCurrentSession() {
-        val patientId = GlobalPatientManager.getCurrentPatientId()
-        val sessionId = SessionManager(this).getCurrentSessionId()
-
-        android.util.Log.d("GALLERY_DEBUG", "observeMediaForCurrentSession called with patientId: $patientId, sessionId: $sessionId")
-
-        if (patientId == null || sessionId == null) {
-            android.util.Log.d("GalleryActivity", "No active patient or session, showing empty gallery")
-            showSessionEmptyState()
-            return
-        }
-
-        // Use repeatOnLifecycle to properly observe the Flow
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                try {
-                    android.util.Log.d("GalleryActivity", "Collecting session media flow for patientId: $patientId, sessionId: $sessionId")
-                    android.util.Log.d("SESSION_DEBUG", "Fetching session media for patientId=$patientId, sessionId=$sessionId")
-                    mediaRepository.getMediaForCurrentSession(patientId, sessionId).collect { mediaList ->
-                        android.util.Log.d("GALLERY_DEBUG", "Session flow collected - mediaList.size = ${mediaList.size}")
-                        android.util.Log.d("GalleryActivity", "Received session media list update: ${mediaList.size} items")
-                        android.util.Log.d("SESSION_MEDIA", "Gallery received ${mediaList.size} media records for sessionId=$sessionId")
-
-                        // Detailed logging of each media item
-                        mediaList.forEachIndexed { index, media ->
-                            android.util.Log.d("GALLERY_DEBUG", "SessionMedia[$index]: mediaId=${media.mediaId}, sessionId=${media.sessionId}, patientId=${media.patientId}, state=${media.state}, fileName=${media.fileName}")
-                        }
-
-                        allMedia = mediaList
-
-                        // Update tab content with the new media (this will handle grouping and adapter updates)
-                        updateTabContent()
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("GalleryActivity", "Error observing session media: ${e.message}")
-                    binding.mediaRecyclerView.visibility = View.GONE
-                    binding.mediaEmptyState.visibility = View.VISIBLE
-                }
-            }
-        }
+        galleryFlowCoordinator.observeMediaForCurrentSession()
     }
 
     private fun showSessionEmptyState() {
         android.util.Log.d("GalleryActivity", "Showing session empty state")
-        allMedia = emptyList()
         binding.mediaRecyclerView.visibility = View.GONE
         binding.mediaEmptyState.visibility = View.VISIBLE
         // Update empty state text to be session-specific
@@ -415,316 +329,6 @@ class GalleryActivity : AppCompatActivity() {
         } catch (e: Exception) {
             android.util.Log.e("GalleryActivity", "Cannot open media preview: ${e.message}")
             Toast.makeText(this, "Cannot open media preview", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    /**
-     * Group media into sequence cards based on arch tab selection.
-     */
-    private fun groupMediaIntoSequences(mediaList: List<com.oralvis.oralviscamera.database.MediaRecordV2>): List<SequenceCard> {
-        android.util.Log.d("GROUP_DEBUG", "groupMediaIntoSequences called with ${mediaList.size} media items")
-        android.util.Log.d("GROUP_DEBUG", "Current arch tab: $currentArchTab")
-
-        // DEBUG: Log all media with their properties
-        mediaList.forEachIndexed { index, media ->
-            android.util.Log.d("GROUP_DEBUG", "Media[$index]: mediaId=${media.mediaId}, fileName=${media.fileName}, arch=${media.dentalArch}, mode=${media.mode}, sessionId=${media.sessionId}, guidedId=${media.guidedSessionId}, seqNum=${media.sequenceNumber}, state=${media.state}")
-        }
-
-        // 2️⃣ Log BEFORE TAB FILTERING
-        android.util.Log.d("MEDIA_DEBUG", "Before filtering: total media = ${mediaList.size}")
-        val archGroups = mediaList.groupBy { it.dentalArch ?: "UNGUIDED" }
-        archGroups.forEach { (arch, list) ->
-            android.util.Log.d("MEDIA_DEBUG", "Arch=$arch count=${list.size}")
-        }
-
-        // DEBUG: Log current tab and media details
-        android.util.Log.d("FILTER_DEBUG", "=== FILTERING DEBUG ===")
-        android.util.Log.d("FILTER_DEBUG", "Current tab: $currentArchTab")
-        android.util.Log.d("FILTER_DEBUG", "Total media before filtering: ${mediaList.size}")
-
-        // Log arch distribution
-        val archCounts = mediaList.groupBy { it.dentalArch ?: "NULL" }
-        archCounts.forEach { (arch, list) ->
-            android.util.Log.d("FILTER_DEBUG", "Arch '$arch': ${list.size} items")
-        }
-
-        // Filter by current arch tab
-        // For UPPER/LOWER tabs: show guided media with that arch, plus unguided media (assigned to LOWER by default)
-        // For OTHER tab: show media with other arch values or special cases
-        val filteredMedia = when (currentArchTab) {
-            0 -> {
-                // UPPER tab: only guided UPPER media (unguided go to LOWER)
-                val filtered = mediaList.filter { it.dentalArch == "UPPER" }
-                android.util.Log.d("FILTER_DEBUG", "UPPER tab result: ${filtered.size} items")
-                filtered
-            }
-            1 -> {
-                // LOWER tab: guided LOWER media + all unguided media (default location)
-                val guidedLower = mediaList.filter { it.dentalArch == "LOWER" }
-                val unguided = mediaList.filter { it.dentalArch == null }
-                val filtered = guidedLower + unguided
-                android.util.Log.d("FILTER_DEBUG", "LOWER tab: guided=${guidedLower.size}, unguided=${unguided.size}, total=${filtered.size} items")
-                filtered
-            }
-            2 -> {
-                // OTHER tab: media with non-standard arch values
-                val filtered = mediaList.filter { it.dentalArch != "UPPER" && it.dentalArch != "LOWER" && it.dentalArch != null }
-                android.util.Log.d("FILTER_DEBUG", "OTHER tab result: ${filtered.size} items")
-                filtered
-            }
-            else -> {
-                android.util.Log.d("FILTER_DEBUG", "Unknown tab $currentArchTab, returning empty")
-                emptyList()
-            }
-        }
-
-        android.util.Log.d("FILTER_DEBUG", "Final filtered count: ${filteredMedia.size}")
-        android.util.Log.d("FILTER_DEBUG", "=== END FILTERING DEBUG ===")
-
-        // 3️⃣ Log AFTER TAB FILTERING
-        android.util.Log.d(
-            "MEDIA_DEBUG",
-            "After filtering for tab=$currentArchTab, count=${filteredMedia.size}"
-        )
-        filteredMedia.forEach { media ->
-            android.util.Log.d(
-                "MEDIA_DEBUG",
-                "FILTERED mediaId=${media.mediaId}, arch=${media.dentalArch}, cloud=${media.cloudFileName}, fileName=${media.fileName}"
-            )
-        }
-
-        if (filteredMedia.isEmpty()) {
-            android.util.Log.d("GalleryActivity", "No media found for current arch tab")
-            return emptyList()
-        }
-        
-        // Group by guidedSessionId, dentalArch, and sequenceNumber
-        val sequenceMap = mutableMapOf<String, MutableMap<Int, SequenceCard>>()
-
-        // First, handle guided media (local captured with dentalArch, sequenceNumber, and guidedSessionId)
-        // Cloud media (DOWNLOADED state) is treated as unguided even if it has sequenceNumber
-        val guidedMedia = filteredMedia.filter { it.dentalArch != null && it.sequenceNumber != null && it.guidedSessionId != null && it.state != MediaState.DOWNLOADED }
-        val unguidedMedia = filteredMedia.filter { it.dentalArch == null || it.state == MediaState.DOWNLOADED }
-
-        // Group guided media by guidedSessionId + arch and pair optimally within each group
-        val guidedGroups = guidedMedia.groupBy { media ->
-            val arch = media.dentalArch!!
-            val sessionId = media.guidedSessionId ?: "legacy_${media.sessionId}"
-            "$sessionId|$arch"
-        }
-
-        // Process each guided session+arch group to create optimally paired sequence cards
-        guidedGroups.forEach { (groupKey, mediaList) ->
-            val arch = groupKey.substringAfterLast("|")
-            val guidedSessionId = mediaList.first().guidedSessionId
-
-            android.util.Log.d("GalleryActivity", "Processing guided group: $groupKey with ${mediaList.size} media items")
-
-            // Separate normal and fluorescence images
-            val normalImages = mediaList.filter { it.mode == "Normal" }.sortedBy { it.captureTime }
-            val fluorescenceImages = mediaList.filter { it.mode == "Fluorescence" }.sortedBy { it.captureTime }
-
-            // Create paired cards - pair each normal with each fluorescence optimally
-            val pairedCount = minOf(normalImages.size, fluorescenceImages.size)
-            var pairIndex = 0
-
-            // Create complete pairs (normal + fluorescence)
-            for (i in 0 until pairedCount) {
-                val cardKey = "$groupKey|paired_$i"
-                sequenceMap[cardKey] = mutableMapOf()
-                val sequenceMapForSession = sequenceMap[cardKey]!!
-
-                val card = SequenceCard(
-                    sequenceNumber = pairIndex + 1, // Start from 1
-                    dentalArch = arch,
-                    guidedSessionId = guidedSessionId,
-                    rgbImage = normalImages[i],
-                    fluorescenceImage = fluorescenceImages[i]
-                )
-
-                sequenceMapForSession[pairIndex + 1] = card
-                android.util.Log.d("GalleryActivity", "Created complete guided pair: ${card.getTitle()}, normal=${card.rgbImage?.fileName}, fluoro=${card.fluorescenceImage?.fileName}")
-                pairIndex++
-            }
-
-            // Handle remaining unpaired images
-            val remainingNormals = normalImages.drop(pairedCount)
-            val remainingFluorescences = fluorescenceImages.drop(pairedCount)
-
-            // Create cards for remaining normal images (with null fluorescence)
-            remainingNormals.forEachIndexed { index, normalMedia ->
-                val cardKey = "$groupKey|unpaired_normal_$index"
-                sequenceMap[cardKey] = mutableMapOf()
-                val sequenceMapForSession = sequenceMap[cardKey]!!
-
-                val card = SequenceCard(
-                    sequenceNumber = pairIndex + 1 + index,
-                    dentalArch = arch,
-                    guidedSessionId = guidedSessionId,
-                    rgbImage = normalMedia,
-                    fluorescenceImage = null
-                )
-
-                sequenceMapForSession[pairIndex + 1 + index] = card
-                android.util.Log.d("GalleryActivity", "Created unpaired guided normal card: ${card.getTitle()}, normal=${card.rgbImage?.fileName}")
-            }
-
-            // Create cards for remaining fluorescence images (with null normal)
-            remainingFluorescences.forEachIndexed { index, fluoroMedia ->
-                val cardKey = "$groupKey|unpaired_fluoro_$index"
-                sequenceMap[cardKey] = mutableMapOf()
-                val sequenceMapForSession = sequenceMap[cardKey]!!
-
-                val card = SequenceCard(
-                    sequenceNumber = pairIndex + 1 + remainingNormals.size + index,
-                    dentalArch = arch,
-                    guidedSessionId = guidedSessionId,
-                    rgbImage = null,
-                    fluorescenceImage = fluoroMedia
-                )
-
-                sequenceMapForSession[pairIndex + 1 + remainingNormals.size + index] = card
-                android.util.Log.d("GalleryActivity", "Created unpaired guided fluoro card: ${card.getTitle()}, fluoro=${card.fluorescenceImage?.fileName}")
-            }
-        }
-
-        // Process unguided media (group by session + arch and pair normal + fluorescence optimally)
-        val unguidedGroups = unguidedMedia.groupBy { media ->
-            val arch = media.dentalArch ?: "LOWER"
-            "unguided_session_${media.sessionId}|$arch"
-        }
-
-        // Process each session+arch group to create optimally paired sequence cards
-        unguidedGroups.forEach { (groupKey, mediaList) ->
-            val arch = groupKey.substringAfterLast("|")
-            val sequenceNum = 1 // All unguided pairs get sequence number 1
-
-            android.util.Log.d("GalleryActivity", "Processing unguided group: $groupKey with ${mediaList.size} media items")
-
-            // Separate normal and fluorescence images
-            val normalImages = mediaList.filter { it.mode == "Normal" }.sortedBy { it.captureTime }
-            val fluorescenceImages = mediaList.filter { it.mode == "Fluorescence" }.sortedBy { it.captureTime }
-
-            // Create paired cards - pair each normal with each fluorescence optimally
-            val pairedCount = minOf(normalImages.size, fluorescenceImages.size)
-            var pairIndex = 0
-
-            // Create complete pairs (normal + fluorescence)
-            for (i in 0 until pairedCount) {
-                val cardKey = "$groupKey|paired_$i"
-                sequenceMap[cardKey] = mutableMapOf()
-                val sequenceMapForSession = sequenceMap[cardKey]!!
-
-                val card = SequenceCard(
-                    sequenceNumber = sequenceNum + i,
-                    dentalArch = arch,
-                    guidedSessionId = null,
-                    rgbImage = normalImages[i],
-                    fluorescenceImage = fluorescenceImages[i]
-                )
-
-                sequenceMapForSession[sequenceNum + i] = card
-                android.util.Log.d("GalleryActivity", "Created complete pair: ${card.getTitle()}, normal=${card.rgbImage?.fileName}, fluoro=${card.fluorescenceImage?.fileName}")
-                pairIndex++
-            }
-
-            // Handle remaining unpaired images
-            val remainingNormals = normalImages.drop(pairedCount)
-            val remainingFluorescences = fluorescenceImages.drop(pairedCount)
-
-            // Create cards for remaining normal images (with null fluorescence)
-            remainingNormals.forEachIndexed { index, normalMedia ->
-                val cardKey = "$groupKey|unpaired_normal_$index"
-                sequenceMap[cardKey] = mutableMapOf()
-                val sequenceMapForSession = sequenceMap[cardKey]!!
-
-                val card = SequenceCard(
-                    sequenceNumber = sequenceNum + pairIndex + index,
-                    dentalArch = arch,
-                    guidedSessionId = null,
-                    rgbImage = normalMedia,
-                    fluorescenceImage = null
-                )
-
-                sequenceMapForSession[sequenceNum + pairIndex + index] = card
-                android.util.Log.d("GalleryActivity", "Created unpaired normal card: ${card.getTitle()}, normal=${card.rgbImage?.fileName}")
-            }
-
-            // Create cards for remaining fluorescence images (with null normal)
-            remainingFluorescences.forEachIndexed { index, fluoroMedia ->
-                val cardKey = "$groupKey|unpaired_fluoro_$index"
-                sequenceMap[cardKey] = mutableMapOf()
-                val sequenceMapForSession = sequenceMap[cardKey]!!
-
-                val card = SequenceCard(
-                    sequenceNumber = sequenceNum + pairIndex + remainingNormals.size + index,
-                    dentalArch = arch,
-                    guidedSessionId = null,
-                    rgbImage = null,
-                    fluorescenceImage = fluoroMedia
-                )
-
-                sequenceMapForSession[sequenceNum + pairIndex + remainingNormals.size + index] = card
-                android.util.Log.d("GalleryActivity", "Created unpaired fluoro card: ${card.getTitle()}, fluoro=${card.fluorescenceImage?.fileName}")
-            }
-        }
-        
-        // Flatten and sort by sequence number
-        val allSequences = sequenceMap.values.flatMap { it.values }
-
-        // Log sequence card creation summary
-        val guidedCount = guidedMedia.size
-        val unguidedCount = unguidedMedia.size
-        android.util.Log.d(
-            "MEDIA_DEBUG",
-            "Created ${allSequences.size} sequence cards from ${filteredMedia.size} filtered media items (guided: $guidedCount, unguided: $unguidedCount)"
-        )
-        allSequences.forEachIndexed { index, card ->
-            android.util.Log.d(
-                "MEDIA_DEBUG",
-                "SEQUENCE_CARD[$index] seq=${card.sequenceNumber}, arch=${card.dentalArch}, rgbId=${card.rgbImage?.mediaId}, fluoId=${card.fluorescenceImage?.mediaId}, guided=${card.guidedSessionId != null}"
-            )
-        }
-
-        return allSequences.sortedBy { it.sequenceNumber }
-    }
-    
-    private fun showDiscardConfirmation(card: SequenceCard) {
-        AlertDialog.Builder(this)
-            .setTitle("Discard Pair")
-            .setMessage("Are you sure you want to discard this sequence pair? This action cannot be undone.")
-            .setPositiveButton("Discard") { _, _ ->
-                discardSequencePair(card)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-    
-    private fun discardSequencePair(card: SequenceCard) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                // TODO: Implement proper media deletion via MediaRepository
-                // Delete RGB image if exists
-                card.rgbImage?.let { media ->
-                    // mediaRepository.deleteMedia(media.mediaId)
-                    File(media.filePath ?: "").delete()
-                }
-
-                // Delete Fluorescence image if exists
-                card.fluorescenceImage?.let { media ->
-                    // mediaRepository.deleteMedia(media.mediaId)
-                    File(media.filePath ?: "").delete()
-                }
-                
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@GalleryActivity, "Sequence pair discarded", Toast.LENGTH_SHORT).show()
-                    // Media observation will handle updates automatically
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@GalleryActivity, "Error discarding pair: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
         }
     }
     
