@@ -1,13 +1,14 @@
 package com.oralvis.oralviscamera.guidedcapture
 
 /**
- * High-level guided capture session controller.
+ * INTERNAL: High-level guided capture session controller.
+ * Do NOT import directly - use GuidedController from feature.guided.
  *
  * Mirrors the Python SessionManager state machine semantics but does not
  * perform any I/O or DB work directly. Those responsibilities are delegated
  * to an external SessionBridge implementation on Android.
  */
-class GuidedSessionController(
+internal class GuidedSessionController(
     private val sessionBridge: SessionBridge,
     private val autoCaptureController: AutoCaptureController,
     private val audioManager: GuidedAudioManager? = null

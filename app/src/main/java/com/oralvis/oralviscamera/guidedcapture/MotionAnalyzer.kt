@@ -14,7 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
 /**
- * MotionAnalyzer performs dense optical flow motion analysis on camera preview frames.
+ * INTERNAL: MotionAnalyzer performs dense optical flow motion analysis on camera preview frames.
+ * Do NOT import directly - use GuidedController from feature.guided.
  *
  * This class:
  * - Receives NV21 frames from the camera pipeline

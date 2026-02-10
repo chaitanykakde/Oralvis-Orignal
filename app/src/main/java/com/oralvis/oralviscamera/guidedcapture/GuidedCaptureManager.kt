@@ -8,18 +8,16 @@ import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.oralvis.oralviscamera.R
 
 /**
- * Convenience orchestrator that wires together:
+ * INTERNAL: Convenience orchestrator that wires together:
  *  - MotionAnalyzer
  *  - AutoCaptureController
  *  - GuidedSessionController
  *  - GuidanceOverlayView + CaptureFlashController
  *
- * Host (MainActivity) is responsible for:
- *  - Providing a SessionBridge implementation
- *  - Registering this as IPreviewDataCallBack to receive NV21 frames
- *  - Forwarding button clicks (or allowing the overlay to do so)
+ * External code MUST use GuidedController from feature.guided package.
+ * Do NOT import this class directly.
  */
-class GuidedCaptureManager(
+internal class GuidedCaptureManager(
     private val context: Context,
     private val rootContainer: ViewGroup,
     private val sessionBridge: SessionBridge
