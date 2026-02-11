@@ -59,15 +59,7 @@
             android:name=".MainActivity"
             android:exported="false"
             android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
-            
-            <!-- USB device attached intent -->
-            <intent-filter>
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
-            </intent-filter>
-            <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-                android:resource="@xml/device_filter" />
-        </activity>
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
         
 
         <activity

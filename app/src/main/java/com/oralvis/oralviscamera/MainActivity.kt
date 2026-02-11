@@ -1972,7 +1972,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                 ctrlBlock ?: return
                 // FIX 2: USB permission resolved; allow deferred patient/runtime dialogs
                 usbPermissionPending = false
-                tryDeferredPermissionChecks()
+                // Camera preparation and open/pending FIRST; tryDeferredPermissionChecks LAST
+                // so initializeCameraIfReady() runs after mPendingCameraOpen is set (first-run fix).
 
                 android.util.Log.d("CAMERA_LIFE", "Camera connected")
                 binding.statusText.text = "Camera connected - Opening camera..."
@@ -2067,6 +2068,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                         android.util.Log.d("CameraGate", "Deferred openCamera - SurfaceTexture not ready, will open when ready")
                     }
                 }
+                // Run deferred permission/patient checks AFTER open or pending is set (first-run fix)
+                tryDeferredPermissionChecks()
             }
             
             override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
