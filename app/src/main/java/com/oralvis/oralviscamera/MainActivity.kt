@@ -169,7 +169,47 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
     private var hasRunInitialUsbDeviceScan = false
     // FIX 2: gate patient/runtime dialogs until USB permission is resolved
     private var usbPermissionPending = false
+
+    /** Sequential USB permission: only one request outstanding at a time. UVC first, then CDC. */
+    private enum class UsbPermissionStage { NONE, REQUESTING_UVC, REQUESTING_CDC, COMPLETE }
+    private var usbPermissionStage = UsbPermissionStage.NONE
     private var deferredRuntimePermissionCheck = false
+
+    /** OralVis CDC (serial) device – never treat as UVC camera. */
+    private fun isCdcDevice(device: UsbDevice) = device.vendorId == 0x1209 && device.productId == 0xC550
+
+    /**
+     * Delayed reconnection after USB attach/detach storm.
+     * When USB permission is granted, the device often goes through rapid attach/detach cycles.
+     * The LAST event is frequently a detach, leaving us with no camera. This runnable fires
+     * after the storm settles and reconnects to the first permitted UVC device it finds.
+     */
+    private val reconnectCameraRunnable = Runnable {
+        if (cameraStateStore.mCurrentCamera != null) return@Runnable  // already connected
+        if (cameraStateStore.mPendingCameraOpen != null) return@Runnable  // open pending
+        val client = mCameraClient ?: return@Runnable
+        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+        val devices = client.getDeviceList() ?: return@Runnable
+        for (device in devices) {
+            if (isCdcDevice(device)) continue
+            if (!CameraUtils.isUsbCamera(device) && !CameraUtils.isFilterDevice(this, device)) continue
+            if (!usbManager.hasPermission(device)) continue
+            // Ensure in map so onConnectDev can find it
+            if (!mCameraMap.containsKey(device.deviceId)) {
+                try { mCameraMap[device.deviceId] = CameraUVC(this, device) } catch (_: Throwable) { continue }
+            }
+            android.util.Log.i("CAMERA_LIFE", "reconnectCamera: found permitted UVC device ${device.deviceId} — connecting")
+            client.requestPermission(device)
+            return@Runnable
+        }
+        android.util.Log.d("CAMERA_LIFE", "reconnectCamera: no permitted UVC device found")
+    }
+
+    /** Schedule reconnect check after a delay (cancel any pending one first). */
+    private fun scheduleReconnectCamera(delayMs: Long = 2000L) {
+        binding.root.removeCallbacks(reconnectCameraRunnable)
+        binding.root.postDelayed(reconnectCameraRunnable, delayMs)
+    }
 
     // CDC 20-second stability gate (diagnostic/isolation)
     private val cdcStabilityHandler = Handler(Looper.getMainLooper())
@@ -318,16 +358,15 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         previewSurfaceManager = PreviewSurfaceManager(
             store = cameraStateStore,
             onInitializeCameraIfReady = { cameraStartupCoordinator.onSurfaceReady() },
-            onFirstFrameReceived = { cameraStartupCoordinator.onFirstFrameReceived() }
+            onFirstFrameReceived = { cameraStartupCoordinator.onFirstFrameReceived() },
+            onSurfaceReadyForUsb = { requestPermissionForAlreadyAttachedDevices() }
         )
         previewSurfaceManager.attachTo(binding.cameraTextureView)
 
-        // PROBLEM 1 FIX: Register USBMonitor early so ACTION_USB_PERMISSION and attach events
-        // are never lost. Camera open remains gated by SurfaceTexture readiness.
+        // Register USBMonitor early so ACTION_USB_PERMISSION and attach events are never lost.
+        // USB permission is requested only after surface is ready (in onSurfaceTextureAvailable),
+        // matching the reference app so when user grants, surface exists and camera opens immediately.
         ensureUsbMonitorRegistered()
-        // FIX 1: Immediately evaluate already-attached USB devices so permission dialog
-        // appears without waiting for mDeviceCheckRunnable (1s delay).
-        requestPermissionForAlreadyAttachedDevices()
 
         uiBinder.applyWindowInsets()
         
@@ -573,6 +612,19 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         // Reapply theme when returning from other activities to sync theme changes
         applyTheme()
 
+        // Universal camera recovery: if no camera is open after the initial USB scan,
+        // schedule reconnects. This handles ALL first-run scenarios:
+        //  - grant-while-stopped (onCancelDev with null device)
+        //  - USB attach/detach storm after permission grant  
+        //  - any other race condition that leaves us without a camera
+        if (hasRunInitialUsbDeviceScan && cameraStateStore.mCurrentCamera == null && cameraStateStore.mPendingCameraOpen == null) {
+            android.util.Log.d("CAMERA_LIFE", "onResume: no camera open — scheduling reconnect checks")
+            binding.root.removeCallbacks(reconnectCameraRunnable)
+            binding.root.postDelayed(reconnectCameraRunnable, 500)    // quick check
+            binding.root.postDelayed(reconnectCameraRunnable, 2500)   // after storm settles
+            binding.root.postDelayed(reconnectCameraRunnable, 5000)   // final safety net
+        }
+
         // CDC START REMOVED: CDC now starts only after first frame received
         // This ensures UVC streaming is fully stable before claiming CDC interface
         // See onFirstFrameReceived() for CDC startup
@@ -590,9 +642,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
 
     /**
      * Check if patient selection is required and prompt user if needed.
-     * Called from onResume() to ensure proper lifecycle timing.
+     * Called from onResume() and after USB permission is resolved.
+     * Deferred until [hasRunInitialUsbDeviceScan] so we never show the patient dialog before
+     * the USB permission dialog (avoids activity stopped + cancel when both dialogs appear).
      */
     private fun checkAndPromptForPatientSelection() {
+        if (!hasRunInitialUsbDeviceScan) return
         sessionFlowCoordinator.checkAndPromptForPatientSelection()
     }
     
@@ -601,6 +656,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         
         // Cancel scheduled CDC start if Activity is pausing
         cancelCdcStartSchedule()
+        // Cancel pending reconnect attempts while in background
+        binding.root.removeCallbacks(reconnectCameraRunnable)
         
         // Stop USB serial manager to release USB connection and threads
         usbController?.stop()
@@ -1938,38 +1995,50 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         mCameraClient = MultiCameraClient(this, object : IDeviceConnectCallBack {
             override fun onAttachDev(device: UsbDevice?) {
                 device ?: return
+                // Sequential pipeline: never add CDC to mCameraMap or request permission here.
+                // CDC is requested only after UVC is granted, from tryRequestNextUsbPermissionOrComplete().
+                if (device.vendorId == 0x1209 && device.productId == 0xC550) {
+                    return
+                }
                 if (mCameraMap.containsKey(device.deviceId)) {
                     return
                 }
-                // Create camera instance and store in map
+                if (!CameraUtils.isUsbCamera(device) && !CameraUtils.isFilterDevice(this@MainActivity, device)) {
+                    return
+                }
+                // Create camera instance and store in map (UVC only)
                 val camera = CameraUVC(this@MainActivity, device)
                 mCameraMap[device.deviceId] = camera
-                
                 binding.statusText.text = "USB Camera detected - Requesting permission..."
-                // FIX 2: Gate patient/runtime dialogs until USB permission resolved
                 usbPermissionPending = true
-                // Request permission for the USB device (or processConnect if already granted)
                 mCameraClient?.requestPermission(device)
             }
             
             override fun onDetachDec(device: UsbDevice?) {
+                if (device != null && device.vendorId == 0x1209 && device.productId == 0xC550) {
+                    // CDC only: never in mCameraMap; don't clear camera state
+                    return
+                }
                 cameraStateStore.mPendingCameraOpen = null
-                // Cancel scheduled CDC start (camera detached)
                 cancelCdcStartSchedule()
-                
                 mCameraMap.remove(device?.deviceId)
+                cameraStateStore.mCurrentCamera?.closeCamera()
                 cameraStateStore.mCurrentCamera = null
                 binding.statusText.text = "USB Camera removed"
                 binding.statusText.visibility = View.VISIBLE
-                
-                // Notify coordinator that camera detached
                 cameraControlCoordinator.onCameraDetached()
                 setupTopToolbarResolutionSelector()
+                // After USB grant the device often goes through rapid attach/detach cycles.
+                // Schedule a reconnect so when the storm settles, we pick the device back up.
+                android.util.Log.d("CAMERA_LIFE", "onDetachDec: UVC device detached — scheduling reconnect")
+                scheduleReconnectCamera(2500)
             }
             
             override fun onConnectDev(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
                 device ?: return
                 ctrlBlock ?: return
+                // Camera is connecting — cancel any pending reconnect attempts
+                binding.root.removeCallbacks(reconnectCameraRunnable)
                 // FIX 2: USB permission resolved; allow deferred patient/runtime dialogs
                 usbPermissionPending = false
                 // Camera preparation and open/pending FIRST; tryDeferredPermissionChecks LAST
@@ -2068,15 +2137,32 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                         android.util.Log.d("CameraGate", "Deferred openCamera - SurfaceTexture not ready, will open when ready")
                     }
                 }
-                // Run deferred permission/patient checks AFTER open or pending is set (first-run fix)
-                tryDeferredPermissionChecks()
+                // Sequential permission: after this device was handled, request next or complete
+                if (device.vendorId == 0x1209 && device.productId == 0xC550) {
+                    // CDC device granted: not in mCameraMap; mark complete and start CDC if camera already open
+                    usbPermissionStage = UsbPermissionStage.COMPLETE
+                    usbPermissionPending = false
+                    tryDeferredPermissionChecks()
+                    if (cameraStateStore.mCurrentCamera != null && cameraStateStore.isCameraReady) {
+                        usbController?.start()
+                    }
+                } else {
+                    // UVC device granted: if we were requesting UVC, now request CDC (one at a time)
+                    if (usbPermissionStage == UsbPermissionStage.REQUESTING_UVC) {
+                        tryRequestNextUsbPermissionOrComplete()
+                    } else {
+                        tryDeferredPermissionChecks()
+                    }
+                }
             }
             
             override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: com.jiangdg.usb.USBMonitor.UsbControlBlock?) {
+                if (device != null && device.vendorId == 0x1209 && device.productId == 0xC550) {
+                    // CDC only: don't close UVC camera
+                    return
+                }
                 cameraStateStore.mPendingCameraOpen = null
-                // Cancel scheduled CDC start (camera disconnected)
                 cancelCdcStartSchedule()
-                
                 cameraStateStore.mCurrentCamera?.closeCamera()
                 cameraStateStore.mCurrentCamera = null
                 binding.statusText.text = "Camera disconnected"
@@ -2084,10 +2170,17 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
             }
             
             override fun onCancelDev(device: UsbDevice?) {
-                // FIX 2: USB permission resolved (denied); allow deferred patient/runtime dialogs
-                usbPermissionPending = false
-                tryDeferredPermissionChecks()
-                binding.statusText.text = "Permission denied"
+                // When activity was stopped during the USB dialog, the system may deliver "cancel"
+                // with device=null even though the user granted. Do NOT clear pending state so
+                // onResume can re-check hasPermission() and trigger connect.
+                if (device != null) {
+                    usbPermissionPending = false
+                    usbPermissionStage = UsbPermissionStage.NONE
+                    tryDeferredPermissionChecks()
+                    binding.statusText.text = "Permission denied"
+                } else {
+                    android.util.Log.i("CAMERA_LIFE", "onCancelDev(device=null) - likely grant while stopped; will re-check in onResume")
+                }
             }
         })
         
@@ -2095,9 +2188,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
     }
 
     /**
-     * FIX 1: Immediately evaluate already-attached USB devices so the permission dialog
-     * appears without waiting for mDeviceCheckRunnable (1s delay). Runs once per lifecycle.
-     * Reuses USBMonitor/requestPermission; does not open device or bypass USBMonitor.
+     * Sequential USB permission: request at most ONE device per call.
+     * UVC first; after UVC is granted, request CDC from onConnectDev via tryRequestNextUsbPermissionOrComplete().
+     * Android allows only one outstanding request at a time.
      */
     private fun requestPermissionForAlreadyAttachedDevices() {
         if (hasRunInitialUsbDeviceScan) return
@@ -2106,28 +2199,83 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
 
         val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
         val devices = client.getDeviceList() ?: return
+
+        // Ensure first UVC device (not CDC) is in mCameraMap (for onConnectDev to resolve camera)
         for (device in devices) {
+            if (isCdcDevice(device)) continue
             if (!CameraUtils.isUsbCamera(device) && !CameraUtils.isFilterDevice(this, device)) continue
-            if (mCameraMap.containsKey(device.deviceId)) continue
+            if (mCameraMap.containsKey(device.deviceId)) break
             val camera = CameraUVC(this, device)
             mCameraMap[device.deviceId] = camera
-            if (!usbManager.hasPermission(device)) {
-                usbPermissionPending = true
-                binding.statusText.text = "USB Camera detected - Requesting permission..."
-            }
-            client.requestPermission(device)
             break
         }
-        // Request permission for OralVis CDC controller (0x1209/0xC550) when it's a separate device so CDC can open it
+
+        // Request only UVC if needed (one request at a time). If UVC already granted, trigger
+        // processConnect so onConnectDev(UVC) runs and camera opens (needed on 2nd+ launch).
+        for (device in devices) {
+            if (isCdcDevice(device)) continue
+            if (!CameraUtils.isUsbCamera(device) && !CameraUtils.isFilterDevice(this, device)) continue
+            if (!usbManager.hasPermission(device)) {
+                usbPermissionStage = UsbPermissionStage.REQUESTING_UVC
+                usbPermissionPending = true
+                binding.statusText.text = "USB Camera detected - Requesting permission..."
+                android.util.Log.i("CAMERA_LIFE", "Requesting USB permission for UVC camera deviceId=${device.deviceId} vid=${device.vendorId} pid=${device.productId}")
+                client.requestPermission(device)
+                return
+            }
+            // Already have UVC permission: trigger connect so onConnectDev runs and camera opens
+            android.util.Log.i("CAMERA_LIFE", "UVC already granted - triggering connect for deviceId=${device.deviceId}")
+            client.requestPermission(device)
+            return
+        }
+
+        // UVC already granted (or no UVC); request CDC if needed (one request at a time)
         for (device in devices) {
             if (device.vendorId == 0x1209 && device.productId == 0xC550) {
                 if (!usbManager.hasPermission(device)) {
+                    usbPermissionStage = UsbPermissionStage.REQUESTING_CDC
+                    usbPermissionPending = true
+                    binding.statusText.text = "OralVis controller - Requesting permission..."
                     android.util.Log.i("CDC_TRACE", "Requesting permission for OralVis CDC device (separate) deviceId=${device.deviceId}")
                     client.requestPermission(device)
+                    return
                 }
                 break
             }
         }
+
+        usbPermissionStage = UsbPermissionStage.COMPLETE
+        usbPermissionPending = false
+    }
+
+    /**
+     * After UVC permission granted: request CDC if needed, or mark COMPLETE.
+     * Called from onConnectDev(UVC) only. Never requests both in same call stack.
+     */
+    private fun tryRequestNextUsbPermissionOrComplete() {
+        val client = mCameraClient ?: return
+        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+        val devices = client.getDeviceList() ?: return
+
+        usbPermissionStage = UsbPermissionStage.NONE
+
+        for (device in devices) {
+            if (device.vendorId == 0x1209 && device.productId == 0xC550) {
+                if (!usbManager.hasPermission(device)) {
+                    usbPermissionStage = UsbPermissionStage.REQUESTING_CDC
+                    usbPermissionPending = true
+                    binding.statusText.text = "OralVis controller - Requesting permission..."
+                    android.util.Log.i("CDC_TRACE", "Requesting permission for CDC (after UVC granted) deviceId=${device.deviceId}")
+                    client.requestPermission(device)
+                    return
+                }
+                break
+            }
+        }
+
+        usbPermissionStage = UsbPermissionStage.COMPLETE
+        usbPermissionPending = false
+        tryDeferredPermissionChecks()
     }
 
     /**
