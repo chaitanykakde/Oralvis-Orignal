@@ -183,13 +183,21 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
      * When USB permission is granted, the device often goes through rapid attach/detach cycles.
      * The LAST event is frequently a detach, leaving us with no camera. This runnable fires
      * after the storm settles and reconnects to the first permitted UVC device it finds.
+     * Also handles CDC: if camera is already open, ensures CDC is requested/started.
      */
     private val reconnectCameraRunnable = Runnable {
-        if (cameraStateStore.mCurrentCamera != null) return@Runnable  // already connected
-        if (cameraStateStore.mPendingCameraOpen != null) return@Runnable  // open pending
         val client = mCameraClient ?: return@Runnable
         val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
         val devices = client.getDeviceList() ?: return@Runnable
+
+        // If camera is already open, check CDC
+        if (cameraStateStore.mCurrentCamera != null) {
+            ensureCdcStarted(client, usbManager, devices)
+            return@Runnable
+        }
+        if (cameraStateStore.mPendingCameraOpen != null) return@Runnable  // open pending
+
+        // Try to reconnect UVC camera
         for (device in devices) {
             if (isCdcDevice(device)) continue
             if (!CameraUtils.isUsbCamera(device) && !CameraUtils.isFilterDevice(this, device)) continue
@@ -203,6 +211,29 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
             return@Runnable
         }
         android.util.Log.d("CAMERA_LIFE", "reconnectCamera: no permitted UVC device found")
+    }
+
+    /**
+     * Ensure CDC device is permitted and started. Called when UVC camera is already open.
+     * - If CDC has permission → start it immediately.
+     * - If CDC needs permission → request it (one dialog at a time).
+     */
+    private fun ensureCdcStarted(client: MultiCameraClient, usbManager: UsbManager, devices: List<UsbDevice>) {
+        for (device in devices) {
+            if (device.vendorId == 0x1209 && device.productId == 0xC550) {
+                if (usbManager.hasPermission(device)) {
+                    android.util.Log.i("CDC_TRACE", "ensureCdcStarted: CDC already permitted — starting controller")
+                    usbController?.start()
+                } else if (usbPermissionStage != UsbPermissionStage.REQUESTING_CDC) {
+                    // Request CDC permission (will trigger onConnectDev for CDC when granted)
+                    usbPermissionStage = UsbPermissionStage.REQUESTING_CDC
+                    usbPermissionPending = true
+                    android.util.Log.i("CDC_TRACE", "ensureCdcStarted: requesting CDC permission deviceId=${device.deviceId}")
+                    client.requestPermission(device)
+                }
+                return
+            }
+        }
     }
 
     /** Schedule reconnect check after a delay (cancel any pending one first). */
@@ -612,17 +643,22 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         // Reapply theme when returning from other activities to sync theme changes
         applyTheme()
 
-        // Universal camera recovery: if no camera is open after the initial USB scan,
-        // schedule reconnects. This handles ALL first-run scenarios:
-        //  - grant-while-stopped (onCancelDev with null device)
-        //  - USB attach/detach storm after permission grant  
-        //  - any other race condition that leaves us without a camera
-        if (hasRunInitialUsbDeviceScan && cameraStateStore.mCurrentCamera == null && cameraStateStore.mPendingCameraOpen == null) {
-            android.util.Log.d("CAMERA_LIFE", "onResume: no camera open — scheduling reconnect checks")
-            binding.root.removeCallbacks(reconnectCameraRunnable)
-            binding.root.postDelayed(reconnectCameraRunnable, 500)    // quick check
-            binding.root.postDelayed(reconnectCameraRunnable, 2500)   // after storm settles
-            binding.root.postDelayed(reconnectCameraRunnable, 5000)   // final safety net
+        // Universal camera + CDC recovery after initial USB scan.
+        // Handles: grant-while-stopped, attach/detach storm, CDC not started, etc.
+        if (hasRunInitialUsbDeviceScan) {
+            if (cameraStateStore.mCurrentCamera == null && cameraStateStore.mPendingCameraOpen == null) {
+                // No camera — schedule UVC reconnect
+                android.util.Log.d("CAMERA_LIFE", "onResume: no camera open — scheduling reconnect checks")
+                binding.root.removeCallbacks(reconnectCameraRunnable)
+                binding.root.postDelayed(reconnectCameraRunnable, 500)
+                binding.root.postDelayed(reconnectCameraRunnable, 2500)
+                binding.root.postDelayed(reconnectCameraRunnable, 5000)
+            } else if (cameraStateStore.mCurrentCamera != null) {
+                // Camera is open — ensure CDC is also started (may have been lost due to
+                // grant-while-stopped on the CDC permission dialog)
+                android.util.Log.d("CAMERA_LIFE", "onResume: camera open — checking CDC")
+                binding.root.postDelayed(reconnectCameraRunnable, 500)
+            }
         }
 
         // CDC START REMOVED: CDC now starts only after first frame received
@@ -2147,12 +2183,11 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                         usbController?.start()
                     }
                 } else {
-                    // UVC device granted: if we were requesting UVC, now request CDC (one at a time)
-                    if (usbPermissionStage == UsbPermissionStage.REQUESTING_UVC) {
-                        tryRequestNextUsbPermissionOrComplete()
-                    } else {
-                        tryDeferredPermissionChecks()
-                    }
+                    // UVC device granted: ALWAYS try to request CDC next (regardless of current stage).
+                    // On first run the stage might have been cleared by attach/detach storm or
+                    // onCancelDev(null), so don't gate on REQUESTING_UVC.
+                    android.util.Log.d("CAMERA_LIFE", "UVC connected — requesting CDC permission next (stage was $usbPermissionStage)")
+                    tryRequestNextUsbPermissionOrComplete()
                 }
             }
             
@@ -2172,14 +2207,16 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
             override fun onCancelDev(device: UsbDevice?) {
                 // When activity was stopped during the USB dialog, the system may deliver "cancel"
                 // with device=null even though the user granted. Do NOT clear pending state so
-                // onResume can re-check hasPermission() and trigger connect.
+                // onResume + reconnectCameraRunnable can re-check and connect.
                 if (device != null) {
                     usbPermissionPending = false
                     usbPermissionStage = UsbPermissionStage.NONE
                     tryDeferredPermissionChecks()
                     binding.statusText.text = "Permission denied"
                 } else {
-                    android.util.Log.i("CAMERA_LIFE", "onCancelDev(device=null) - likely grant while stopped; will re-check in onResume")
+                    android.util.Log.i("CAMERA_LIFE", "onCancelDev(device=null) - likely grant while stopped; scheduling reconnect")
+                    // Schedule reconnect to pick up the granted permission (UVC or CDC)
+                    scheduleReconnectCamera(1000)
                 }
             }
         })
