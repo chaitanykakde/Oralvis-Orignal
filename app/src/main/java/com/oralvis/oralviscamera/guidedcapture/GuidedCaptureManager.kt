@@ -3,6 +3,8 @@ package com.oralvis.oralviscamera.guidedcapture
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.oralvis.oralviscamera.R
@@ -29,6 +31,7 @@ internal class GuidedCaptureManager(
     private val guidedSessionController = GuidedSessionController(sessionBridge, autoCaptureController, audioManager)
     private val flashController = CaptureFlashController()
     private val overlayView: GuidanceOverlayView = GuidanceOverlayView(context)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     var isEnabled: Boolean = false
         private set
@@ -133,8 +136,10 @@ internal class GuidedCaptureManager(
         
         // Update flash controller (for visual feedback)
         flashController.onFrameRendered()
-        overlayView.showFlash = flashController.isActive
-        
+        // Must update View on main thread; this callback runs on camera thread
+        val showFlash = flashController.isActive
+        mainHandler.post { overlayView.showFlash = showFlash }
+
         // Pass frame to MotionAnalyzer (it will handle sampling and gating)
         motionAnalyzer.onFrame(data, width, height)
     }

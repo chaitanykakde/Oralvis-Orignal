@@ -148,27 +148,24 @@ class GalleryFlowCoordinator(
         }
 
         // Filter by current arch tab
-        // For UPPER/LOWER tabs: show guided media with that arch, plus unguided media (assigned to LOWER by default)
-        // For OTHER tab: show media with other arch values or special cases
+        // UPPER = guided UPPER only. LOWER = guided LOWER only. OTHER = unguided (remote/manual/record) and any non-UPPER/non-LOWER.
         val filteredMedia = when (currentArchTab) {
             0 -> {
-                // UPPER tab: only guided UPPER media (unguided go to LOWER)
+                // UPPER tab: only guided UPPER media
                 val filtered = mediaList.filter { it.dentalArch == "UPPER" }
                 android.util.Log.d("FILTER_DEBUG", "UPPER tab result: ${filtered.size} items")
                 filtered
             }
             1 -> {
-                // LOWER tab: guided LOWER media + all unguided media (default location)
-                val guidedLower = mediaList.filter { it.dentalArch == "LOWER" }
-                val unguided = mediaList.filter { it.dentalArch == null }
-                val filtered = guidedLower + unguided
-                android.util.Log.d("FILTER_DEBUG", "LOWER tab: guided=${guidedLower.size}, unguided=${unguided.size}, total=${filtered.size} items")
+                // LOWER tab: only guided LOWER media (no unguided)
+                val filtered = mediaList.filter { it.dentalArch == "LOWER" }
+                android.util.Log.d("FILTER_DEBUG", "LOWER tab: guided lower=${filtered.size} items")
                 filtered
             }
             2 -> {
-                // OTHER tab: media with non-standard arch values
-                val filtered = mediaList.filter { it.dentalArch != "UPPER" && it.dentalArch != "LOWER" && it.dentalArch != null }
-                android.util.Log.d("FILTER_DEBUG", "OTHER tab result: ${filtered.size} items")
+                // OTHER tab: unguided (dentalArch == null) + any other arch value (remote/manual/record captures go here)
+                val filtered = mediaList.filter { it.dentalArch != "UPPER" && it.dentalArch != "LOWER" }
+                android.util.Log.d("FILTER_DEBUG", "OTHER tab: unguided+other=${filtered.size} items")
                 filtered
             }
             else -> {
@@ -289,7 +286,9 @@ class GalleryFlowCoordinator(
 
         // Process unguided media (group by session + arch and pair normal + fluorescence optimally)
         val unguidedGroups = unguidedMedia.groupBy { media ->
-            val arch = media.dentalArch ?: "LOWER"
+            // Unguided media should not be forced into LOWER; treat as OTHER so they
+            // appear in the "Other" arch bucket in the gallery.
+            val arch = media.dentalArch ?: "OTHER"
             "unguided_session_${media.sessionId}|$arch"
         }
 

@@ -92,7 +92,10 @@ class MotionAnalyzer {
         clearThreshold = SPEED_CLEAR_THRESH,
         kConfirm = HYSTERESIS_K_CONFIRM
     )
-    
+
+    // When true, processFrame returns without emitting; cleared at end of reset runnable when entering scan phase
+    private val resetPending = AtomicBoolean(false)
+
     // Current scanning state (set externally)
     @Volatile
     var scanningState: ScanningState = ScanningState.READY_TO_SCAN_LOWER
@@ -111,11 +114,18 @@ class MotionAnalyzer {
                 Log.d(TAG, "Transitioning from scanning ($oldValue) to non-scanning ($value), clearing previous frame")
                 clearPreviousFrame()
             } else if (!wasScanning && isScanning) {
-                // Transitioning from non-scanning to scanning: keep state if possible, but reset frame counter for initialization
-                Log.d(TAG, "Transitioning from non-scanning ($oldValue) to scanning ($value), resetting frame counter")
+                // Transitioning from non-scanning to scanning: full reset so Upper never uses Lower's state
+                Log.d(TAG, "Transitioning from non-scanning ($oldValue) to scanning ($value), posting full reset")
+                resetPending.set(true)
                 workerHandler?.post {
-                    frameCount = 0 // Reset frame counter to trigger initialization frames
-                    // Don't clear prevGrayMat - keep it if available for smoother transition
+                    prevGrayMat?.release()
+                    prevGrayMat = null
+                    smoothedMotionScore = null
+                    frameCount = 0
+                    stabilityHysteresis.reset()
+                    speedHysteresis.reset()
+                    resetPending.set(false)
+                    Log.d(TAG, "Reset complete for scanning state $value")
                 }
             } else if (!isScanning) {
                 // Already in non-scanning state, clear if needed
@@ -215,6 +225,9 @@ class MotionAnalyzer {
      */
     private fun processFrame(data: ByteArray, width: Int, height: Int) {
         try {
+            if (resetPending.get()) {
+                return
+            }
             // NV21 format: first width*height bytes are Y (luma) channel
             // Extract Y channel directly for grayscale (more efficient than conversion)
             val ySize = width * height
@@ -297,12 +310,17 @@ class MotionAnalyzer {
                     Log.w(TAG, "MotionScore above threshold: $motionScore > 2.0 (capture will not trigger)")
                 }
             }
-            
+
+            // Do not emit during init frames: device may still be moving; we have not computed real motion yet
+            if (frameCount <= INITIALIZATION_FRAMES) {
+                return
+            }
+
             // Emit on main thread to avoid threading issues
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 onMotionStateUpdated?.invoke(motionState)
             }
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Error processing frame", e)
         }

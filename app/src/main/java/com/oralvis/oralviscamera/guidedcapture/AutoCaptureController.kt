@@ -38,7 +38,11 @@ class AutoCaptureController(
     var isProcessingActive: Boolean = false
         set(value) {
             field = value
-            if (!value) {
+            if (value) {
+                // New scan phase: first capture gated by cooldown; hold-steady starts from scratch
+                lastCaptureTime = System.currentTimeMillis()
+                stableSince = null
+            } else {
                 // When processing is disabled, clear guidance for consumers.
                 onGuidanceUpdated?.invoke(null)
             }
@@ -50,6 +54,12 @@ class AutoCaptureController(
 
     private var stableSince: Long? = null
     private var lastCaptureTime: Long = 0L
+
+    // Throttle guidance UI updates to ~5 FPS to reduce overlay lag; capture logic still runs every update
+    private var lastGuidanceUiUpdateMs: Long = 0L
+    private companion object {
+        private const val GUIDANCE_UI_THROTTLE_MS = 200L
+    }
 
     /**
      * Update controller with a new MotionState.
@@ -140,7 +150,12 @@ class AutoCaptureController(
             }
         }
 
-        guidanceCallback?.invoke(GuidanceResult(prompt, colorInt, motionState))
+        // Throttle UI updates to reduce overlay lag; always allow capture logic above to run
+        val nowForUi = System.currentTimeMillis()
+        if (nowForUi - lastGuidanceUiUpdateMs >= GUIDANCE_UI_THROTTLE_MS) {
+            lastGuidanceUiUpdateMs = nowForUi
+            guidanceCallback?.invoke(GuidanceResult(prompt, colorInt, motionState))
+        }
     }
 }
 

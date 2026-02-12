@@ -46,6 +46,9 @@ class PreviewCallbackRouter(
      */
     fun enableGuided(camera: MultiCameraClient.ICamera?) {
         val guided = guidedControllerProvider() ?: return
+        if (camera == null) {
+            android.util.Log.w("PreviewCallbackRouter", "enableGuided: camera is null, guided callback not attached; will attach when camera opens (onCameraOpened)")
+        }
         guided.enable(camera)
         if (camera != null && guided.isGuidedActive()) {
             guided.getPreviewCallback()?.let { camera.addPreviewDataCallBack(it) }

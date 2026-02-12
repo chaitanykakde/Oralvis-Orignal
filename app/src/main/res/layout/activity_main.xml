@@ -546,14 +546,14 @@
             app:layout_constraintWidth_percent="0.45"
             android:visibility="gone" />
 
-        <!-- Centered Button Container - Initially hidden (3 buttons) -->
+        <!-- Centered Button Container - Always visible (3 buttons) -->
         <LinearLayout
             android:id="@+id/sessionButtonsContainer"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:visibility="gone"
+            android:visibility="visible"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"

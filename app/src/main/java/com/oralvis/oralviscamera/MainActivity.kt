@@ -877,11 +877,6 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
             return
         }
 
-        if (guidedController?.isGuidedActive() == true) {
-            android.util.Log.d("MainActivity", "Manual capture during guided session - routing through guided capture")
-            if (guidedController?.handleManualCapture() == true) return
-        }
-
         if (cameraStateStore.mCurrentCamera != null) {
             photoCaptureHandler.capturePhotoWithRetry()
         } else {
@@ -1010,19 +1005,11 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                         showPatientSelectionPrompt()
                         return@runOnUiThread
                     }
-                    if (guidedController?.isGuidedActive() == true) {
-                        if (guidedController?.handleManualCapture() == true) {
-                            android.util.Log.i("UsbCommand", "CAPTURE handled by guided capture manager")
-                        } else {
-                            android.util.Log.w("UsbCommand", "CAPTURE rejected by guided capture manager")
-                        }
+                    if (cameraStateStore.mCurrentCamera != null) {
+                        photoCaptureHandler.capturePhotoWithRetry()
+                        android.util.Log.i("UsbCommand", "CAPTURE executed via direct camera capture")
                     } else {
-                        if (cameraStateStore.mCurrentCamera != null) {
-                            photoCaptureHandler.capturePhotoWithRetry()
-                            android.util.Log.i("UsbCommand", "CAPTURE executed via direct camera capture")
-                        } else {
-                            android.util.Log.w("UsbCommand", "CAPTURE ignored: camera not available")
-                        }
+                        android.util.Log.w("UsbCommand", "CAPTURE ignored: camera not available")
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("UsbCommand", "Error during capture: ${e.message}", e)
