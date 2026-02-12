@@ -110,6 +110,7 @@ class UsbSerialManager(
         } else {
             if (!usbManager.hasPermission(device)) {
                 Log.e(TAG, "❌ No permission for OralVis CDC device (VID=${device.vendorId}, PID=${device.productId}) — request permission for controller")
+                isStarted = false  // Allow future start() retries after permission is granted
                 onConnectionStateChanged(false)
                 return
             }
@@ -121,6 +122,7 @@ class UsbSerialManager(
 
         if (connectionToUse == null) {
             Log.e(TAG, "❌ Cannot open connection for CDC device")
+            isStarted = false  // Allow future start() retries
             onConnectionStateChanged(false)
             return
         }
@@ -141,11 +143,13 @@ class UsbSerialManager(
             } else {
                 if (closeConnectionOnStop) connectionToUse.close()
                 Log.w(TAG, "CDC device has no CDC DATA interface — serial disabled")
+                isStarted = false  // Allow future start() retries
                 onConnectionStateChanged(false)
             }
         } catch (e: Exception) {
             if (closeConnectionOnStop) connectionToUse.close()
             Log.e(TAG, "❌ Error establishing serial connection: ${e.message}", e)
+            isStarted = false  // Allow future start() retries
             onConnectionStateChanged(false)
             serialConnection = null
         }
