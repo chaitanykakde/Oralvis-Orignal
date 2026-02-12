@@ -39,16 +39,16 @@ class SplashActivity : AppCompatActivity() {
             performPatientDuplicateRepair()
 
             // Check if user is logged in
-            val intent = if (loginManager.isLoggedIn()) {
-                // User is logged in → sync patients and go to main app.
+            if (loginManager.isLoggedIn()) {
+                // User is logged in → sync patients, then go to patient selection
                 performPatientSyncForLoggedInUser()
-                Intent(this, MainActivity::class.java)
+                val intent = Intent(this, PatientSelectionActivity::class.java)
+                startActivity(intent)
             } else {
                 // User not logged in → go to login screen.
-                Intent(this, LoginActivity::class.java)
+                val intent = Intent(this, LoginActivity::class.java)
+                startActivity(intent)
             }
-
-            startActivity(intent)
             finish()
         }
     }

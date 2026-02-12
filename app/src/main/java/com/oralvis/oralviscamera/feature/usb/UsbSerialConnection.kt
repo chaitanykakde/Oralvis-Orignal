@@ -249,8 +249,10 @@ endpointCount=${intf.endpointCount}
                 var readAttempts = 0L
                 var lastNoDataLogTime = 0L
                 var lastPartialLogTime = 0L
+                var lastErrorLogTime = 0L
                 val noDataLogIntervalMs = 5000L
                 val partialLogIntervalMs = 3000L
+                val errorLogIntervalMs = 5000L
 
                 while (isRunning) {
                     try {
@@ -296,9 +298,15 @@ endpointCount=${intf.endpointCount}
                                 lastNoDataLogTime = now
                             }
                         } else {
-                            // length < 0: error
-                            Log.w("CDC_TRACE", "CDC READ error: length=$length")
-                            Log.w(TAG, "Bulk transfer error: $length")
+                            // length < 0: transient USB read error (e.g. disconnect, timeout).
+                            // These happen frequently while the controller is idle, so we
+                            // throttle logging heavily and downgrade to DEBUG to avoid log spam.
+                            val now = System.currentTimeMillis()
+                            if (now - lastErrorLogTime >= errorLogIntervalMs) {
+                                Log.d("CDC_TRACE", "CDC READ error (throttled): length=$length")
+                                Log.d(TAG, "Bulk transfer error (throttled): $length")
+                                lastErrorLogTime = now
+                            }
                         }
 
                         // Log when we have partial data (no newline yet) — occasionally

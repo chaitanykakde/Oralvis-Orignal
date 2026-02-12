@@ -1,7 +1,5 @@
 package com.oralvis.oralviscamera.feature.session.flow
 
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
@@ -55,8 +53,6 @@ class SessionFlowCoordinator(
 ) {
 
     // ==== Entry points from MainActivity ====
-    // Ensures we only auto-prompt for a patient once per activity lifecycle
-    private var hasPromptedForInitialPatient = false
 
     fun onStartSessionClicked() {
         android.util.Log.e("Guided", "Start Session CLICKED")
@@ -104,22 +100,11 @@ class SessionFlowCoordinator(
     }
 
     fun checkAndPromptForPatientSelection() {
-        // FIX 2: Defer patient picker until USB permission is resolved
-        if (isUsbPermissionPending()) return
-
-        // Only auto-prompt once per lifecycle to avoid duplicate dialogs
-        if (hasPromptedForInitialPatient) return
-
-        // Only prompt if no patient is currently selected
+        // Patient selection is now handled by PatientSelectionActivity before
+        // reaching MainActivity. Do NOT auto-prompt a dialog here.
+        // User can change patient via the nav bar button (openPatientDialogForSession).
         if (!GlobalPatientManager.hasPatientSelected()) {
-            hasPromptedForInitialPatient = true
-            // Use post to ensure UI is fully ready
-            Handler(Looper.getMainLooper()).post {
-                if (!activity.isFinishing && !activity.isDestroyed) {
-                    android.util.Log.d("PatientSelection", "No patient selected - prompting user")
-                    openPatientDialogForSession()
-                }
-            }
+            android.util.Log.d("PatientSelection", "No patient selected — user should use nav bar button or will be redirected")
         }
     }
 

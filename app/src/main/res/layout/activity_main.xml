@@ -144,23 +144,30 @@
         app:layout_constraintStart_toEndOf="@id/navigationRailCard"
         app:layout_constraintEnd_toEndOf="parent">
 
-            <!-- Mode Label -->
+            <!-- Mode Toggle: Normal / Caries -->
             <TextView
-                android:id="@+id/modeLabel"
+                android:id="@+id/modeNormalLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Mode:"
+                android:text="Normal"
                 android:textColor="@color/white"
                 android:textSize="14sp" />
 
-            <!-- Mode Spinner -->
-            <Spinner
-                android:id="@+id/modeSpinner"
-                android:layout_width="140dp"
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/modeToggle"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:background="@drawable/spinner_background"
-                android:popupBackground="@drawable/settings_panel_background" />
+                android:checked="false" />
+
+            <TextView
+                android:id="@+id/modeCariesLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Caries"
+                android:textColor="@color/white"
+                android:textSize="14sp" />
 
             <!-- Spacer to push patient card to center -->
             <View

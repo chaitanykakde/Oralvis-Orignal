@@ -131,17 +131,19 @@ class LoginActivity : AppCompatActivity() {
     }
     
     private fun navigateToMain() {
-        val mainIntent = Intent(this, MainActivity::class.java)
+        // After login, go to PatientSelectionActivity first so user picks a patient
+        // before entering the camera screen.
+        val selectionIntent = Intent(this, PatientSelectionActivity::class.java)
 
         // If there was a pending intent (e.g., USB device attachment that triggered the auth gate),
-        // pass it along so MainActivity can handle it after authentication
+        // pass it along so PatientSelectionActivity → MainActivity can handle it
         val pendingIntent = intent.getParcelableExtra<Intent>("pending_intent")
         if (pendingIntent != null) {
-            android.util.Log.d("LoginActivity", "Forwarding pending intent to MainActivity: ${pendingIntent.action}")
-            mainIntent.putExtra("pending_usb_intent", pendingIntent)
+            android.util.Log.d("LoginActivity", "Forwarding pending intent via PatientSelectionActivity: ${pendingIntent.action}")
+            selectionIntent.putExtra("pending_usb_intent", pendingIntent)
         }
 
-        startActivity(mainIntent)
+        startActivity(selectionIntent)
         finish()
     }
 

@@ -6,12 +6,14 @@ import com.oralvis.oralviscamera.feature.camera.state.CameraStateStore
 
 /**
  * Owns SurfaceTexture listener and surface-ready state (Phase 5B).
- * Logic copied verbatim from MainActivity; no behavior change.
+ * Optional onSurfaceReadyForUsb: call requestPermissionForAlreadyAttachedDevices() here so USB
+ * permission is requested only after the preview surface exists (matches reference app flow).
  */
 class PreviewSurfaceManager(
     private val store: CameraStateStore,
     private val onInitializeCameraIfReady: () -> Unit,
-    private val onFirstFrameReceived: () -> Unit
+    private val onFirstFrameReceived: () -> Unit,
+    private val onSurfaceReadyForUsb: (() -> Unit)? = null
 ) {
     /**
      * Attach the SurfaceTexture listener to the TextureView.
@@ -22,6 +24,7 @@ class PreviewSurfaceManager(
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
                 android.util.Log.d("SurfaceTexture", "SurfaceTexture available - camera can now be initialized")
                 store.isSurfaceTextureReady = true
+                onSurfaceReadyForUsb?.invoke()
                 onInitializeCameraIfReady()
             }
 

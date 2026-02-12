@@ -9,27 +9,31 @@ import com.oralvis.oralviscamera.camera.CameraModePresets
  * Called by UI and USB (via CameraCommandReceiver → MainActivity → controller).
  * Mode logic moved verbatim from MainActivity.
  */
+enum class CameraMode {
+    NORMAL,
+    CARIES
+}
+
 class CameraModeController(
     private val getCamera: () -> MultiCameraClient.ICamera?,
     private val modeUi: CameraModeUi,
     private val fluorescenceAdapter: FluorescenceModeAdapter,
     private val runOnUiThread: (Runnable) -> Unit
 ) {
-    var currentMode = "Normal"
+    var currentMode: CameraMode = CameraMode.NORMAL
         private set
 
     /**
-     * Set current mode to Normal without applying preset (e.g. camera open init, spinner setup).
+     * Set current mode to Normal without applying preset (e.g. camera open init).
      */
     fun setCurrentModeNormal() {
-        currentMode = "Normal"
+        currentMode = CameraMode.NORMAL
     }
 
     /**
-     * Switch to a mode: update state, update UI, apply preset.
-     * Logic moved verbatim from MainActivity.switchToMode + applyModePreset.
+     * Unified entry point for all mode changes (UI toggle + hardware UV/RGB).
      */
-    fun switchToMode(mode: String) {
+    fun applyCameraMode(mode: CameraMode) {
         currentMode = mode
         updateModeUI()
         applyModePreset(mode)
@@ -38,13 +42,12 @@ class CameraModeController(
     private fun updateModeUI() { /* no-op: mode toggles shown in settings panel only */ }
 
     /**
-     * Apply camera preset for the given mode. Moved verbatim from MainActivity.applyModePreset.
+     * Apply camera preset for the given mode.
      */
-    fun applyModePreset(mode: String) {
+    fun applyModePreset(mode: CameraMode) {
         val preset = when (mode) {
-            "Normal" -> CameraModePresets.NORMAL
-            "Fluorescence" -> CameraModePresets.FLUORESCENCE
-            else -> CameraModePresets.NORMAL
+            CameraMode.NORMAL -> CameraModePresets.NORMAL
+            CameraMode.CARIES -> CameraModePresets.FLUORESCENCE
         }
 
         getCamera()?.let { camera ->
@@ -63,15 +66,17 @@ class CameraModeController(
                     camera.setExposure(preset.exposure)
 
                     // Apply/remove visual fluorescence effect
-                    fluorescenceAdapter.applyForMode(camera, mode)
+                    fluorescenceAdapter.applyForMode(
+                        camera,
+                        if (mode == CameraMode.CARIES) "Fluorescence" else "Normal"
+                    )
 
-                    // Update UI controls
+                    // Update UI controls (sliders, labels)
                     modeUi.updateCameraControlValues()
-
-                    modeUi.showToast("Switched to $mode mode")
+                    // Sync toggle state in UI
+                    modeUi.syncModeToggle(mode)
                 } catch (e: Exception) {
                     android.util.Log.e("FluorescenceMode", "Failed to apply $mode preset: ${e.message}", e)
-                    modeUi.showToast("Failed to apply $mode preset: ${e.message}")
                 }
             }
         }
@@ -95,7 +100,7 @@ class CameraModeController(
         }
         runOnUiThread(Runnable {
             try {
-                switchToMode("Normal")
+                applyCameraMode(CameraMode.NORMAL)
                 android.util.Log.i("UsbCommand", "RGB (Normal) mode command executed successfully")
             } catch (e: Exception) {
                 android.util.Log.e("UsbCommand", "Error switching to Normal mode: ${e.message}", e)
@@ -105,7 +110,7 @@ class CameraModeController(
     }
 
     /**
-     * Switch to Fluorescence (UV) mode. Entry point for USB hardware command.
+     * Switch to Fluorescence (UV / Caries) mode. Entry point for USB hardware command.
      * Blocks when camera not available; executes switch on main thread.
      */
     fun switchToFluorescenceMode(): Boolean {
@@ -115,7 +120,7 @@ class CameraModeController(
         }
         runOnUiThread(Runnable {
             try {
-                switchToMode("Fluorescence")
+                applyCameraMode(CameraMode.CARIES)
                 android.util.Log.i("UsbCommand", "UV (Fluorescence) mode command executed successfully")
             } catch (e: Exception) {
                 android.util.Log.e("UsbCommand", "Error switching to Fluorescence mode: ${e.message}", e)

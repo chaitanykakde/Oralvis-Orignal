@@ -4,15 +4,17 @@ varying vec2 vTextureCoord;
 
 void main()
 {
-    // Optimized fluorescence effect: boost blue channel, reduce red/green
-    // Using direct channel access and optimized calculations for better performance
+    // Fluorescence effect: very soft blue tint.
+    // The hardware already sends a fluorescence-colored preview, so we only apply
+    // a light blue emphasis instead of a strong artificial blue overlay.
     vec4 tempColor = texture2D(uTextureSampler, vTextureCoord);
     
-    // Optimized: calculate channels directly without intermediate variables
-    // Using lowp precision for color calculations (acceptable quality, better performance)
-    lowp float r = tempColor.r * 0.3;  // Reduce red
-    lowp float g = tempColor.g * 0.4;  // Reduce green
-    lowp float b = tempColor.b * 1.3;  // Boost blue (clamp handled by GPU)
+    // Apply a medium adjustment:
+    // - keep most of the original red/green
+    // - moderately boost blue for a clearer fluorescence feel
+    lowp float r = tempColor.r * 0.8;   // Small red reduction
+    lowp float g = tempColor.g * 0.85;  // Small green reduction
+    lowp float b = tempColor.b * 1.15;  // Moderate blue boost
     
     // Clamp blue to 1.0 and output final color
     gl_FragColor = vec4(r, g, min(b, 1.0), tempColor.a);

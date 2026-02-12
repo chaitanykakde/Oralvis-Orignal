@@ -9,4 +9,5 @@ interface CameraModeUi {
     fun updateCameraControlValues()
     fun setDefaultCameraControlValues()
     fun showToast(message: String)
+    fun syncModeToggle(mode: CameraMode)
 }

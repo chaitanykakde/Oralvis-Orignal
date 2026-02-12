@@ -22,9 +22,16 @@ object CameraModePresets {
     )
     
     val FLUORESCENCE = CameraModePreset(
-        autoExposure = false,
-        autoWhiteBalance = false,
-        contrast = 85,
-        saturation = 40
+        // IMPORTANT:
+        // The camera hardware already provides a fluorescence-colored preview.
+        // We now only add a *very soft* blue shader effect and DO NOT want
+        // aggressive exposure/contrast changes that can turn the image white
+        // or laggy after a second.
+        //
+        // So we keep fluorescence camera parameters almost identical to Normal.
+        autoExposure = true,
+        autoWhiteBalance = true,
+        contrast = 52,   // very small boost compared to Normal
+        saturation = 58  // very small tweak, keeps colors natural
     )
 }

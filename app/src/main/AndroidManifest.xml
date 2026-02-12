@@ -116,6 +116,12 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.OralVisCamera" />
 
+        <activity
+            android:name=".PatientSelectionActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+
         <!-- File Provider for sharing log files -->
         <provider
             android:name="androidx.core.content.FileProvider"

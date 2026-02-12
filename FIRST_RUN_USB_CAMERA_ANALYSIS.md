@@ -146,4 +146,14 @@
 
 ---
 
-**End of analysis. No code changes recommended in this document.**
+## 10. Why Reference App Opens Camera on First Run (and we needed a fix)
+
+- **Reference (AndroidUSBCamera):** Single Activity, no Splash, no patient dialog. When the app requests USB permission, the **activity stays in foreground** until the user taps Allow/Deny. The `ACTION_USB_PERMISSION` broadcast is delivered to the same activity; `onConnectDev()` runs and the camera opens.
+- **OralVis:** Splash → MainActivity, then we show the **patient selection dialog** and we **post** the initial USB request. When the **system** USB permission dialog appears, the **activity goes to stopped** (our window is no longer visible). On some devices or Android versions:
+  - The grant broadcast can be **delivered while the activity is stopped** and the library may report **cancel (device=null)** e.g. when `Intent.getParcelableExtra(EXTRA_DEVICE)` returns null (API 33+).
+  - Or the broadcast is **queued** and not processed until after we've already received a "cancel" path.
+- **Fix applied:** In **onResume**, if we are still in `REQUESTING_UVC` and `usbPermissionPending`, we **re-check** whether the UVC device **now has permission** (user granted while we were stopped). If it does, we call `client.requestPermission(device)` again; the library sees `hasPermission(device)` and calls `processConnect(device)` → **onConnectDev()** → camera opens on first run without needing a second launch.
+
+---
+
+**End of analysis.**

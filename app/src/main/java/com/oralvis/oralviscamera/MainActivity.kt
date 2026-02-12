@@ -91,6 +91,7 @@ import com.oralvis.oralviscamera.feature.camera.capture.PhotoCaptureHost
 import com.oralvis.oralviscamera.feature.camera.capture.PhotoCaptureHandler
 import com.oralvis.oralviscamera.feature.camera.capture.VideoCaptureHost
 import com.oralvis.oralviscamera.feature.camera.capture.VideoCaptureHandler
+import com.oralvis.oralviscamera.feature.camera.mode.CameraMode
 import com.oralvis.oralviscamera.feature.camera.mode.CameraModeController
 import com.oralvis.oralviscamera.feature.camera.mode.CameraModeUi
 import com.oralvis.oralviscamera.feature.camera.mode.FluorescenceModeAdapter
@@ -135,10 +136,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
     // Mode switching (Phase 5D — extracted to CameraModeController + FluorescenceModeAdapter)
     private val fluorescenceModeAdapter = FluorescenceModeAdapter(this)
     private lateinit var cameraModeController: CameraModeController
+    private var isUpdatingModeToggleFromCode = false
     private val cameraModeUi = object : CameraModeUi {
         override fun updateCameraControlValues() { cameraControlCoordinator.updateCameraControlValues() }
         override fun setDefaultCameraControlValues() { cameraControlCoordinator.setDefaultCameraControlValues() }
         override fun showToast(message: String) { Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show() }
+        override fun syncModeToggle(mode: CameraMode) { syncModeToggleWithController(mode) }
     }
 
     // Camera lifecycle (Phase 5A — extracted to CameraStateStore + CameraLifecycleManager)
@@ -404,29 +407,29 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         // Initialize new features
         try {
             android.util.Log.d("SettingsDebug", "Initializing GlobalPatientManager...")
-        GlobalPatientManager.initialize(this)
+            GlobalPatientManager.initialize(this)
             android.util.Log.d("SettingsDebug", "GlobalPatientManager initialized")
-
+        
             android.util.Log.d("SettingsDebug", "Initializing LocalPatientIdManager...")
-        LocalPatientIdManager.initialize(this)
+            LocalPatientIdManager.initialize(this)
             android.util.Log.d("SettingsDebug", "LocalPatientIdManager initialized")
 
             android.util.Log.d("SettingsDebug", "Creating SessionManager...")
-        sessionManager = SessionManager(this)
+            sessionManager = SessionManager(this)
             android.util.Log.d("SettingsDebug", "SessionManager created")
             android.util.Log.d("SettingsDebug", "Creating SessionController...")
-        sessionController = SessionController(sessionManager)
+            sessionController = SessionController(sessionManager)
             android.util.Log.d("SettingsDebug", "SessionController created")
-
+        
             android.util.Log.d("SettingsDebug", "Getting MediaDatabase...")
-        mediaDatabase = MediaDatabase.getDatabase(this)
+            mediaDatabase = MediaDatabase.getDatabase(this)
             android.util.Log.d("SettingsDebug", "MediaDatabase obtained")
-
+        
             android.util.Log.d("SettingsDebug", "Creating MediaRepository...")
-        mediaRepository = MediaRepository(this)
+            mediaRepository = MediaRepository(this)
             android.util.Log.d("SettingsDebug", "MediaRepository created")
-
-        // Phase 5C: Capture handlers (require sessionController, mediaRepository, binding)
+        
+            // Phase 5C: Capture handlers (require sessionController, mediaRepository, binding)
         recordingHandlerForVideo = Handler(Looper.getMainLooper())
         photoCaptureHandler = PhotoCaptureHandler(mediaRepository, this, lifecycleScope)
         videoCaptureHandler = VideoCaptureHandler(this)
@@ -476,8 +479,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
             previewCallbackRouter = previewCallbackRouter,
             ensureUsbMonitorRegistered = { ensureUsbMonitorRegistered() },
             openCamera = { cam, req -> cam.openCamera(binding.cameraTextureView, req) },
-            getCurrentMode = { cameraModeController.currentMode },
-            applyModePreset = { mode -> cameraModeController.applyModePreset(mode) },
+            // Map enum → String for legacy lifecycle manager ("Normal"/"Fluorescence")
+            getCurrentMode = {
+                if (cameraModeController.currentMode == CameraMode.CARIES) "Fluorescence" else "Normal"
+            },
+            applyModePreset = { modeString ->
+                val enumMode = if (modeString == "Fluorescence") CameraMode.CARIES else CameraMode.NORMAL
+                cameraModeController.applyModePreset(enumMode)
+            },
             isGuidedInitialized = { guidedController?.isInitialized() == true },
             initializeGuidedIfNeeded = { guidedController?.initializeIfNeeded() ?: Unit },
             updateCameraControlValuesFromMode = { cameraModeController.updateCameraControlValues() },
@@ -541,6 +550,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         android.util.Log.d("CameraCoreUI", "setupCameraCoreUI() completed in onCreate")
         
         observeGlobalPatient()
+        maybeInitializePatientFromIntent()
         initializeFromGlobalPatient()
         android.util.Log.d("SettingsDebug", "About to call checkPermissions() in onCreate")
         checkPermissions()
@@ -665,10 +675,11 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         // This ensures UVC streaming is fully stable before claiming CDC interface
         // See onFirstFrameReceived() for CDC startup
 
-        // Check if patient selection is needed (moved from onCreate to avoid lifecycle issues)
-        checkAndPromptForPatientSelection()
+        // Patient selection is now handled by PatientSelectionActivity before reaching here.
+        // No auto-prompt dialog on resume. User can change patient via nav bar button.
 
         // Show any pending dialogs that were deferred due to lifecycle state
+        // (e.g. user clicked nav bar patient button while state was saved)
         if (pendingPatientDialog) {
             pendingPatientDialog = false
             android.util.Log.d("MainActivity", "Showing deferred patient dialog in onResume")
@@ -919,13 +930,38 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
             }
         )
 
-        // Setup resolution and mode spinners
+        // Setup resolution spinner
         setupSpinners()
         
         // Setup all settings panel button actions (includes seekbar listeners)
         setupSettingsPanelActions()
+
+        // Setup Normal/Caries mode toggle
+        setupModeToggle()
         
         android.util.Log.d("CameraCoreUI", "setupCameraCoreUI() - Complete")
+    }
+
+    private fun setupModeToggle() {
+        // Initialize toggle to reflect current controller mode (default NORMAL)
+        isUpdatingModeToggleFromCode = true
+        binding.modeToggle.isChecked = (cameraModeController.currentMode == CameraMode.CARIES)
+        isUpdatingModeToggleFromCode = false
+
+        binding.modeToggle.setOnCheckedChangeListener { _, isChecked ->
+            if (isUpdatingModeToggleFromCode) return@setOnCheckedChangeListener
+            val targetMode = if (isChecked) CameraMode.CARIES else CameraMode.NORMAL
+            cameraModeController.applyCameraMode(targetMode)
+        }
+    }
+
+    private fun syncModeToggleWithController(mode: CameraMode = cameraModeController.currentMode) {
+        val shouldBeChecked = (mode == CameraMode.CARIES)
+        if (binding.modeToggle.isChecked != shouldBeChecked) {
+            isUpdatingModeToggleFromCode = true
+            binding.modeToggle.isChecked = shouldBeChecked
+            isUpdatingModeToggleFromCode = false
+        }
     }
     
     /**
@@ -1404,9 +1440,6 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         val resolutionAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, mutableListOf<String>())
         resolutionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         binding.resolutionSpinner.adapter = resolutionAdapter
-        
-        // Setup mode spinner - moved to setupModeSpinner() for theme support
-        setupModeSpinner()
     }
     
     private fun showSettingsBottomSheet() {
@@ -1428,12 +1461,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         
         // Mode buttons in settings
         view.findViewById<View>(R.id.btnNormalMode).setOnClickListener {
-            cameraModeController.switchToMode("Normal")
+            cameraModeController.applyCameraMode(CameraMode.NORMAL)
             settingsBottomSheet?.dismiss()
         }
         
         view.findViewById<View>(R.id.btnFluorescenceMode).setOnClickListener {
-            cameraModeController.switchToMode("Fluorescence")
+            cameraModeController.applyCameraMode(CameraMode.CARIES)
             settingsBottomSheet?.dismiss()
         }
         
@@ -1553,6 +1586,41 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
     }
     
     /**
+     * If MainActivity was launched with an explicit patient extra (from PatientSelectionActivity),
+     * and no patient is yet selected in GlobalPatientManager, resolve it from the database and
+     * set it globally. This makes patient selection robust even if the process was recreated
+     * and GlobalPatientManager state was lost.
+     */
+    private fun maybeInitializePatientFromIntent() {
+        if (GlobalPatientManager.hasPatientSelected()) return
+        
+        val explicitPatientId = intent?.getLongExtra("patient_id", -1L) ?: -1L
+        if (explicitPatientId == -1L) return
+        
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val patient = mediaDatabase.patientDao().getPatientById(explicitPatientId)
+                if (patient != null) {
+                    withContext(Dispatchers.Main) {
+                        android.util.Log.d(
+                            "PatientSelection",
+                            "Initializing patient from intent: id=${patient.id}, code=${patient.code}"
+                        )
+                        GlobalPatientManager.setCurrentPatient(this@MainActivity, patient)
+                    }
+                } else {
+                    android.util.Log.w(
+                        "PatientSelection",
+                        "Unable to initialize patient from intent, id=$explicitPatientId not found"
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PatientSelection", "Error initializing patient from intent", e)
+            }
+        }
+    }
+    
+    /**
      * Updates the patient info display with current patient details from GlobalPatientManager
      */
     fun updatePatientInfoDisplay() {
@@ -1619,16 +1687,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         // ============= TOP INFO BAR =============
         binding.topInfoBar.setBackgroundColor(if (themeManager.isDarkTheme) android.graphics.Color.TRANSPARENT else surfaceColor)
         
-        // Mode label and dropdown
-        binding.modeLabel.setTextColor(textPrimary)
-        
-        // Mode spinner background
-        val spinnerBg = if (themeManager.isDarkTheme) {
-            ContextCompat.getDrawable(this, R.drawable.spinner_background)
-        } else {
-            ContextCompat.getDrawable(this, R.drawable.spinner_background_light)
-        }
-        binding.modeSpinner.background = spinnerBg
+        // Mode toggle labels
+        binding.modeNormalLabel.setTextColor(textPrimary)
+        binding.modeCariesLabel.setTextColor(textPrimary)
         
         // Status text background
         val statusBg = if (themeManager.isDarkTheme) {
@@ -1735,8 +1796,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         }
         binding.resolutionSpinner.background = resolutionSpinnerBg
         
-        // Recreate mode spinner adapter with proper theme colors
-        setupModeSpinner()
+        // Mode spinner removed; mode is controlled by top-left Normal/Caries toggle
     }
     
     /**
@@ -1777,51 +1837,7 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         }
     }
     
-    /**
-     * Setup mode spinner with theme-appropriate colors
-     */
-    private fun setupModeSpinner() {
-        val modeAdapter = if (themeManager.isDarkTheme) {
-            ArrayAdapter(this, R.layout.spinner_item_white, listOf("Normal", "Fluorescence"))
-        } else {
-            ArrayAdapter(this, R.layout.spinner_item_black, listOf("Normal", "Fluorescence"))
-        }
-        
-        if (themeManager.isDarkTheme) {
-            modeAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item_white)
-        } else {
-            modeAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item_black)
-        }
-        
-        binding.modeSpinner.adapter = modeAdapter
-        
-        // Explicitly set selection to 0 (Normal) to ensure default mode
-        binding.modeSpinner.setSelection(0, false) // false = don't trigger listener
-        
-        // Mode selection listener
-        var isInitialSetup = true
-        binding.modeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                // Skip initial trigger during setup to prevent applying wrong mode
-                if (isInitialSetup) {
-                    isInitialSetup = false
-                    // Ensure Normal mode is set during initial setup
-                    if (position == 0) {
-                        cameraModeController.setCurrentModeNormal()
-                        // Don't apply preset here as camera might not be ready yet
-                        // It will be applied when camera opens
-                    }
-                    return
-                }
-                val mode = parent?.getItemAtPosition(position).toString() ?: "Normal"
-                cameraModeController.switchToMode(mode)
-            }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        
-        // Ensure currentMode is set to Normal
-        cameraModeController.setCurrentModeNormal()
-    }
+    // Mode spinner was removed; mode is now controlled by a Normal/Caries toggle.
     
     /**
      * Saves the current session and captured media
@@ -2417,10 +2433,11 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                 android.util.Log.d("MediaDatabase", "sequenceNumber: $sequenceNumber")
                 android.util.Log.d("MediaDatabase", "guidedSessionId: $guidedSessionId")
                 
+                val modeString = if (cameraModeController.currentMode == CameraMode.CARIES) "Fluorescence" else "Normal"
                 val mediaRecord = MediaRecord(
                     sessionId = sessionId,
                     fileName = fileName,
-                    mode = cameraModeController.currentMode,
+                    mode = modeString,
                     mediaType = mediaType,
                     captureTime = Date(),
                     filePath = filePath,
@@ -2593,11 +2610,12 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                 val fileName = file.name
 
                 // Use MediaRepository to create media record atomically
+                val modeString = if (cameraModeController.currentMode == CameraMode.CARIES) "Fluorescence" else "Normal"
                 val mediaRecord = mediaRepository.createMediaRecord(
                     patientId = patientId,
                     sessionId = sessionId,
                     mediaType = mediaType,
-                    mode = cameraModeController.currentMode,
+                    mode = modeString,
                     fileName = fileName,
                     dentalArch = dentalArch,
                     sequenceNumber = sequenceNumber,
@@ -2739,7 +2757,8 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
     override fun isActivityValid(): Boolean = !isFinishing && !isDestroyed
-    override fun getCurrentMode(): String = cameraModeController.currentMode
+    override fun getCurrentMode(): String =
+        if (cameraModeController.currentMode == CameraMode.CARIES) "Fluorescence" else "Normal"
     override fun getPatientId(): Long? = GlobalPatientManager.getCurrentPatientId()
     override fun getSessionId(): String? = sessionController.getCurrentSessionId()
     override fun getCamera(): MultiCameraClient.ICamera? = cameraStateStore.mCurrentCamera
