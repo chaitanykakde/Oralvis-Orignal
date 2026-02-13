@@ -122,6 +122,13 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.OralVisCamera" />
 
+        <!-- Annotation activity (image bounding-box tool) -->
+        <activity
+            android:name="com.oralvis.annotation.ui.AnnotationActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OralVisCamera" />
+
         <!-- File Provider for sharing log files -->
         <provider
             android:name="androidx.core.content.FileProvider"

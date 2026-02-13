@@ -14,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.oralvis.annotation.AnnotationModule
+import com.oralvis.annotation.export.AnnotationExporter
 import com.oralvis.oralviscamera.databinding.ActivityMediaViewerBinding
 import java.io.File
 
@@ -24,6 +26,9 @@ class MediaViewerActivity : AppCompatActivity() {
     private var scaleGestureDetector: ScaleGestureDetector? = null
     private var scaleFactor = 1.0f
     private var matrix: Matrix = Matrix()
+    private var currentImagePath: String? = null
+    private var currentImageWidth: Int = 0
+    private var currentImageHeight: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +55,8 @@ class MediaViewerActivity : AppCompatActivity() {
         binding.btnBack.setOnClickListener {
             finish()
         }
+
+        // Annotate button is wired in showImage()/showVideo() based on media type
         
         // Setup scale gesture detector for image zoom
         scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -106,23 +113,68 @@ class MediaViewerActivity : AppCompatActivity() {
     private fun showImage(file: File) {
         binding.imageView.visibility = View.VISIBLE
         binding.videoView.visibility = View.GONE
+
+        // Enable annotation for images
+        binding.btnAnnotate.visibility = View.VISIBLE
+        binding.btnAnnotate.bringToFront() // Ensure button is on top
+        binding.btnAnnotate.setOnClickListener {
+            android.util.Log.d("MediaViewerActivity", "Annotate button clicked for: ${file.absolutePath}")
+            try {
+                // Use file name as image filename; sessionId is optional here
+                val sessionId = intent.getStringExtra("session_id")
+                android.util.Log.d("MediaViewerActivity", "Launching annotation with path: ${file.absolutePath}, filename: ${file.name}, sessionId: $sessionId")
+                AnnotationModule.launchAnnotation(
+                    context = this,
+                    imagePath = file.absolutePath,
+                    imageFilename = file.name,
+                    sessionId = sessionId
+                )
+                android.util.Log.d("MediaViewerActivity", "Annotation launch completed")
+            } catch (e: Exception) {
+                android.util.Log.e("MediaViewerActivity", "Error launching annotation", e)
+                Toast.makeText(this, "Error launching annotation: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
         
         try {
             // Load image with better quality
             val bitmap = BitmapFactory.decodeFile(file.absolutePath)
             if (bitmap != null) {
+                currentImagePath = file.absolutePath
+                currentImageWidth = bitmap.width
+                currentImageHeight = bitmap.height
                 binding.imageView.setImageBitmap(bitmap)
-                binding.imageView.scaleType = android.widget.ImageView.ScaleType.MATRIX
-                
-                // Enable zoom and pan for image
+                // Use FIT_CENTER when we have saved annotations so overlay aligns; otherwise MATRIX for zoom
+                val hasAnnotations = AnnotationExporter.hasAnnotationsForImage(this, file.absolutePath)
+                if (hasAnnotations) {
+                    binding.imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    binding.annotationPreviewOverlay.setImageView(binding.imageView)
+                    binding.annotationPreviewOverlay.setImageDimensions(currentImageWidth, currentImageHeight)
+                    val loaded = AnnotationExporter.loadAnnotationsForImage(
+                        this, file.absolutePath, file.name, currentImageWidth, currentImageHeight
+                    )
+                    if (loaded != null) {
+                        binding.annotationPreviewOverlay.setAnnotation(loaded)
+                        binding.annotationPreviewOverlay.setMode(com.oralvis.annotation.overlay.AnnotationOverlayView.Mode.VIEW)
+                        binding.annotationPreviewOverlay.visibility = View.VISIBLE
+                    } else {
+                        binding.annotationPreviewOverlay.visibility = View.GONE
+                    }
+                } else {
+                    binding.imageView.scaleType = android.widget.ImageView.ScaleType.MATRIX
+                    binding.annotationPreviewOverlay.visibility = View.GONE
+                }
+                // Enable zoom and pan for image (when not showing annotations)
                 binding.imageView.setOnTouchListener { _, event ->
+                    if (hasAnnotations) return@setOnTouchListener false
                     scaleGestureDetector?.onTouchEvent(event) ?: false
                 }
-                
                 binding.imageView.setOnClickListener {
                     toggleSystemUI()
                 }
             } else {
+                currentImagePath = null
+                binding.annotationPreviewOverlay.visibility = View.GONE
                 // Fallback to URI loading
                 val uri = Uri.fromFile(file)
                 binding.imageView.setImageURI(uri)
@@ -138,8 +190,11 @@ class MediaViewerActivity : AppCompatActivity() {
     }
     
     private fun showVideo(file: File) {
+        currentImagePath = null
+        binding.annotationPreviewOverlay.visibility = View.GONE
         binding.imageView.visibility = View.GONE
         binding.videoView.visibility = View.VISIBLE
+        binding.btnAnnotate.visibility = View.GONE
         
         try {
             val uri = Uri.fromFile(file)
@@ -184,6 +239,32 @@ class MediaViewerActivity : AppCompatActivity() {
             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         }
         window.decorView.systemUiVisibility = newFlags
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        // Refresh annotation overlay when returning from AnnotationActivity (e.g. after save)
+        val path = currentImagePath
+        if (!path.isNullOrEmpty() && currentImageWidth > 0 && currentImageHeight > 0) {
+            val file = File(path)
+            val hasAnnotations = AnnotationExporter.hasAnnotationsForImage(this, path)
+            if (hasAnnotations) {
+                binding.imageView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                binding.annotationPreviewOverlay.setImageView(binding.imageView)
+                binding.annotationPreviewOverlay.setImageDimensions(currentImageWidth, currentImageHeight)
+                val loaded = AnnotationExporter.loadAnnotationsForImage(
+                    this, path, file.name, currentImageWidth, currentImageHeight
+                )
+                if (loaded != null) {
+                    binding.annotationPreviewOverlay.setAnnotation(loaded)
+                    binding.annotationPreviewOverlay.setMode(com.oralvis.annotation.overlay.AnnotationOverlayView.Mode.VIEW)
+                    binding.annotationPreviewOverlay.visibility = View.VISIBLE
+                }
+            } else {
+                binding.annotationPreviewOverlay.visibility = View.GONE
+                binding.imageView.scaleType = android.widget.ImageView.ScaleType.MATRIX
+            }
+        }
     }
     
     override fun onTouchEvent(event: MotionEvent): Boolean {
