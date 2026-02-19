@@ -354,6 +354,39 @@ class MediaRepository(private val context: Context) {
         return finalFile
     }
 
+    /**
+     * Permanently delete a media record and its local file.
+     * Used by Gallery when discarding media (e.g., discard pair).
+     */
+    suspend fun deleteMediaAndFile(mediaId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val record = mediaDaoV2.getMediaById(mediaId)
+                ?: return@withContext false
+
+            // Delete local file if present
+            try {
+                val path = record.filePath
+                if (!path.isNullOrBlank()) {
+                    val file = File(path)
+                    if (file.exists()) {
+                        val deleted = file.delete()
+                        Log.d(TAG, "Deleted media file for $mediaId at $path, success=$deleted")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete file for $mediaId: ${e.message}", e)
+            }
+
+            // Remove record from database so it no longer appears in gallery flows
+            mediaDaoV2.deleteMediaById(mediaId)
+            Log.d(TAG, "Deleted media record: $mediaId")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete media $mediaId", e)
+            false
+        }
+    }
+
     // ========================================
     // FAILURE HANDLING AND RECOVERY METHODS
     // ========================================

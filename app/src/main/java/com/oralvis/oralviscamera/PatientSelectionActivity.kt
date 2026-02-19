@@ -1,6 +1,8 @@
 package com.oralvis.oralviscamera
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -8,6 +10,8 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -39,6 +43,10 @@ class PatientSelectionActivity : AppCompatActivity() {
     private var allPatients: List<Patient> = emptyList()
     private var selectedPatient: Patient? = null
 
+    companion object {
+        private const val REQUEST_ALL_APP_PERMISSIONS = 2001
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -57,6 +65,63 @@ class PatientSelectionActivity : AppCompatActivity() {
         setupForm()
         setupSearch()
         setupButtons()
+
+        // Ask ALL app permissions here so MainActivity never shows permission dialogs (camera/USB flow stays clean)
+        checkAllAppPermissions()
+    }
+
+    /**
+     * All runtime permissions: camera, microphone, and storage/media.
+     * Requested on patient selection so MainActivity only checks and never requests.
+     */
+    private fun getAllAppPermissions(): Array<String> {
+        val permissions = mutableListOf(
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.RECORD_AUDIO
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions += android.Manifest.permission.READ_MEDIA_IMAGES
+            permissions += android.Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            permissions += android.Manifest.permission.READ_EXTERNAL_STORAGE
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                permissions += android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            }
+        }
+        return permissions.toTypedArray()
+    }
+
+    private fun checkAllAppPermissions() {
+        val required = getAllAppPermissions()
+        val missing = required.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) return
+        val needsRationale = missing.any {
+            ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+        }
+        if (needsRationale) {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Permissions needed")
+                .setMessage("This app needs camera, microphone, and storage access to capture and save photos and videos. Please allow these permissions.")
+                .setPositiveButton("Allow") { _, _ ->
+                    ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_ALL_APP_PERMISSIONS)
+                }
+                .setNegativeButton("Not now") { _, _ -> }
+                .show()
+        } else {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_ALL_APP_PERMISSIONS)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_ALL_APP_PERMISSIONS) {
+            val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+            if (!allGranted) {
+                Toast.makeText(this, "Some permissions were denied. You can enable them later in app settings.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun setupRecycler() {

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="3dp"
+    app:cardBackgroundColor="#1E293B">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <!-- Single image only (no pair container) -->
+        <ImageView
+            android:id="@+id/otherMediaImage"
+            android:layout_width="match_parent"
+            android:layout_height="160dp"
+            android:scaleType="centerCrop"
+            android:background="#0F172A"
+            android:contentDescription="Image" />
+
+        <!-- Discard button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDiscard"
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:layout_marginTop="8dp"
+            android:text="Discard"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:backgroundTint="#EF4444"
+            app:cornerRadius="6dp" />
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

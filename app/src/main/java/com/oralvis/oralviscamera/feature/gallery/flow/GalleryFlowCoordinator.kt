@@ -193,8 +193,21 @@ class GalleryFlowCoordinator(
             android.util.Log.d("GalleryActivity", "No media found for current arch tab")
             return emptyList()
         }
+
+        // Other tab: no pairing or sequence — show a flat list of images (one card per image)
+        if (currentArchTab == 2) {
+            return filteredMedia.sortedBy { it.captureTime }.mapIndexed { index, media ->
+                SequenceCard(
+                    sequenceNumber = index + 1,
+                    dentalArch = "OTHER",
+                    guidedSessionId = null,
+                    rgbImage = if (media.mode == "Normal") media else null,
+                    fluorescenceImage = if (media.mode == "Fluorescence") media else null
+                )
+            }
+        }
         
-        // Group by guidedSessionId, dentalArch, and sequenceNumber
+        // Upper/Lower tabs: group by guidedSessionId, dentalArch, and sequenceNumber (pairing)
         val sequenceMap = mutableMapOf<String, MutableMap<Int, SequenceCard>>()
 
         // First, handle guided media (local captured with dentalArch, sequenceNumber, and guidedSessionId)
@@ -387,37 +400,37 @@ class GalleryFlowCoordinator(
         return allSequences.sortedBy { it.sequenceNumber }
     }
     
-    fun showDiscardConfirmation(card: SequenceCard, onConfirm: () -> Unit) {
+    fun showDiscardConfirmation(card: SequenceCard, isOtherTab: Boolean, onConfirm: () -> Unit) {
+        val (title, message) = if (isOtherTab) {
+            "Discard" to "Are you sure you want to discard this image? This action cannot be undone."
+        } else {
+            "Discard Pair" to "Are you sure you want to discard this sequence pair? This action cannot be undone."
+        }
         AlertDialog.Builder(context)
-            .setTitle("Discard Pair")
-            .setMessage("Are you sure you want to discard this sequence pair? This action cannot be undone.")
+            .setTitle(title)
+            .setMessage(message)
             .setPositiveButton("Discard") { _, _ ->
                 onConfirm()
-                discardSequencePair(card)
+                discardSequencePair(card, isOtherTab)
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
     
-    fun discardSequencePair(card: SequenceCard) {
+    fun discardSequencePair(card: SequenceCard, isSingleItem: Boolean = false) {
         lifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // TODO: Implement proper media deletion via MediaRepository
-                // Delete RGB image if exists
                 card.rgbImage?.let { media ->
-                    // mediaRepository.deleteMedia(media.mediaId)
-                    File(media.filePath ?: "").delete()
+                    mediaRepository.deleteMediaAndFile(media.mediaId)
                 }
-
-                // Delete Fluorescence image if exists
                 card.fluorescenceImage?.let { media ->
-                    // mediaRepository.deleteMedia(media.mediaId)
-                    File(media.filePath ?: "").delete()
+                    mediaRepository.deleteMediaAndFile(media.mediaId)
                 }
-                
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Sequence pair discarded", Toast.LENGTH_SHORT).show()
-                    // Media observation will handle updates automatically
+                    val msg = if (isSingleItem) "Image discarded" else "Sequence pair discarded"
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    // Live media observation will emit a new list without these records,
+                    // and UI will refresh automatically.
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

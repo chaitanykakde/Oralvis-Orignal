@@ -325,23 +325,15 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         dialog.show(supportFragmentManager, tag)
     }
 
+    /**
+     * Only camera and audio. Storage/media are requested on PatientSelectionActivity
+     * so they don't interfere with camera and CDC permission flow on first run.
+     */
     private fun getRequiredPermissions(): Array<String> {
-        val permissions = mutableListOf(
+        return arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO
         )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions += Manifest.permission.READ_MEDIA_IMAGES
-            permissions += Manifest.permission.READ_MEDIA_VIDEO
-        } else {
-            permissions += Manifest.permission.READ_EXTERNAL_STORAGE
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                permissions += Manifest.permission.WRITE_EXTERNAL_STORAGE
-            }
-        }
-
-        return permissions.toTypedArray()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -930,9 +922,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         
         // Setup all settings panel button actions (includes seekbar listeners)
         setupSettingsPanelActions()
-
+        
         // Setup Normal/Caries mode toggle
         setupModeToggle()
+
+        // Setup session media recycler immediately so right-panel previews
+        // show captures even before a guided session is started.
+        // Guided session UI can safely call this again; the method is idempotent.
+        setupSessionMediaRecycler()
         
         android.util.Log.d("CameraCoreUI", "setupCameraCoreUI() - Complete")
     }
@@ -1131,22 +1128,25 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
     }
     
     private fun setupSessionMediaRecycler() {
-        sessionMediaAdapter = SessionMediaAdapter(
-            onMediaClick = { media ->
-                // Preview the media
-                openMediaPreview(media.filePath, media.isVideo)
-            },
-            onRemoveClick = { media ->
-                // Remove from list and delete file
-                removeSessionMedia(media)
+        // Initialize adapter once; subsequent calls only refresh the UI.
+        if (sessionMediaAdapter == null) {
+            sessionMediaAdapter = SessionMediaAdapter(
+                onMediaClick = { media ->
+                    // Preview the media
+                    openMediaPreview(media.filePath, media.isVideo)
+                },
+                onRemoveClick = { media ->
+                    // Remove from list and delete file
+                    removeSessionMedia(media)
+                }
+            )
+            
+            binding.sessionMediaRecycler.apply {
+                // Use GridLayoutManager with 2 columns for vertical grid display
+                layoutManager = androidx.recyclerview.widget.GridLayoutManager(this@MainActivity, 2)
+                adapter = sessionMediaAdapter
+                setHasFixedSize(false)
             }
-        )
-        
-        binding.sessionMediaRecycler.apply {
-            // Use GridLayoutManager with 2 columns for vertical grid display
-            layoutManager = androidx.recyclerview.widget.GridLayoutManager(this@MainActivity, 2)
-            adapter = sessionMediaAdapter
-            setHasFixedSize(false)
         }
         
         updateSessionMediaUI()
@@ -1973,52 +1973,14 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
-        if (missingPermissions.isEmpty()) {
-            cameraStartupCoordinator.onSurfaceReady()
-            return
+        if (missingPermissions.isNotEmpty()) {
+            // All permissions are requested on PatientSelectionActivity; we only check here and never request
+            binding.statusText.text = "Some permissions were denied. Enable them in app settings if needed."
+            binding.statusText.visibility = View.VISIBLE
         }
 
-        val needsRationale = missingPermissions.any { ActivityCompat.shouldShowRequestPermissionRationale(this, it) }
-        if (needsRationale) {
-            showPermissionExplanationDialog(missingPermissions)
-        } else {
-            ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSION)
-        }
-
-        // FORCE camera initialization on cold launch regardless of permission status
-        // USB cameras may work without Android CAMERA permission
+        // Proceed with camera init (USB camera may still work)
         cameraStartupCoordinator.onSurfaceReady()
-    }
-    
-    private fun showPermissionExplanationDialog(missingPermissions: List<String>) {
-        val hasStoragePermission = missingPermissions.any { 
-            it == Manifest.permission.WRITE_EXTERNAL_STORAGE || 
-            it == Manifest.permission.READ_EXTERNAL_STORAGE ||
-            it == Manifest.permission.READ_MEDIA_IMAGES ||
-            it == Manifest.permission.READ_MEDIA_VIDEO
-        }
-        
-        val message = if (hasStoragePermission) {
-            "This app needs storage permission to save photos and videos. Please allow storage access in settings."
-        } else {
-            "This app needs camera and audio permissions to function properly. Please allow these permissions."
-        }
-        
-        AlertDialog.Builder(this)
-            .setTitle("Permission Required")
-            .setMessage(message)
-            .setPositiveButton("Allow") { _, _ ->
-                ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSION)
-            }
-            .setNegativeButton("Cancel") { _, _ ->
-                Toast.makeText(this, "Permissions are required for the app to work properly", Toast.LENGTH_LONG).show()
-                binding.statusText.text = "Permissions denied. Some features may not work."
-                binding.statusText.visibility = View.VISIBLE
-                // Still try to initialize camera - USB camera might work without all permissions
-                cameraStartupCoordinator.onSurfaceReady()
-            }
-            .setCancelable(false)
-            .show()
     }
     
     /**
@@ -2490,15 +2452,9 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
         
         if (requestCode == REQUEST_PERMISSION) {
             val deniedPermissions = mutableListOf<String>()
-            val permanentlyDeniedPermissions = mutableListOf<String>()
-            
             for (i in permissions.indices) {
                 if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
                     deniedPermissions.add(permissions[i])
-                    // Check if permission is permanently denied
-                    if (!ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])) {
-                        permanentlyDeniedPermissions.add(permissions[i])
-                    }
                 }
             }
             
@@ -2506,42 +2462,10 @@ class MainActivity : AppCompatActivity(), CameraCommandReceiver, PhotoCaptureHos
                 Toast.makeText(this, "Permissions granted! Initializing camera...", Toast.LENGTH_SHORT).show()
                 cameraStartupCoordinator.onSurfaceReady()
             } else {
-                // Check if storage permission is permanently denied
-                val hasStoragePermissionDenied = permanentlyDeniedPermissions.any { 
-                    it == Manifest.permission.WRITE_EXTERNAL_STORAGE || 
-                    it == Manifest.permission.READ_EXTERNAL_STORAGE ||
-                    it == Manifest.permission.READ_MEDIA_IMAGES ||
-                    it == Manifest.permission.READ_MEDIA_VIDEO
-                }
-                
-                if (hasStoragePermissionDenied) {
-                    // Show dialog to guide user to settings
-                    AlertDialog.Builder(this)
-                        .setTitle("Storage Permission Required")
-                        .setMessage("Storage permission is required to save photos and videos. Please enable it in app settings.")
-                        .setPositiveButton("Open Settings") { _, _ ->
-                            try {
-                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                                intent.data = Uri.parse("package:$packageName")
-                                startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(this, "Could not open settings", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        .setNegativeButton("Cancel") { _, _ ->
-                            Toast.makeText(this, "Storage permission is required to save media files", Toast.LENGTH_LONG).show()
-                        }
-                        .setCancelable(false)
-                        .show()
-                } else {
-                    val message = "Some permissions were denied. App may have limited functionality."
-                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-                }
-                
+                val message = "Camera or microphone was denied. App may have limited functionality."
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                 binding.statusText.text = "Some permissions denied. App may have limited functionality."
                 binding.statusText.visibility = View.VISIBLE
-                
-                // Still try to initialize camera in case USB camera doesn't need all permissions
                 cameraStartupCoordinator.onSurfaceReady()
             }
         }

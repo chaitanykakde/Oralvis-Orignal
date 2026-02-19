@@ -18,10 +18,14 @@ class SequenceCardAdapter(
     private val onFluorescenceImageClick: (SequenceCard) -> Unit,
     private val onDiscardClick: (SequenceCard) -> Unit
 ) : RecyclerView.Adapter<SequenceCardAdapter.SequenceViewHolder>() {
+
+    /** When true (Other tab), show "Discard" instead of "Discard pair" and no pairing. */
+    private var isOtherTab = false
     
-    fun updateSequenceCards(newCards: List<SequenceCard>) {
+    fun updateSequenceCards(newCards: List<SequenceCard>, currentArchTab: Int = 1) {
         android.util.Log.d("SequenceCardAdapter", "updateSequenceCards called with ${newCards.size} cards")
         android.util.Log.d("SequenceCardAdapter", "Old adapter had ${sequenceCards.size} cards")
+        isOtherTab = (currentArchTab == 2)
         newCards.forEachIndexed { index, card ->
             android.util.Log.d("SequenceCardAdapter", "Card[$index]: ${card.getTitle()}, rgb=${card.rgbImage?.fileName}, fluo=${card.fluorescenceImage?.fileName}")
         }
@@ -83,7 +87,8 @@ class SequenceCardAdapter(
             holder.fluorescenceImage.setOnClickListener(null)
         }
         
-        // Discard button
+        // Discard button: "Discard" on Other tab, "Discard pair" on Upper/Lower
+        holder.discardButton.text = if (isOtherTab) "Discard" else "Discard pair"
         holder.discardButton.setOnClickListener { onDiscardClick(card) }
     }
 

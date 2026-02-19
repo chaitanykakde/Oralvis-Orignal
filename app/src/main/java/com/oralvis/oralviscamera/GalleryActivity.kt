@@ -20,6 +20,7 @@ import com.oralvis.oralviscamera.database.MediaDatabase
 import com.oralvis.oralviscamera.database.MediaState
 import com.oralvis.oralviscamera.databinding.ActivityGalleryNewBinding
 import com.oralvis.oralviscamera.session.SessionManager
+import com.oralvis.oralviscamera.gallery.OtherMediaAdapter
 import com.oralvis.oralviscamera.gallery.SequenceCard
 import com.oralvis.oralviscamera.gallery.SequenceCardAdapter
 import com.oralvis.oralviscamera.SessionMediaGridAdapter
@@ -34,6 +35,7 @@ class GalleryActivity : AppCompatActivity() {
     private lateinit var binding: ActivityGalleryNewBinding
     private lateinit var mediaRepository: com.oralvis.oralviscamera.database.MediaRepository
     private lateinit var sequenceAdapter: SequenceCardAdapter
+    private lateinit var otherMediaAdapter: OtherMediaAdapter
     private lateinit var themeManager: ThemeManager
     private lateinit var galleryFlowCoordinator: GalleryFlowCoordinator
     
@@ -146,7 +148,25 @@ class GalleryActivity : AppCompatActivity() {
                 }
             },
             onDiscardClick = { card ->
-                galleryFlowCoordinator.showDiscardConfirmation(card) {}
+                galleryFlowCoordinator.showDiscardConfirmation(card, false) {}
+            }
+        )
+        otherMediaAdapter = OtherMediaAdapter(
+            items = emptyList(),
+            onImageClick = { media ->
+                media.filePath?.let { path ->
+                    openMediaPreview(path, media.mediaType == "Video")
+                }
+            },
+            onDiscardClick = { media ->
+                val card = SequenceCard(
+                    sequenceNumber = 1,
+                    dentalArch = "OTHER",
+                    guidedSessionId = null,
+                    rgbImage = if (media.mode == "Normal") media else null,
+                    fluorescenceImage = if (media.mode == "Fluorescence") media else null
+                )
+                galleryFlowCoordinator.showDiscardConfirmation(card, true) {}
             }
         )
         // Use GridLayoutManager with 2 columns for compact display
@@ -186,28 +206,44 @@ class GalleryActivity : AppCompatActivity() {
         binding.mediaRecyclerView.visibility = View.VISIBLE
         binding.reportsContent.visibility = View.GONE
 
-        // Re-group media for the new tab selection
-        if (mediaList.isNotEmpty()) {
-            android.util.Log.d("TAB_DEBUG", "Re-grouping media for tab $currentArchTab")
-            val sequenceCards = galleryFlowCoordinator.groupMediaIntoSequences(mediaList, currentArchTab)
-
-            android.util.Log.d("TAB_DEBUG", "Tab $currentArchTab: created ${sequenceCards.size} sequence cards")
-
-            if (sequenceCards.isNotEmpty()) {
-                sequenceAdapter.updateSequenceCards(sequenceCards)
+        if (currentArchTab == 2) {
+            // Other tab: single-image list, no pairing — use dedicated adapter and layout
+            val otherList = mediaList.filter { it.dentalArch != "UPPER" && it.dentalArch != "LOWER" }
+                .sortedBy { it.captureTime }
+            binding.mediaRecyclerView.adapter = otherMediaAdapter
+            otherMediaAdapter.updateList(otherList)
+            if (otherList.isNotEmpty()) {
                 binding.mediaRecyclerView.visibility = View.VISIBLE
                 binding.mediaEmptyState.visibility = View.GONE
             } else {
-                sequenceAdapter.updateSequenceCards(emptyList())
+                binding.mediaRecyclerView.visibility = View.GONE
+                binding.mediaEmptyState.visibility = View.VISIBLE
+                binding.mediaEmptyState.findViewById<TextView>(android.R.id.text1)?.text = "No media in Other yet"
+            }
+            return
+        }
+
+        // Upper / Lower tabs: sequence cards with pairing
+        if (mediaList.isNotEmpty()) {
+            android.util.Log.d("TAB_DEBUG", "Re-grouping media for tab $currentArchTab")
+            val sequenceCards = galleryFlowCoordinator.groupMediaIntoSequences(mediaList, currentArchTab)
+            android.util.Log.d("TAB_DEBUG", "Tab $currentArchTab: created ${sequenceCards.size} sequence cards")
+            binding.mediaRecyclerView.adapter = sequenceAdapter
+            if (sequenceCards.isNotEmpty()) {
+                sequenceAdapter.updateSequenceCards(sequenceCards, currentArchTab)
+                binding.mediaRecyclerView.visibility = View.VISIBLE
+                binding.mediaEmptyState.visibility = View.GONE
+            } else {
+                sequenceAdapter.updateSequenceCards(emptyList(), currentArchTab)
                 binding.mediaRecyclerView.visibility = View.GONE
                 binding.mediaEmptyState.visibility = View.VISIBLE
             }
         } else {
-            android.util.Log.d("TAB_DEBUG", "No media available to re-group for tab $currentArchTab - showing empty state")
-            sequenceAdapter.updateSequenceCards(emptyList())
+            android.util.Log.d("TAB_DEBUG", "No media available for tab $currentArchTab - showing empty state")
+            binding.mediaRecyclerView.adapter = sequenceAdapter
+            sequenceAdapter.updateSequenceCards(emptyList(), currentArchTab)
             binding.mediaRecyclerView.visibility = View.GONE
             binding.mediaEmptyState.visibility = View.VISIBLE
-            // Update empty state text to be session-specific
             binding.mediaEmptyState.findViewById<TextView>(android.R.id.text1)?.text = "No media captured in this session yet"
         }
     }
